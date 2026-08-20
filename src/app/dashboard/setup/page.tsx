@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare } from "lucide-react";
+import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare, Pencil } from "lucide-react";
 import type { FeeSchedule, SchoolSettings } from "@/lib/types";
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES } from "@/lib/types";
 
@@ -268,31 +268,144 @@ function AddFeeModal({ onClose }: { onClose: () => void }) {
 }
 
 function CategoriesTab() {
+  const supabase = createClient();
+  const { profile } = useAuth();
+  const [categories, setCategories] = useState<{ id: string; name: string; type: string; active: boolean }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<"income" | "expense">("income");
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from("categories").select("*").order("type").order("sort_order");
+    setCategories(data ?? []);
+    setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function addCategory(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    await supabase.from("categories").insert({ name: newName.trim(), type: newType, active: true, sort_order: 50 });
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Add Category", details: `${newType}: ${newName}` });
+    setNewName("");
+    load();
+  }
+
+  async function deleteCategory(id: string, name: string) {
+    await supabase.from("categories").delete().eq("id", id);
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Delete Category", details: name });
+    setCategories(prev => prev.filter(c => c.id !== id));
+  }
+
+  async function saveEdit(id: string) {
+    if (!editName.trim()) { setEditId(null); return; }
+    await supabase.from("categories").update({ name: editName.trim() }).eq("id", id);
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, name: editName.trim() } : c));
+    setEditId(null);
+    setEditName("");
+  }
+
+  async function toggleActive(id: string, active: boolean) {
+    await supabase.from("categories").update({ active: !active }).eq("id", id);
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, active: !active } : c));
+  }
+
+  const incomeCategories = categories.filter(c => c.type === "income");
+  const expenseCategories = categories.filter(c => c.type === "expense");
+
+  if (loading) return <LoadingSpinner />;
+
   return (
-    <div className="grid lg:grid-cols-2 gap-4">
+    <div className="space-y-4">
+      {/* Add new category */}
       <Card>
-        <CardHeader><CardTitle>Income Categories</CardTitle></CardHeader>
-        <CardContent className="pt-0 space-y-2">
-          {INCOME_CATEGORIES.map(c => (
-            <div key={c} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-              <span className="text-sm text-gray-700">{c}</span>
-              <span className="text-xs text-gray-400 bg-green-50 px-2 py-0.5 rounded">Income</span>
+        <CardHeader><CardTitle>Add Category</CardTitle></CardHeader>
+        <CardContent>
+          <form onSubmit={addCategory} className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[200px]">
+              <Input label="Category Name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Bus Fees" required />
             </div>
-          ))}
-          <p className="text-xs text-gray-400 pt-2">Categories are built-in. Contact your developer to add custom categories.</p>
+            <div>
+              <Select label="Type" value={newType} onChange={e => setNewType(e.target.value as "income" | "expense")}
+                options={[{ value: "income", label: "Income" }, { value: "expense", label: "Expense" }]} />
+            </div>
+            <Button type="submit" variant="gold" size="md">
+              <Plus size={14} /> Add
+            </Button>
+          </form>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader><CardTitle>Expense Categories</CardTitle></CardHeader>
-        <CardContent className="pt-0 space-y-2">
-          {EXPENSE_CATEGORIES.map(c => (
-            <div key={c} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-              <span className="text-sm text-gray-700">{c}</span>
-              <span className="text-xs text-gray-400 bg-red-50 px-2 py-0.5 rounded">Expense</span>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader><CardTitle>Income Categories ({incomeCategories.length})</CardTitle></CardHeader>
+          <CardContent className="pt-0 space-y-1">
+            {incomeCategories.length === 0 ? (
+              <p className="text-sm text-gray-400 py-4 text-center">No income categories. Add one above.</p>
+            ) : (
+              incomeCategories.map(c => (
+                <div key={c.id} className="flex items-center justify-between py-2 px-2 border-b border-gray-50 last:border-0 rounded hover:bg-gray-50 group">
+                  {editId === c.id ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveEdit(c.id); if (e.key === "Escape") setEditId(null); }}
+                        autoFocus className="flex-1 px-2 py-1 text-sm border border-[#C9A227] rounded focus:outline-none" />
+                      <button onClick={() => saveEdit(c.id)} className="text-green-600 text-xs font-medium">Save</button>
+                      <button onClick={() => setEditId(null)} className="text-gray-400 text-xs">Cancel</button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className={cn("text-sm", !c.active && "text-gray-400 line-through")}>{c.name}</span>
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => toggleActive(c.id, c.active)} className={cn("text-xs px-2 py-0.5 rounded", c.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>
+                          {c.active ? "Active" : "Inactive"}
+                        </button>
+                        <button onClick={() => { setEditId(c.id); setEditName(c.name); }} className="text-gray-400 hover:text-[#0F2A47]"><Pencil size={12} /></button>
+                        <button onClick={() => deleteCategory(c.id, c.name)} className="text-gray-300 hover:text-red-500"><Trash2 size={12} /></button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Expense Categories ({expenseCategories.length})</CardTitle></CardHeader>
+          <CardContent className="pt-0 space-y-1">
+            {expenseCategories.length === 0 ? (
+              <p className="text-sm text-gray-400 py-4 text-center">No expense categories. Add one above.</p>
+            ) : (
+              expenseCategories.map(c => (
+                <div key={c.id} className="flex items-center justify-between py-2 px-2 border-b border-gray-50 last:border-0 rounded hover:bg-gray-50 group">
+                  {editId === c.id ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveEdit(c.id); if (e.key === "Escape") setEditId(null); }}
+                        autoFocus className="flex-1 px-2 py-1 text-sm border border-[#C9A227] rounded focus:outline-none" />
+                      <button onClick={() => saveEdit(c.id)} className="text-green-600 text-xs font-medium">Save</button>
+                      <button onClick={() => setEditId(null)} className="text-gray-400 text-xs">Cancel</button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className={cn("text-sm", !c.active && "text-gray-400 line-through")}>{c.name}</span>
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => toggleActive(c.id, c.active)} className={cn("text-xs px-2 py-0.5 rounded", c.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>
+                          {c.active ? "Active" : "Inactive"}
+                        </button>
+                        <button onClick={() => { setEditId(c.id); setEditName(c.name); }} className="text-gray-400 hover:text-[#0F2A47]"><Pencil size={12} /></button>
+                        <button onClick={() => deleteCategory(c.id, c.name)} className="text-gray-300 hover:text-red-500"><Trash2 size={12} /></button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -352,13 +465,23 @@ function SmsGatewayTab() {
     ? `${window.location.origin}/api/sms-webhook`
     : "/api/sms-webhook";
 
-  async function persist(extra: Partial<typeof form> = {}) {
-    const payload: Record<string, unknown> = {
-      ...form,
-      ...extra,
-      sms_auto_credit_min_confidence: parseFloat(String(extra.sms_auto_credit_min_confidence ?? form.sms_auto_credit_min_confidence)) || 0.80,
-      updated_at: new Date().toISOString(),
-    };
+  async function persist(extra: Record<string, unknown> = {}) {
+    // Only save fields that the DB actually has (avoids errors from missing columns)
+    const dbFields = [
+      "sms_gateway_url", "sms_gateway_username", "sms_gateway_password",
+      "sms_gateway_device_id", "sms_auto_credit", "sms_auto_credit_min_confidence",
+      "sms_webhook_secret", "sms_webhook_id", "sms_webhook_registered_at",
+      "sms_gateway_provider",
+    ];
+    const merged = { ...form, ...extra };
+    const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    dbFields.forEach(k => {
+      if (k in merged) {
+        let val = (merged as any)[k];
+        if (k === "sms_auto_credit_min_confidence") val = parseFloat(String(val)) || 0.80;
+        payload[k] = val;
+      }
+    });
     if (settingsId) {
       await supabase.from("school_settings").update(payload).eq("id", settingsId);
     } else {
