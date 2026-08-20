@@ -429,12 +429,12 @@ function AddStudentModal({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     supabase.from("students").select("student_code").then(({ data }) => {
-      const codes = (data ?? []).map(s => s.student_code);
-      const max = codes.reduce((m, c) => {
-        const n = parseInt(c.replace(/\D/g, ""), 10);
-        return isNaN(n) ? m : Math.max(m, n);
-      }, 0);
-      setForm(f => ({ ...f, student_code: `STU-${String(max + 1).padStart(4, "0")}` }));
+      const codes = new Set((data ?? []).map(s => s.student_code));
+      let code: string;
+      do {
+        code = `S${String(Math.floor(Math.random() * 1000)).padStart(3, "0")}`;
+      } while (codes.has(code));
+      setForm(f => ({ ...f, student_code: code }));
     });
   }, [supabase]);
 

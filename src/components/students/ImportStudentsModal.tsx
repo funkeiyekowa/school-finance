@@ -157,14 +157,9 @@ export function ImportStudentsModal({ onClose }: { onClose: () => void }) {
   async function runImport() {
     setStep("importing");
 
-    // Generate sequential student codes for rows missing one
+    // Generate random unique student codes for rows missing one
     const { data: existing } = await supabase.from("students").select("student_code");
     const existingCodes = new Set((existing ?? []).map(s => s.student_code));
-    let maxNum = 0;
-    existingCodes.forEach(c => {
-      const n = parseInt(String(c).replace(/\D/g, ""), 10);
-      if (!isNaN(n) && n > maxNum) maxNum = n;
-    });
 
     let inserted = 0;
     let failed = 0;
@@ -173,8 +168,10 @@ export function ImportStudentsModal({ onClose }: { onClose: () => void }) {
     for (const row of validRows) {
       let code = row.data.student_code;
       if (!code) {
-        maxNum += 1;
-        code = `STU-${String(maxNum).padStart(4, "0")}`;
+        // Generate S + 3 random digits, unique
+        do {
+          code = `S${String(Math.floor(Math.random() * 1000)).padStart(3, "0")}`;
+        } while (existingCodes.has(code));
       } else if (existingCodes.has(code)) {
         // Avoid unique constraint collision — keep original but note it
         errors.push(`Row ${row.rowIndex}: Student ID "${code}" already exists, skipped`);
