@@ -5,42 +5,18 @@ import { AppShell } from "@/components/layout/AppShell";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-  if (!user) redirect("/auth/login");
+  if (!user || userError) redirect("/auth/login");
 
-  // Try to get profile
-  let { data: profile } = await supabase
-    .from("profiles").select("*").eq("id", user.id).single();
+  // Fetch profile — the DB trigger should have created it on signup
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles").select("*").eq("id", user.id).maybeSingle();
 
-  // If no profile yet (trigger didn't fire or failed), create one now
+  // If profile doesn't exist, the user just signed up and trigger may not have run.
+  // Show pending page which tells them to wait / contact admin.
   if (!profile) {
-    const { data: existingCount } = await supabase
-      .from("profiles")
-      .select("id", { count: "exact", head: true });
-
-    const isFirstUser = (existingCount === null || (Array.isArray(existingCount) && existingCount.length === 0));
-
-    await supabase.from("profiles").upsert({
-      id: user.id,
-      email: user.email || "",
-      full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
-      role: isFirstUser ? "admin" : "pending",
-      active: isFirstUser,
-    });
-
-    // Re-fetch
-    const { data: newProfile } = await supabase
-      .from("profiles").select("*").eq("id", user.id).single();
-
-    if (!newProfile) {
-      // Something is seriously wrong — maybe RLS is blocking the insert
-      // Sign the user out and send to login
-      await supabase.auth.signOut();
-      redirect("/auth/login");
-    }
-
-    profile = newProfile;
+    redirect("/auth/pending");
   }
 
   if (!profile.active) redirect("/auth/pending");
