@@ -234,7 +234,7 @@ export async function POST(request: Request) {
       message_id: messageId,
       device_id: deviceId,
       sender: sender,
-      sim_number: simNumber ? parseInt(simNumber) : null,
+      sim_number: simNumber || null,
       message_text: messageText,
       received_at: receivedAt,
       parsed_student_number: parsed.studentNumber,
