@@ -121,15 +121,29 @@ export async function POST(request: Request) {
     let messageId = `msg-${Date.now()}`;
 
     // SMS Gate format: { event: "sms:received", deviceId: "...", payload: { message, sender, ... } }
-    if (body.event && body.payload) {
+    if (body.event && body.payload && typeof body.payload === "object") {
       const p = body.payload;
       sender = p.sender || null;
-      messageText = p.message || "";
+      messageText = p.message || p.text || "";
       receivedAt = p.receivedAt || new Date().toISOString();
       deviceId = body.deviceId || null;
       simNumber = p.simNumber || null;
       eventId = body.id || eventId;
       messageId = p.messageId || messageId;
+    } else if (body.payload && typeof body.payload === "string") {
+      // Some gateways send payload as a JSON string
+      try {
+        const p = JSON.parse(body.payload);
+        sender = p.sender || null;
+        messageText = p.message || p.text || "";
+        receivedAt = p.receivedAt || new Date().toISOString();
+        deviceId = body.deviceId || null;
+        simNumber = p.simNumber || null;
+        eventId = body.id || eventId;
+        messageId = p.messageId || messageId;
+      } catch {
+        messageText = body.payload;
+      }
     } else {
       // Simple format
       sender = body.sender || body.from || body.phone || body.sender_number || null;
@@ -142,7 +156,15 @@ export async function POST(request: Request) {
     }
 
     if (!messageText) {
-      return NextResponse.json({ error: "No message text provided" }, { status: 400 });
+      return NextResponse.json({ 
+        error: "No message text provided",
+        debug: {
+          hasEvent: !!body.event,
+          hasPayload: !!body.payload,
+          payloadType: typeof body.payload,
+          bodyKeys: Object.keys(body),
+        }
+      }, { status: 400 });
     }
 
     // Parse the SMS
