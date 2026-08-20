@@ -10,12 +10,14 @@ import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { Modal } from "@/components/ui/Modal";
+import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { Plus, Search, Download, CheckCircle, Circle } from "lucide-react";
 import type { ExpenseEntry, Vendor } from "@/lib/types";
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "@/lib/types";
 
 export default function ExpensesPage() {
-  const { canEdit, profile } = useAuth();
+  const { canEdit, profile, isDeveloper } = useAuth();
   const supabase = createClient();
   const [entries, setEntries] = useState<ExpenseEntry[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -47,6 +49,20 @@ export default function ExpensesPage() {
   });
 
   const totalShown = filtered.reduce((s, e) => s + e.amount, 0);
+
+  // Bulk delete (developer only)
+  const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(filtered.map(e => e.id));
+
+  async function bulkDeleteSelected(ids: string[]) {
+    for (const id of ids) { await supabase.from("expense_entries").delete().eq("id", id); }
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete Expenses", details: `${ids.length} entries deleted` });
+    load();
+  }
+  async function bulkDeleteAll() {
+    await supabase.from("expense_entries").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Purge All Expenses", details: "All expense entries deleted" });
+    load();
+  }
 
   async function toggleReconcile(entry: ExpenseEntry) {
     await supabase.from("expense_entries").update({ reconciled: !entry.reconciled, updated_at: new Date().toISOString() }).eq("id", entry.id);
@@ -107,11 +123,16 @@ export default function ExpensesPage() {
       </div>
 
       {loading ? <LoadingSpinner /> : (
+        <>
+          <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="expense entries"
+            onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
+            onSelectAll={selectAll} onClearSelection={clearSelection} isDeveloper={isDeveloper} />
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[#0F2A47] text-white">
+                  {isDeveloper && <th className="w-8 px-2 py-3" />}
                   <th className="text-left px-4 py-3 text-xs font-semibold">Voucher</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Date</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Vendor</th>
@@ -125,10 +146,11 @@ export default function ExpensesPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={9}><EmptyState message="No expense records found." /></td></tr>
+                  <tr><td colSpan={isDeveloper ? 10 : 9}><EmptyState message="No expense records found." /></td></tr>
                 ) : (
                   filtered.map(entry => (
                     <tr key={entry.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <RowCheckbox id={entry.id} selectedIds={selectedIds} onToggle={toggleSelect} isDeveloper={isDeveloper} />
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-[#0F2A47]">{entry.voucher_no}</td>
                       <td className="px-4 py-3 text-gray-600">{fmtDate(entry.date)}</td>
                       <td className="px-4 py-3 font-medium">{entry.vendor_name || "—"}</td>
@@ -150,6 +172,7 @@ export default function ExpensesPage() {
             </table>
           </div>
         </Card>
+        </>
       )}
 
       {showAdd && <AddExpenseModal vendors={vendors} onClose={() => { setShowAdd(false); load(); }} />}

@@ -112,8 +112,8 @@ export default function SmsAlertsPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold">Student No.</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Student Name</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold">Amount</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Reference</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Match Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold">Reason</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Confidence</th>
                   <th className="px-4 py-3" />
                 </tr>
@@ -133,8 +133,10 @@ export default function SmsAlertsPage() {
                       <td className="px-4 py-3 text-right font-bold">
                         {alert.parsed_amount ? fmtMoney(alert.parsed_amount) : "—"}
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-500 font-mono">{alert.parsed_reference || "—"}</td>
                       <td className="px-4 py-3"><StatusBadge status={alert.match_status} /></td>
+                      <td className="px-4 py-3 text-xs text-gray-500 max-w-[220px]">
+                        <span className="line-clamp-2">{alert.match_reason || "—"}</span>
+                      </td>
                       <td className="px-4 py-3">
                         {alert.confidence_score != null ? (
                           <div className="flex items-center gap-2">
@@ -303,6 +305,21 @@ function AlertDetailModal({
             <span>{fmtDateTime(alert.received_at || alert.created_at)}</span>
           </div>
         </div>
+
+        {/* Match reason / system comment */}
+        {alert.match_reason && (
+          <div className={cn(
+            "rounded-xl p-4 border text-sm",
+            alert.match_status === "matched" ? "bg-green-50 border-green-200 text-green-800" :
+            alert.match_status === "duplicate" ? "bg-purple-50 border-purple-200 text-purple-800" :
+            alert.match_status === "rejected" ? "bg-red-50 border-red-200 text-red-800" :
+            alert.match_status === "needs_review" ? "bg-amber-50 border-amber-200 text-amber-800" :
+            "bg-gray-50 border-gray-200 text-gray-700"
+          )}>
+            <div className="text-xs font-semibold uppercase tracking-wide opacity-70 mb-1">System Comment</div>
+            <p className="font-medium">{alert.match_reason}</p>
+          </div>
+        )}
 
         {/* Parsed data */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

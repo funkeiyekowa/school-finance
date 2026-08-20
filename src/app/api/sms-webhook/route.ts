@@ -208,53 +208,77 @@ export async function POST(request: Request) {
     const parsed = parseSMS(messageText);
     const confidence = calculateConfidence(parsed);
 
-    // Determine match status
+    // Determine match status and generate explanatory reason
     let matchStatus = "unmatched";
-    if (parsed.amount && (parsed.studentNumber || parsed.studentName)) {
-      matchStatus = "needs_review";
-    }
+    let matchReason = "";
+    let matchedStudentId: string | null = null;
+    let matchedStudentName: string | null = null;
 
-    // Try to match student if we have a number
-    let matchedStudentId = null;
+    // Try to match student by code first (highest confidence)
     if (parsed.studentNumber) {
       const { data: student } = await supabase
         .from("students")
-        .select("id")
+        .select("id, full_name, student_code")
         .or(`student_code.ilike.%${parsed.studentNumber}%,full_name.ilike.%${parsed.studentNumber}%`)
         .limit(1)
         .maybeSingle();
-      if (student) matchedStudentId = student.id;
+      if (student) {
+        matchedStudentId = student.id;
+        matchedStudentName = student.full_name;
+      }
     }
 
-    // Also try matching by name
+    // Also try matching by name if code didn't match
     if (!matchedStudentId && parsed.studentName) {
       const { data: student } = await supabase
         .from("students")
-        .select("id")
+        .select("id, full_name, student_code")
         .ilike("full_name", `%${parsed.studentName}%`)
         .limit(1)
         .maybeSingle();
-      if (student) matchedStudentId = student.id;
+      if (student) {
+        matchedStudentId = student.id;
+        matchedStudentName = student.full_name;
+      }
     }
 
-    if (matchedStudentId) {
-      matchStatus = "needs_review"; // We found a potential match
+    // Build the match reason explanation
+    if (parsed.amount && matchedStudentId && parsed.studentNumber && parsed.studentName) {
+      matchStatus = "needs_review";
+      matchReason = `Matched — name "${matchedStudentName}" and student no "${parsed.studentNumber}" both match. Amount: ₦${parsed.amount.toLocaleString()}.`;
+    } else if (parsed.amount && matchedStudentId && parsed.studentNumber) {
+      matchStatus = "needs_review";
+      matchReason = `Matched — student no "${parsed.studentNumber}" matches "${matchedStudentName}". Amount: ₦${parsed.amount.toLocaleString()}.`;
+    } else if (parsed.amount && matchedStudentId && parsed.studentName) {
+      matchStatus = "needs_review";
+      matchReason = `Matched — name "${parsed.studentName}" matches student "${matchedStudentName}". Amount: ₦${parsed.amount.toLocaleString()}.`;
+    } else if (parsed.amount && !matchedStudentId && parsed.studentNumber) {
+      matchStatus = "needs_review";
+      matchReason = `Amount ₦${parsed.amount.toLocaleString()} parsed with student no "${parsed.studentNumber}", but no matching student found in database. Manual assignment needed.`;
+    } else if (parsed.amount && !matchedStudentId && parsed.studentName) {
+      matchStatus = "needs_review";
+      matchReason = `Amount ₦${parsed.amount.toLocaleString()} parsed with name "${parsed.studentName}", but no matching student found in database. Manual assignment needed.`;
+    } else if (parsed.amount && !parsed.studentNumber && !parsed.studentName) {
+      matchStatus = "unmatched";
+      matchReason = `Amount ₦${parsed.amount.toLocaleString()} parsed but no student identifier found in the message. Cannot auto-match.`;
+    } else {
+      matchStatus = "unmatched";
+      matchReason = `Could not parse a valid amount or student identifier from this message.`;
     }
 
     // Check for duplicate (same sender + same amount within 5 minutes)
     const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const { data: existing } = await supabase
+    const { data: existingMsgs } = await supabase
       .from("sms_inbox")
       .select("id")
       .eq("sender", sender)
       .gte("created_at", fiveMinAgo)
       .limit(1);
 
-    if (existing && existing.length > 0 && parsed.amount) {
-      // Check if same amount
+    if (existingMsgs && existingMsgs.length > 0 && parsed.amount) {
       const { data: dupeCheck } = await supabase
         .from("sms_inbox")
-        .select("id, parsed_amount")
+        .select("id, parsed_amount, parsed_student_name")
         .eq("sender", sender)
         .eq("parsed_amount", parsed.amount)
         .gte("created_at", fiveMinAgo)
@@ -262,6 +286,7 @@ export async function POST(request: Request) {
 
       if (dupeCheck && dupeCheck.length > 0) {
         matchStatus = "duplicate";
+        matchReason = `Duplicate — same sender and same amount (₦${parsed.amount.toLocaleString()}) received within 5 minutes of a previous message${matchedStudentName ? ` for "${matchedStudentName}"` : ""}. Likely a repeated notification.`;
       }
     }
 
@@ -279,9 +304,10 @@ export async function POST(request: Request) {
       parsed_amount: parsed.amount,
       parsed_currency: parsed.currency,
       parsed_reference: parsed.reference,
-      parser_version: "v1",
+      parser_version: "v2",
       processing_status: "received",
       match_status: matchStatus,
+      match_reason: matchReason,
       matched_student_id: matchedStudentId,
       confidence_score: confidence,
       raw_payload: body,

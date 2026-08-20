@@ -13,6 +13,7 @@ interface AuthContextValue {
   refreshProfile: () => Promise<void>;
   canEdit: boolean;
   isAdmin: boolean;
+  isDeveloper: boolean;
   hasFeature: (key: string) => boolean;
   permissions: Record<string, boolean>;
 }
@@ -25,6 +26,7 @@ const AuthContext = createContext<AuthContextValue>({
   refreshProfile: async () => {},
   canEdit: false,
   isAdmin: false,
+  isDeveloper: false,
   hasFeature: () => false,
   permissions: {},
 });
@@ -101,18 +103,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPermissions({});
   }
 
-  const isAdmin = profile?.role === "admin" && (profile?.active ?? false);
-  const canEdit = ["admin", "editor", "staff"].includes(profile?.role ?? "") && (profile?.active ?? false);
+  const isAdmin = (profile?.role === "admin" || profile?.role === "developer") && (profile?.active ?? false);
+  const isDeveloper = profile?.role === "developer" && (profile?.active ?? false);
+  const canEdit = ["admin", "editor", "staff", "developer"].includes(profile?.role ?? "") && (profile?.active ?? false);
 
   function hasFeature(key: string): boolean {
-    if (isAdmin) return true;
+    if (isAdmin || isDeveloper) return true;
     return permissions[key] === true;
   }
 
   return (
     <AuthContext.Provider value={{
       user, profile, loading, signOut, refreshProfile,
-      canEdit, isAdmin, hasFeature, permissions,
+      canEdit, isAdmin, isDeveloper, hasFeature, permissions,
     }}>
       {children}
     </AuthContext.Provider>
