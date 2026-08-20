@@ -1,0 +1,245 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+// Use service role to bypass RLS for webhook inserts
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+// Parse SMS text to extract payment details
+function parseSMS(text: string): {
+  amount: number | null;
+  studentNumber: string | null;
+  studentName: string | null;
+  reference: string | null;
+  currency: string;
+} {
+  const result = {
+    amount: null as number | null,
+    studentNumber: null as string | null,
+    studentName: null as string | null,
+    reference: null as string | null,
+    currency: "NGN",
+  };
+
+  // Extract amount — look for patterns like "5000", "N5,000", "NGN 5000", "₦5000"
+  const amountPatterns = [
+    /(?:NGN|N|₦)\s?([0-9,]+(?:\.[0-9]{2})?)/i,
+    /([0-9,]+(?:\.[0-9]{2})?)\s?(?:NGN|naira)/i,
+    /(?:amount|payment|paid|received|credit)\s*(?:of|:)?\s*(?:NGN|N|₦)?\s?([0-9,]+(?:\.[0-9]{2})?)/i,
+    /([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/,  // fallback: first number
+  ];
+
+  for (const pattern of amountPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const numStr = match[1].replace(/,/g, "");
+      const num = parseFloat(numStr);
+      if (num > 0 && num < 100000000) {
+        result.amount = num;
+        break;
+      }
+    }
+  }
+
+  // Extract student number — patterns like "STU-0001", "ST001", "Student No: 2026001"
+  const studentNoPatterns = [
+    /(?:STU|ST)[-\s]?([0-9]{3,6})/i,
+    /(?:student\s*(?:no|number|id|code))[:\s]*([A-Z0-9\-\/]+)/i,
+    /(?:admission\s*(?:no|number))[:\s]*([A-Z0-9\-\/]+)/i,
+  ];
+
+  for (const pattern of studentNoPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      result.studentNumber = match[0].match(/[A-Z0-9\-\/]+$/i)?.[0] || match[1];
+      break;
+    }
+  }
+
+  // Extract student name — patterns like "Student: Ada Okafor", "for Adeji"
+  const namePatterns = [
+    /(?:student|name|for)\s*[:\s]\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})/,
+    /(?:student|name|for)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,2})/i,
+  ];
+
+  for (const pattern of namePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      // Filter out common words that aren't names
+      const candidate = match[1].trim();
+      if (!["student", "payment", "school", "fees", "the"].includes(candidate.toLowerCase())) {
+        result.studentName = candidate;
+        break;
+      }
+    }
+  }
+
+  // Extract reference — patterns like "Ref: TXN893421", "TXN123456"
+  const refPatterns = [
+    /(?:ref|reference|txn|transaction)[:\s#]*([A-Z0-9\-]+)/i,
+    /\b([A-Z]{2,4}[0-9]{5,})\b/,
+  ];
+
+  for (const pattern of refPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      result.reference = match[1];
+      break;
+    }
+  }
+
+  return result;
+}
+
+// Calculate confidence score based on what was parsed
+function calculateConfidence(parsed: ReturnType<typeof parseSMS>): number {
+  let score = 0;
+  if (parsed.amount) score += 0.4;
+  if (parsed.studentNumber) score += 0.3;
+  if (parsed.studentName) score += 0.2;
+  if (parsed.reference) score += 0.1;
+  return Math.min(score, 1.0);
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+
+    // Support multiple SMS gateway formats:
+    // Format 1: SMSGate/MacroDroid { "sender": "+234...", "message": "...", "timestamp": "..." }
+    // Format 2: SMS Forwarder { "from": "+234...", "text": "...", "sentStamp": "..." }
+    // Format 3: Direct/custom { "phone": "+234...", "body": "...", "received_at": "..." }
+
+    const sender = body.sender || body.from || body.phone || body.sender_number || null;
+    const messageText = body.message || body.text || body.body || body.smsBody || "";
+    const receivedAt = body.timestamp || body.sentStamp || body.received_at || body.receivedAt || new Date().toISOString();
+    const deviceId = body.device_id || body.deviceId || body.device || null;
+    const simNumber = body.sim || body.simNumber || body.sim_number || null;
+    const eventId = body.event_id || body.eventId || body.id || `sms-${Date.now()}`;
+    const messageId = body.message_id || body.messageId || body.msgId || `msg-${Date.now()}`;
+
+    if (!messageText) {
+      return NextResponse.json({ error: "No message text provided" }, { status: 400 });
+    }
+
+    // Parse the SMS
+    const parsed = parseSMS(messageText);
+    const confidence = calculateConfidence(parsed);
+
+    // Determine match status
+    let matchStatus = "unmatched";
+    if (parsed.amount && (parsed.studentNumber || parsed.studentName)) {
+      matchStatus = "needs_review";
+    }
+
+    // Try to match student if we have a number
+    let matchedStudentId = null;
+    if (parsed.studentNumber) {
+      const { data: student } = await supabase
+        .from("students")
+        .select("id")
+        .or(`student_code.ilike.%${parsed.studentNumber}%,full_name.ilike.%${parsed.studentNumber}%`)
+        .limit(1)
+        .maybeSingle();
+      if (student) matchedStudentId = student.id;
+    }
+
+    // Also try matching by name
+    if (!matchedStudentId && parsed.studentName) {
+      const { data: student } = await supabase
+        .from("students")
+        .select("id")
+        .ilike("full_name", `%${parsed.studentName}%`)
+        .limit(1)
+        .maybeSingle();
+      if (student) matchedStudentId = student.id;
+    }
+
+    if (matchedStudentId) {
+      matchStatus = "needs_review"; // We found a potential match
+    }
+
+    // Check for duplicate (same sender + same amount within 5 minutes)
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: existing } = await supabase
+      .from("sms_inbox")
+      .select("id")
+      .eq("sender", sender)
+      .gte("created_at", fiveMinAgo)
+      .limit(1);
+
+    if (existing && existing.length > 0 && parsed.amount) {
+      // Check if same amount
+      const { data: dupeCheck } = await supabase
+        .from("sms_inbox")
+        .select("id, parsed_amount")
+        .eq("sender", sender)
+        .eq("parsed_amount", parsed.amount)
+        .gte("created_at", fiveMinAgo)
+        .limit(1);
+
+      if (dupeCheck && dupeCheck.length > 0) {
+        matchStatus = "duplicate";
+      }
+    }
+
+    // Insert into sms_inbox
+    const { data: inserted, error } = await supabase.from("sms_inbox").insert({
+      event_id: eventId,
+      message_id: messageId,
+      device_id: deviceId,
+      sender: sender,
+      sim_number: simNumber ? parseInt(simNumber) : null,
+      message_text: messageText,
+      received_at: receivedAt,
+      parsed_student_number: parsed.studentNumber,
+      parsed_student_name: parsed.studentName,
+      parsed_amount: parsed.amount,
+      parsed_currency: parsed.currency,
+      parsed_reference: parsed.reference,
+      parser_version: "v1",
+      processing_status: "received",
+      match_status: matchStatus,
+      matched_student_id: matchedStudentId,
+      confidence_score: confidence,
+      raw_payload: body,
+    }).select("id").single();
+
+    if (error) {
+      console.error("SMS insert error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      id: inserted?.id,
+      parsed: {
+        amount: parsed.amount,
+        student_number: parsed.studentNumber,
+        student_name: parsed.studentName,
+        reference: parsed.reference,
+        confidence,
+        match_status: matchStatus,
+        matched_student_id: matchedStudentId,
+      },
+    });
+  } catch (err: any) {
+    console.error("SMS webhook error:", err);
+    return NextResponse.json({ error: err?.message || "Internal error" }, { status: 500 });
+  }
+}
+
+// Also support GET for health check / testing
+export async function GET() {
+  return NextResponse.json({
+    status: "ok",
+    endpoint: "SMS Payment Webhook",
+    usage: "POST a JSON body with { sender, message } to process an SMS payment alert.",
+    example: {
+      sender: "+2348012345678",
+      message: "Payment 5000 for Student Adeji ST001",
+    },
+  });
+}
