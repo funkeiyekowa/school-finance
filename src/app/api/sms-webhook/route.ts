@@ -108,17 +108,38 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     // Support multiple SMS gateway formats:
-    // Format 1: SMSGate/MacroDroid { "sender": "+234...", "message": "...", "timestamp": "..." }
-    // Format 2: SMS Forwarder { "from": "+234...", "text": "...", "sentStamp": "..." }
-    // Format 3: Direct/custom { "phone": "+234...", "body": "...", "received_at": "..." }
+    // Format 1: SMS Gate (sms-gate.app) — nested payload structure
+    // Format 2: Direct/simple { "sender": "+234...", "message": "..." }
+    // Format 3: SMS Forwarder { "from": "+234...", "text": "..." }
 
-    const sender = body.sender || body.from || body.phone || body.sender_number || null;
-    const messageText = body.message || body.text || body.body || body.smsBody || "";
-    const receivedAt = body.timestamp || body.sentStamp || body.received_at || body.receivedAt || new Date().toISOString();
-    const deviceId = body.device_id || body.deviceId || body.device || null;
-    const simNumber = body.sim || body.simNumber || body.sim_number || null;
-    const eventId = body.event_id || body.eventId || body.id || `sms-${Date.now()}`;
-    const messageId = body.message_id || body.messageId || body.msgId || `msg-${Date.now()}`;
+    let sender: string | null = null;
+    let messageText = "";
+    let receivedAt = new Date().toISOString();
+    let deviceId: string | null = null;
+    let simNumber: number | null = null;
+    let eventId = `sms-${Date.now()}`;
+    let messageId = `msg-${Date.now()}`;
+
+    // SMS Gate format: { event: "sms:received", deviceId: "...", payload: { message, sender, ... } }
+    if (body.event && body.payload) {
+      const p = body.payload;
+      sender = p.sender || null;
+      messageText = p.message || "";
+      receivedAt = p.receivedAt || new Date().toISOString();
+      deviceId = body.deviceId || null;
+      simNumber = p.simNumber || null;
+      eventId = body.id || eventId;
+      messageId = p.messageId || messageId;
+    } else {
+      // Simple format
+      sender = body.sender || body.from || body.phone || body.sender_number || null;
+      messageText = body.message || body.text || body.body || body.smsBody || "";
+      receivedAt = body.timestamp || body.sentStamp || body.received_at || body.receivedAt || new Date().toISOString();
+      deviceId = body.device_id || body.deviceId || body.device || null;
+      simNumber = body.sim || body.simNumber || body.sim_number || null;
+      eventId = body.event_id || body.eventId || body.id || eventId;
+      messageId = body.message_id || body.messageId || body.msgId || messageId;
+    }
 
     if (!messageText) {
       return NextResponse.json({ error: "No message text provided" }, { status: 400 });
