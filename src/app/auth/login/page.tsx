@@ -19,13 +19,17 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setError(error.message);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+      } else {
+        window.location.href = "/dashboard";
+      }
+    } catch (err: any) {
+      setError(err?.message || "Connection error — check your internet.");
       setLoading(false);
-    } else {
-      // Force a hard navigation so the middleware picks up the new cookie
-      window.location.href = "/dashboard";
     }
   }
 
