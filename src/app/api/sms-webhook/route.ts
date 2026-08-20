@@ -212,16 +212,76 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // Check if auto-credit is enabled
+    let autoCredit = false;
+    if (matchedStudentId && parsed.amount && matchStatus === "needs_review") {
+      const { data: settings } = await supabase
+        .from("school_settings")
+        .select("sms_auto_credit, sms_auto_credit_min_confidence")
+        .limit(1)
+        .single();
+
+      if (settings?.sms_auto_credit && confidence >= (settings.sms_auto_credit_min_confidence || 0.80)) {
+        // Auto-credit: create income entry and mark SMS as matched
+        const { data: receiptNos } = await supabase.from("income_entries").select("receipt_no");
+        const existingNos = (receiptNos ?? []).map((r: any) => r.receipt_no);
+        let maxNum = 0;
+        existingNos.forEach((rn: string) => {
+          const n = parseInt(rn.replace("RCT-", ""), 10);
+          if (!isNaN(n) && n > maxNum) maxNum = n;
+        });
+        const receiptNo = `RCT-${String(maxNum + 1).padStart(4, "0")}`;
+
+        // Get student name
+        const { data: student } = await supabase
+          .from("students")
+          .select("full_name")
+          .eq("id", matchedStudentId)
+          .single();
+
+        await supabase.from("income_entries").insert({
+          receipt_no: receiptNo,
+          date: new Date(receivedAt).toISOString().substring(0, 10),
+          student_id: matchedStudentId,
+          student_name: student?.full_name || parsed.studentName,
+          category: "School Fees",
+          description: `SMS Payment — ${parsed.reference || sender || "auto-credited"}`,
+          amount: parsed.amount,
+          payment_method: "Bank Transfer",
+          recorded_by: "System (Auto-Credit)",
+          reconciled: false,
+          payment_source: "smsgate_auto",
+          sms_inbox_id: inserted?.id,
+        });
+
+        // Update SMS record to matched
+        await supabase.from("sms_inbox").update({
+          match_status: "matched",
+          processing_status: "confirmed",
+          match_reason: "auto_credit",
+        }).eq("id", inserted?.id);
+
+        // Log it
+        await supabase.from("activity_log").insert({
+          action: "Auto-Credit SMS Payment",
+          details: `${receiptNo} — ${student?.full_name || parsed.studentName} — ₦${parsed.amount} (confidence: ${Math.round(confidence * 100)}%)`,
+        });
+
+        autoCredit = true;
+      }
+    }
+
     return NextResponse.json({
       success: true,
       id: inserted?.id,
+      auto_credited: autoCredit,
       parsed: {
         amount: parsed.amount,
         student_number: parsed.studentNumber,
         student_name: parsed.studentName,
         reference: parsed.reference,
         confidence,
-        match_status: matchStatus,
+        match_status: autoCredit ? "matched" : matchStatus,
         matched_student_id: matchedStudentId,
       },
     });

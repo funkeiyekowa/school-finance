@@ -10,11 +10,11 @@ import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2, Save, Settings, DollarSign, Tags } from "lucide-react";
+import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare } from "lucide-react";
 import type { FeeSchedule, SchoolSettings } from "@/lib/types";
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES } from "@/lib/types";
 
-type Tab = "school" | "fees" | "categories";
+type Tab = "school" | "fees" | "categories" | "sms";
 
 export default function SetupPage() {
   const [tab, setTab] = useState<Tab>("school");
@@ -28,15 +28,16 @@ export default function SetupPage() {
     <div className="p-6 space-y-5">
       <PageHeader title="Setup" subtitle="Configure your school's financial settings" />
 
-      <div className="flex gap-2 border-b border-gray-200">
+      <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
         {[
           { id: "school", label: "School Settings", icon: <Settings size={14} /> },
           { id: "fees", label: "Fee Schedule", icon: <DollarSign size={14} /> },
           { id: "categories", label: "Categories", icon: <Tags size={14} /> },
+          { id: "sms", label: "SMS Gateway", icon: <MessageSquare size={14} /> },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id as Tab)}
             className={cn(
-              "flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
+              "flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
               tab === t.id ? "border-[#0F2A47] text-[#0F2A47]" : "border-transparent text-gray-500 hover:text-gray-700"
             )}>
             {t.icon} {t.label}
@@ -47,6 +48,7 @@ export default function SetupPage() {
       {tab === "school" && <SchoolSettingsTab />}
       {tab === "fees" && <FeeScheduleTab />}
       {tab === "categories" && <CategoriesTab />}
+      {tab === "sms" && <SmsGatewayTab />}
     </div>
   );
 }
@@ -289,6 +291,258 @@ function CategoriesTab() {
               <span className="text-xs text-gray-400 bg-red-50 px-2 py-0.5 rounded">Expense</span>
             </div>
           ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SmsGatewayTab() {
+  const supabase = createClient();
+  const { profile } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [form, setForm] = useState({
+    sms_gateway_url: "",
+    sms_gateway_username: "",
+    sms_gateway_password: "",
+    sms_gateway_device_id: "",
+    sms_auto_credit: false,
+    sms_auto_credit_min_confidence: "0.80",
+    sms_webhook_secret: "",
+  });
+
+  useEffect(() => {
+    supabase.from("school_settings").select("*").limit(1).single().then(({ data }) => {
+      if (data) {
+        setForm({
+          sms_gateway_url: data.sms_gateway_url || "",
+          sms_gateway_username: data.sms_gateway_username || "",
+          sms_gateway_password: data.sms_gateway_password || "",
+          sms_gateway_device_id: data.sms_gateway_device_id || "",
+          sms_auto_credit: data.sms_auto_credit || false,
+          sms_auto_credit_min_confidence: String(data.sms_auto_credit_min_confidence || "0.80"),
+          sms_webhook_secret: data.sms_webhook_secret || "",
+        });
+      }
+      setLoading(false);
+    });
+  }, [supabase]);
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(f => ({ ...f, [k]: e.target.value }));
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const { data: existing } = await supabase.from("school_settings").select("id").limit(1).single();
+    const payload = {
+      ...form,
+      sms_auto_credit_min_confidence: parseFloat(form.sms_auto_credit_min_confidence) || 0.80,
+      updated_at: new Date().toISOString(),
+    };
+    if (existing) {
+      await supabase.from("school_settings").update(payload).eq("id", existing.id);
+    } else {
+      await supabase.from("school_settings").insert({ ...payload, school_name: "My School" });
+    }
+    await supabase.from("activity_log").insert({
+      user_email: profile?.email, user_name: profile?.full_name,
+      action: "Update SMS Gateway Settings", details: `Auto-credit: ${form.sms_auto_credit ? "ON" : "OFF"}`,
+    });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  }
+
+  async function testWebhook() {
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/sms-webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sender: "+2340000000000",
+          message: "Test payment 1000 for Student Test STU-TEST",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTestResult({ ok: true, msg: `✓ Webhook working! Parsed: ₦${data.parsed.amount}, Student: ${data.parsed.student_number || data.parsed.student_name || "unknown"}` });
+      } else {
+        setTestResult({ ok: false, msg: `✗ Error: ${data.error}` });
+      }
+    } catch (err: any) {
+      setTestResult({ ok: false, msg: `✗ Connection failed: ${err?.message}` });
+    }
+  }
+
+  if (loading) return <LoadingSpinner />;
+
+  const webhookUrl = typeof window !== "undefined"
+    ? `${window.location.origin}/api/sms-webhook`
+    : "/api/sms-webhook";
+
+  return (
+    <div className="space-y-6">
+      {/* Webhook URL display */}
+      <Card>
+        <CardHeader><CardTitle>Your Webhook URL</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-600 mb-3">
+            Configure your Android SMS forwarding app to POST messages to this URL:
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 bg-gray-100 border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-mono text-[#0F2A47] select-all">
+              {webhookUrl}
+            </code>
+            <Button size="sm" variant="secondary" onClick={() => navigator.clipboard.writeText(webhookUrl)}>
+              Copy
+            </Button>
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <Button size="sm" variant="gold" onClick={testWebhook}>Send Test SMS</Button>
+            {testResult && (
+              <span className={cn("text-sm font-medium", testResult.ok ? "text-green-700" : "text-red-700")}>
+                {testResult.msg}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 mt-2">
+            The webhook accepts POST with JSON body: {"{"} &quot;sender&quot;: &quot;+234...&quot;, &quot;message&quot;: &quot;SMS text&quot; {"}"}
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Auto-credit toggle */}
+      <Card>
+        <CardHeader><CardTitle>Payment Auto-Credit</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex items-start gap-4 p-4 rounded-xl border border-gray-200 bg-gray-50">
+            <label className="relative inline-flex items-center cursor-pointer mt-0.5">
+              <input
+                type="checkbox"
+                checked={form.sms_auto_credit}
+                onChange={(e) => setForm(f => ({ ...f, sms_auto_credit: e.target.checked }))}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-300 peer-focus:ring-2 peer-focus:ring-[#C9A227] rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-[#0F2A47] after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+            </label>
+            <div>
+              <div className="font-semibold text-sm text-gray-900">
+                {form.sms_auto_credit ? "Auto-Credit is ON" : "Auto-Credit is OFF (Manual Review)"}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {form.sms_auto_credit
+                  ? "When an SMS payment is received with high enough confidence, it will automatically credit the matched student's account. No manual approval needed."
+                  : "All SMS payments will appear in the Payment Alerts queue for manual review and approval by staff before crediting students."
+                }
+              </p>
+            </div>
+          </div>
+
+          {form.sms_auto_credit && (
+            <div className="mt-4 p-4 rounded-xl border border-amber-200 bg-amber-50">
+              <label className="block text-sm font-medium text-amber-900 mb-2">
+                Minimum confidence to auto-credit
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="0.50"
+                  max="1.00"
+                  step="0.05"
+                  value={form.sms_auto_credit_min_confidence}
+                  onChange={(e) => setForm(f => ({ ...f, sms_auto_credit_min_confidence: e.target.value }))}
+                  className="flex-1 accent-[#C9A227]"
+                />
+                <span className="text-sm font-bold text-amber-900 w-12 text-right">
+                  {Math.round(parseFloat(form.sms_auto_credit_min_confidence) * 100)}%
+                </span>
+              </div>
+              <p className="text-xs text-amber-700 mt-2">
+                SMS alerts below this confidence will still require manual review. Higher = safer but more manual work.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Gateway credentials */}
+      <Card>
+        <CardHeader><CardTitle>SMS Gateway Credentials (Optional)</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-500 mb-4">
+            If your SMS gateway (e.g. SMSGate, SMS Forwarder Pro) requires authentication credentials, enter them here.
+            These are stored securely and used by the server to validate incoming webhooks.
+          </p>
+          <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+            <div className="sm:col-span-2">
+              <Input
+                label="Gateway Server Address"
+                value={form.sms_gateway_url}
+                onChange={set("sms_gateway_url")}
+                placeholder="e.g. https://smsgate.example.com or leave blank"
+              />
+            </div>
+            <Input
+              label="Username"
+              value={form.sms_gateway_username}
+              onChange={set("sms_gateway_username")}
+              placeholder="Gateway username"
+            />
+            <Input
+              label="Password"
+              type="password"
+              value={form.sms_gateway_password}
+              onChange={set("sms_gateway_password")}
+              placeholder="Gateway password"
+            />
+            <Input
+              label="Device ID"
+              value={form.sms_gateway_device_id}
+              onChange={set("sms_gateway_device_id")}
+              placeholder="e.g. device-001 or Android device ID"
+            />
+            <Input
+              label="Webhook Secret (optional)"
+              value={form.sms_webhook_secret}
+              onChange={set("sms_webhook_secret")}
+              placeholder="Shared secret to validate incoming webhooks"
+              helpText="If set, the webhook will reject requests without this secret in the X-Webhook-Secret header."
+            />
+            <div className="sm:col-span-2 flex items-center gap-3 pt-2">
+              <Button type="submit" variant="gold" loading={saving}>
+                <Save size={14} /> Save SMS Settings
+              </Button>
+              {saved && <span className="text-green-600 text-sm font-medium">✓ Saved successfully</span>}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Setup instructions */}
+      <Card>
+        <CardHeader><CardTitle>How to Set Up SMS Forwarding</CardTitle></CardHeader>
+        <CardContent className="space-y-3 text-sm text-gray-600">
+          <div className="flex items-start gap-3">
+            <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">1</span>
+            <p>Install an SMS forwarding app on your school's Android phone (e.g. <strong>SMS Forwarder</strong>, <strong>MacroDroid</strong>, or <strong>SMSGate</strong>).</p>
+          </div>
+          <div className="flex items-start gap-3">
+            <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">2</span>
+            <p>Configure it to forward SMS messages as HTTP POST to your webhook URL above.</p>
+          </div>
+          <div className="flex items-start gap-3">
+            <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">3</span>
+            <p>Set the POST body format to JSON: <code className="bg-gray-100 px-1 rounded">{"{"}&quot;sender&quot;: &quot;%sender%&quot;, &quot;message&quot;: &quot;%message%&quot;{"}"}</code></p>
+          </div>
+          <div className="flex items-start gap-3">
+            <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">4</span>
+            <p>When the school receives a payment SMS, it will automatically appear in <strong>Payment Alerts</strong> for review{form.sms_auto_credit ? " or auto-credit if confidence is high enough" : ""}.</p>
+          </div>
         </CardContent>
       </Card>
     </div>
