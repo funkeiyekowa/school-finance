@@ -9,39 +9,38 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!user) redirect("/auth/login");
 
-  // Try to get profile — may not exist yet if trigger is still running
-  const { data: profile } = await supabase
+  // Try to get profile
+  let { data: profile } = await supabase
     .from("profiles").select("*").eq("id", user.id).single();
 
-  // If profile doesn't exist yet, create it manually as a fallback
+  // If no profile yet (trigger didn't fire or failed), create one now
   if (!profile) {
-    const { data: existingProfiles } = await supabase
+    const { data: existingCount } = await supabase
       .from("profiles")
-      .select("id")
-      .limit(1);
+      .select("id", { count: "exact", head: true });
 
-    const isFirstUser = !existingProfiles || existingProfiles.length === 0;
+    const isFirstUser = (existingCount === null || (Array.isArray(existingCount) && existingCount.length === 0));
 
     await supabase.from("profiles").upsert({
       id: user.id,
-      email: user.email!,
+      email: user.email || "",
       full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
       role: isFirstUser ? "admin" : "pending",
       active: isFirstUser,
     });
 
-    // Re-fetch the profile
+    // Re-fetch
     const { data: newProfile } = await supabase
       .from("profiles").select("*").eq("id", user.id).single();
 
-    if (!newProfile) redirect("/auth/login");
-    if (!newProfile.active) redirect("/auth/pending");
+    if (!newProfile) {
+      // Something is seriously wrong — maybe RLS is blocking the insert
+      // Sign the user out and send to login
+      await supabase.auth.signOut();
+      redirect("/auth/login");
+    }
 
-    return (
-      <AuthProvider>
-        <AppShell>{children}</AppShell>
-      </AuthProvider>
-    );
+    profile = newProfile;
   }
 
   if (!profile.active) redirect("/auth/pending");
