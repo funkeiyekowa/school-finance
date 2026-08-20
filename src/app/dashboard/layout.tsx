@@ -9,14 +9,45 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!user || userError) redirect("/auth/login");
 
-  // Fetch profile — the DB trigger should have created it on signup
-  const { data: profile, error: profileError } = await supabase
+  // Fetch profile using maybeSingle to avoid errors when RLS blocks or no row exists
+  const { data: profile } = await supabase
     .from("profiles").select("*").eq("id", user.id).maybeSingle();
 
-  // If profile doesn't exist, the user just signed up and trigger may not have run.
-  // Show pending page which tells them to wait / contact admin.
+  // If no profile found — could be RLS issue or trigger didn't fire
+  // Try to insert one (will succeed if RLS allows, fail silently if not)
   if (!profile) {
-    redirect("/auth/pending");
+    // Check total profiles to determine if first user
+    const { count } = await supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true });
+
+    const isFirst = (count ?? 0) === 0;
+
+    // Try to insert — RLS policy "Service can insert profiles" uses `with check (true)`
+    await supabase.from("profiles").insert({
+      id: user.id,
+      email: user.email || "",
+      full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
+      role: isFirst ? "admin" : "pending",
+      active: isFirst,
+    });
+
+    // Re-fetch
+    const { data: newProfile } = await supabase
+      .from("profiles").select("*").eq("id", user.id).maybeSingle();
+
+    if (!newProfile) {
+      // RLS is blocking everything — redirect to pending with explanation
+      redirect("/auth/pending");
+    }
+
+    if (!newProfile.active) redirect("/auth/pending");
+
+    return (
+      <AuthProvider>
+        <AppShell>{children}</AppShell>
+      </AuthProvider>
+    );
   }
 
   if (!profile.active) redirect("/auth/pending");
