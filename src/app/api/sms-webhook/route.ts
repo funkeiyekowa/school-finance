@@ -7,6 +7,61 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// Extract the payment amount from free-form SMS text.
+//
+// Root cause of the old truncation bug: the previous fallback regex
+// `[0-9]{1,3}(?:,[0-9]{3})*` assumes amounts are always comma-grouped
+// (e.g. "40,003"). For plain digit runs with NO thousands separator
+// (e.g. "40003"), that pattern only ever consumed the first 1-3 digits
+// then gave up looking for a comma — silently truncating 40003 -> 400
+// and 22500 -> 225. This rewrite scans for ALL numeric candidates in
+// the message (comma-grouped OR plain), excludes numbers that are part
+// of an alphanumeric code (STU0003, TXN123456, phone numbers, etc.),
+// and prefers the one sitting next to a currency symbol or keyword.
+function extractAmount(text: string): number | null {
+  // Matches either:
+  //   - proper comma-grouped numbers: 1-3 digits, then 1+ groups of ",XXX", optional 2-decimal
+  //   - plain digit runs (2+ digits, no comma), optional 2-decimal
+  // Lookbehind/lookahead exclude digits directly touching a letter or another digit-adjacent
+  // character, so we don't slice numbers out of codes like "STU0003" or "TXN123456".
+  const numberRegex = /(?<![A-Za-z0-9])([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{2})?|[0-9]{2,}(?:\.[0-9]{2})?)(?![A-Za-z0-9])/g;
+
+  // Excludes numbers that are actually the tail of a code like "STU-0003",
+  // "REF: 893421", "ACC/22500" — hyphens/colons/slashes aren't alphanumeric
+  // so the main regex's lookbehind alone won't catch these.
+  const codePrefixRegex = /(STU|ST|ADM|REF|TXN|ACC|ACCT|ID|NO|ITEM|PIN|SIM|SUB)[\s\-\/:#]*$/i;
+
+  const candidates: { value: number; raw: string; index: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = numberRegex.exec(text)) !== null) {
+    const raw = m[1];
+    const value = parseFloat(raw.replace(/,/g, ""));
+    const before = text.slice(Math.max(0, m.index - 8), m.index);
+    if (!isNaN(value) && value > 0 && !codePrefixRegex.test(before)) {
+      candidates.push({ value, raw, index: m.index });
+    }
+  }
+
+  if (candidates.length === 0) return null;
+
+  // Prefer a candidate that has a currency symbol/keyword shortly before it
+  const currencyKeywordRegex = /(NGN|N|₦|amount|payment|paid|received|credit(?:ed)?)/i;
+  for (const c of candidates) {
+    const windowStart = Math.max(0, c.index - 20);
+    const before = text.slice(windowStart, c.index);
+    if (currencyKeywordRegex.test(before)) {
+      return c.value;
+    }
+  }
+
+  // No currency-adjacent match — exclude likely phone numbers (10+ digit runs)
+  // and pick the candidate with the largest value (fees are usually the
+  // biggest plain number in a payment SMS).
+  const filtered = candidates.filter(c => c.raw.replace(/[.,]/g, "").length < 10);
+  const pool = filtered.length > 0 ? filtered : candidates;
+  return pool.reduce((a, b) => (b.value > a.value ? b : a)).value;
+}
+
 // Parse SMS text to extract payment details
 function parseSMS(text: string): {
   amount: number | null;
@@ -23,25 +78,7 @@ function parseSMS(text: string): {
     currency: "NGN",
   };
 
-  // Extract amount — look for patterns like "5000", "N5,000", "NGN 5000", "₦5000"
-  const amountPatterns = [
-    /(?:NGN|N|₦)\s?([0-9,]+(?:\.[0-9]{2})?)/i,
-    /([0-9,]+(?:\.[0-9]{2})?)\s?(?:NGN|naira)/i,
-    /(?:amount|payment|paid|received|credit)\s*(?:of|:)?\s*(?:NGN|N|₦)?\s?([0-9,]+(?:\.[0-9]{2})?)/i,
-    /([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/,  // fallback: first number
-  ];
-
-  for (const pattern of amountPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      const numStr = match[1].replace(/,/g, "");
-      const num = parseFloat(numStr);
-      if (num > 0 && num < 100000000) {
-        result.amount = num;
-        break;
-      }
-    }
-  }
+  result.amount = extractAmount(text);
 
   // Extract student number — patterns like "STU-0001", "ST001", "Student No: 2026001"
   const studentNoPatterns = [

@@ -304,50 +304,73 @@ function SmsGatewayTab() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [connTestResult, setConnTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [connTesting, setConnTesting] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [unregistering, setUnregistering] = useState(false);
+  const [settingsId, setSettingsId] = useState<string | null>(null);
   const [form, setForm] = useState({
-    sms_gateway_url: "",
+    sms_gateway_provider: "sms-gate.app",
+    sms_gateway_url: "api.sms-gate.app:443",
     sms_gateway_username: "",
     sms_gateway_password: "",
     sms_gateway_device_id: "",
     sms_auto_credit: false,
     sms_auto_credit_min_confidence: "0.80",
     sms_webhook_secret: "",
+    sms_webhook_id: "",
+    sms_webhook_registered_at: "",
   });
 
-  useEffect(() => {
+  const load = useCallback(() => {
     supabase.from("school_settings").select("*").limit(1).single().then(({ data }) => {
       if (data) {
+        setSettingsId(data.id);
         setForm({
-          sms_gateway_url: data.sms_gateway_url || "",
+          sms_gateway_provider: (data as any).sms_gateway_provider || "sms-gate.app",
+          sms_gateway_url: data.sms_gateway_url || "api.sms-gate.app:443",
           sms_gateway_username: data.sms_gateway_username || "",
           sms_gateway_password: data.sms_gateway_password || "",
           sms_gateway_device_id: data.sms_gateway_device_id || "",
           sms_auto_credit: data.sms_auto_credit || false,
           sms_auto_credit_min_confidence: String(data.sms_auto_credit_min_confidence || "0.80"),
           sms_webhook_secret: data.sms_webhook_secret || "",
+          sms_webhook_id: (data as any).sms_webhook_id || "",
+          sms_webhook_registered_at: (data as any).sms_webhook_registered_at || "",
         });
       }
       setLoading(false);
     });
   }, [supabase]);
 
+  useEffect(() => { load(); }, [load]);
+
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const webhookUrl = typeof window !== "undefined"
+    ? `${window.location.origin}/api/sms-webhook`
+    : "/api/sms-webhook";
+
+  async function persist(extra: Partial<typeof form> = {}) {
+    const payload: Record<string, unknown> = {
+      ...form,
+      ...extra,
+      sms_auto_credit_min_confidence: parseFloat(String(extra.sms_auto_credit_min_confidence ?? form.sms_auto_credit_min_confidence)) || 0.80,
+      updated_at: new Date().toISOString(),
+    };
+    if (settingsId) {
+      await supabase.from("school_settings").update(payload).eq("id", settingsId);
+    } else {
+      const { data } = await supabase.from("school_settings").insert({ ...payload, school_name: "My School" }).select("id").single();
+      if (data) setSettingsId(data.id);
+    }
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    const { data: existing } = await supabase.from("school_settings").select("id").limit(1).single();
-    const payload = {
-      ...form,
-      sms_auto_credit_min_confidence: parseFloat(form.sms_auto_credit_min_confidence) || 0.80,
-      updated_at: new Date().toISOString(),
-    };
-    if (existing) {
-      await supabase.from("school_settings").update(payload).eq("id", existing.id);
-    } else {
-      await supabase.from("school_settings").insert({ ...payload, school_name: "My School" });
-    }
+    await persist();
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,
       action: "Update SMS Gateway Settings", details: `Auto-credit: ${form.sms_auto_credit ? "ON" : "OFF"}`,
@@ -355,6 +378,102 @@ function SmsGatewayTab() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
+  }
+
+  async function testConnection() {
+    setConnTesting(true);
+    setConnTestResult(null);
+    try {
+      const res = await fetch("/api/sms-gateway/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serverAddress: form.sms_gateway_url,
+          username: form.sms_gateway_username,
+          password: form.sms_gateway_password,
+        }),
+      });
+      const data = await res.json();
+      setConnTestResult({
+        ok: data.ok,
+        msg: data.ok
+          ? `✓ Connected. ${data.existingWebhooks ?? 0} webhook(s) currently registered on this account.`
+          : `✗ ${data.error}`,
+      });
+    } catch (err: unknown) {
+      setConnTestResult({ ok: false, msg: `✗ ${err instanceof Error ? err.message : "Connection failed"}` });
+    } finally {
+      setConnTesting(false);
+    }
+  }
+
+  async function registerWebhook() {
+    setRegistering(true);
+    setConnTestResult(null);
+    try {
+      const res = await fetch("/api/sms-gateway/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serverAddress: form.sms_gateway_url,
+          username: form.sms_gateway_username,
+          password: form.sms_gateway_password,
+          deviceId: form.sms_gateway_device_id || undefined,
+          webhookUrl,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        const registeredAt = new Date().toISOString();
+        setForm(f => ({ ...f, sms_webhook_id: data.webhookId, sms_webhook_registered_at: registeredAt }));
+        await persist({ sms_webhook_id: data.webhookId, sms_webhook_registered_at: registeredAt });
+        await supabase.from("activity_log").insert({
+          user_email: profile?.email, user_name: profile?.full_name,
+          action: "Register SMS Webhook", details: `Webhook ID: ${data.webhookId}`,
+        });
+        setConnTestResult({ ok: true, msg: "✓ Webhook registered! Your gateway will now forward every incoming SMS to this app." });
+      } else {
+        setConnTestResult({ ok: false, msg: `✗ ${data.error}` });
+      }
+    } catch (err: unknown) {
+      setConnTestResult({ ok: false, msg: `✗ ${err instanceof Error ? err.message : "Registration failed"}` });
+    } finally {
+      setRegistering(false);
+    }
+  }
+
+  async function unregisterWebhook() {
+    if (!form.sms_webhook_id) return;
+    setUnregistering(true);
+    setConnTestResult(null);
+    try {
+      const res = await fetch("/api/sms-gateway/unregister", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serverAddress: form.sms_gateway_url,
+          username: form.sms_gateway_username,
+          password: form.sms_gateway_password,
+          webhookId: form.sms_webhook_id,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setForm(f => ({ ...f, sms_webhook_id: "", sms_webhook_registered_at: "" }));
+        await persist({ sms_webhook_id: "", sms_webhook_registered_at: "" });
+        await supabase.from("activity_log").insert({
+          user_email: profile?.email, user_name: profile?.full_name,
+          action: "Unregister SMS Webhook", details: "Webhook removed",
+        });
+        setConnTestResult({ ok: true, msg: "Webhook removed. SMS will no longer be forwarded to this app." });
+      } else {
+        setConnTestResult({ ok: false, msg: `✗ ${data.error}` });
+      }
+    } catch (err: unknown) {
+      setConnTestResult({ ok: false, msg: `✗ ${err instanceof Error ? err.message : "Removal failed"}` });
+    } finally {
+      setUnregistering(false);
+    }
   }
 
   async function testWebhook() {
@@ -365,34 +484,135 @@ function SmsGatewayTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sender: "+2340000000000",
-          message: "Test payment 1000 for Student Test STU-TEST",
+          message: "Test payment 40003 for Student Test STU-TEST",
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setTestResult({ ok: true, msg: `✓ Webhook working! Parsed: ₦${data.parsed.amount}, Student: ${data.parsed.student_number || data.parsed.student_name || "unknown"}` });
+        setTestResult({ ok: true, msg: `✓ Webhook working! Parsed: ₦${data.parsed.amount?.toLocaleString()}, Student: ${data.parsed.student_number || data.parsed.student_name || "unknown"}` });
       } else {
         setTestResult({ ok: false, msg: `✗ Error: ${data.error}` });
       }
-    } catch (err: any) {
-      setTestResult({ ok: false, msg: `✗ Connection failed: ${err?.message}` });
+    } catch (err: unknown) {
+      setTestResult({ ok: false, msg: `✗ Connection failed: ${err instanceof Error ? err.message : ""}` });
     }
   }
 
   if (loading) return <LoadingSpinner />;
 
-  const webhookUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/api/sms-webhook`
-    : "/api/sms-webhook";
+  const isConnected = !!form.sms_webhook_id;
 
   return (
     <div className="space-y-6">
+      {/* Connection status banner */}
+      <div className={cn(
+        "flex items-center gap-3 p-4 rounded-xl border",
+        isConnected ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"
+      )}>
+        <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", isConnected ? "bg-green-500" : "bg-gray-400")} />
+        <div className="flex-1">
+          <div className={cn("text-sm font-semibold", isConnected ? "text-green-800" : "text-gray-600")}>
+            {isConnected ? "Connected — SMS Gate is forwarding messages to this app" : "Not connected"}
+          </div>
+          {isConnected && form.sms_webhook_registered_at && (
+            <div className="text-xs text-green-600 mt-0.5">
+              Registered {new Date(form.sms_webhook_registered_at).toLocaleString("en-NG")} · Webhook ID: <span className="font-mono">{form.sms_webhook_id}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Gateway connection form — fully self-service, nothing hardcoded */}
+      <Card>
+        <CardHeader><CardTitle>Connect Your SMS Gateway</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-500 mb-4">
+            Enter the credentials shown in your SMS Gateway Android app (Home tab → Cloud server section), then test the
+            connection and register the webhook. Every school uses their own account — nothing here is shared or hardcoded.
+          </p>
+          <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+            <div className="sm:col-span-2">
+              <Select
+                label="Provider"
+                value={form.sms_gateway_provider}
+                onChange={(e) => setForm(f => ({ ...f, sms_gateway_provider: e.target.value }))}
+                options={[{ value: "sms-gate.app", label: "SMS Gate (sms-gate.app)" }, { value: "custom", label: "Other / Custom gateway" }]}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Input
+                label="Server Address"
+                value={form.sms_gateway_url}
+                onChange={set("sms_gateway_url")}
+                placeholder="e.g. api.sms-gate.app:443"
+                helpText="From the app's Cloud server or Local server section."
+              />
+            </div>
+            <Input
+              label="Username"
+              value={form.sms_gateway_username}
+              onChange={set("sms_gateway_username")}
+              placeholder="Gateway username"
+            />
+            <Input
+              label="Password"
+              type="password"
+              value={form.sms_gateway_password}
+              onChange={set("sms_gateway_password")}
+              placeholder="Gateway password"
+            />
+            <Input
+              label="Device ID (optional)"
+              value={form.sms_gateway_device_id}
+              onChange={set("sms_gateway_device_id")}
+              placeholder="Leave blank to apply to all devices on the account"
+            />
+            <Input
+              label="Webhook Secret (optional)"
+              value={form.sms_webhook_secret}
+              onChange={set("sms_webhook_secret")}
+              placeholder="Shared secret to validate incoming webhooks"
+            />
+
+            <div className="sm:col-span-2 flex flex-wrap items-center gap-3 pt-2">
+              <Button type="submit" variant="secondary" loading={saving}>
+                <Save size={14} /> Save Credentials
+              </Button>
+              <Button type="button" variant="secondary" loading={connTesting} onClick={testConnection}
+                disabled={!form.sms_gateway_url || !form.sms_gateway_username || !form.sms_gateway_password}>
+                Test Connection
+              </Button>
+              {!isConnected ? (
+                <Button type="button" variant="gold" loading={registering} onClick={registerWebhook}
+                  disabled={!form.sms_gateway_url || !form.sms_gateway_username || !form.sms_gateway_password}>
+                  Register Webhook
+                </Button>
+              ) : (
+                <Button type="button" variant="danger" loading={unregistering} onClick={unregisterWebhook}>
+                  Unregister Webhook
+                </Button>
+              )}
+              {saved && <span className="text-green-600 text-sm font-medium">✓ Saved</span>}
+            </div>
+          </form>
+
+          {connTestResult && (
+            <div className={cn(
+              "mt-3 text-sm font-medium px-3 py-2 rounded-lg",
+              connTestResult.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+            )}>
+              {connTestResult.msg}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Webhook URL display */}
       <Card>
         <CardHeader><CardTitle>Your Webhook URL</CardTitle></CardHeader>
         <CardContent>
           <p className="text-sm text-gray-600 mb-3">
-            Configure your Android SMS forwarding app to POST messages to this URL:
+            This is the URL registered above. If you manage another gateway manually, point it here directly:
           </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 bg-gray-100 border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-mono text-[#0F2A47] select-all">
@@ -410,9 +630,6 @@ function SmsGatewayTab() {
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-400 mt-2">
-            The webhook accepts POST with JSON body: {"{"} &quot;sender&quot;: &quot;+234...&quot;, &quot;message&quot;: &quot;SMS text&quot; {"}"}
-          </p>
         </CardContent>
       </Card>
 
@@ -425,7 +642,11 @@ function SmsGatewayTab() {
               <input
                 type="checkbox"
                 checked={form.sms_auto_credit}
-                onChange={(e) => setForm(f => ({ ...f, sms_auto_credit: e.target.checked }))}
+                onChange={async (e) => {
+                  const checked = e.target.checked;
+                  setForm(f => ({ ...f, sms_auto_credit: checked }));
+                  await persist({ sms_auto_credit: checked } as any);
+                }}
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-gray-300 peer-focus:ring-2 peer-focus:ring-[#C9A227] rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-[#0F2A47] after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
@@ -455,7 +676,11 @@ function SmsGatewayTab() {
                   max="1.00"
                   step="0.05"
                   value={form.sms_auto_credit_min_confidence}
-                  onChange={(e) => setForm(f => ({ ...f, sms_auto_credit_min_confidence: e.target.value }))}
+                  onChange={async (e) => {
+                    const v = e.target.value;
+                    setForm(f => ({ ...f, sms_auto_credit_min_confidence: v }));
+                    await persist({ sms_auto_credit_min_confidence: v } as any);
+                  }}
                   className="flex-1 accent-[#C9A227]"
                 />
                 <span className="text-sm font-bold text-amber-900 w-12 text-right">
@@ -470,78 +695,25 @@ function SmsGatewayTab() {
         </CardContent>
       </Card>
 
-      {/* Gateway credentials */}
-      <Card>
-        <CardHeader><CardTitle>SMS Gateway Credentials (Optional)</CardTitle></CardHeader>
-        <CardContent>
-          <p className="text-sm text-gray-500 mb-4">
-            If your SMS gateway (e.g. SMSGate, SMS Forwarder Pro) requires authentication credentials, enter them here.
-            These are stored securely and used by the server to validate incoming webhooks.
-          </p>
-          <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
-            <div className="sm:col-span-2">
-              <Input
-                label="Gateway Server Address"
-                value={form.sms_gateway_url}
-                onChange={set("sms_gateway_url")}
-                placeholder="e.g. https://smsgate.example.com or leave blank"
-              />
-            </div>
-            <Input
-              label="Username"
-              value={form.sms_gateway_username}
-              onChange={set("sms_gateway_username")}
-              placeholder="Gateway username"
-            />
-            <Input
-              label="Password"
-              type="password"
-              value={form.sms_gateway_password}
-              onChange={set("sms_gateway_password")}
-              placeholder="Gateway password"
-            />
-            <Input
-              label="Device ID"
-              value={form.sms_gateway_device_id}
-              onChange={set("sms_gateway_device_id")}
-              placeholder="e.g. device-001 or Android device ID"
-            />
-            <Input
-              label="Webhook Secret (optional)"
-              value={form.sms_webhook_secret}
-              onChange={set("sms_webhook_secret")}
-              placeholder="Shared secret to validate incoming webhooks"
-              helpText="If set, the webhook will reject requests without this secret in the X-Webhook-Secret header."
-            />
-            <div className="sm:col-span-2 flex items-center gap-3 pt-2">
-              <Button type="submit" variant="gold" loading={saving}>
-                <Save size={14} /> Save SMS Settings
-              </Button>
-              {saved && <span className="text-green-600 text-sm font-medium">✓ Saved successfully</span>}
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-
       {/* Setup instructions */}
       <Card>
-        <CardHeader><CardTitle>How to Set Up SMS Forwarding</CardTitle></CardHeader>
+        <CardHeader><CardTitle>How It Works</CardTitle></CardHeader>
         <CardContent className="space-y-3 text-sm text-gray-600">
           <div className="flex items-start gap-3">
             <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">1</span>
-            <p>Install an SMS forwarding app on your school's Android phone (e.g. <strong>SMS Forwarder</strong>, <strong>MacroDroid</strong>, or <strong>SMSGate</strong>).</p>
+            <p>Open the SMS Gateway app on your school's Android phone and copy the Cloud server (or Local server) credentials into the form above.</p>
           </div>
           <div className="flex items-start gap-3">
             <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">2</span>
-            <p>Configure it to forward SMS messages as HTTP POST to your webhook URL above.</p>
+            <p>Click <strong>Test Connection</strong> to confirm the credentials work, then <strong>Register Webhook</strong>.</p>
           </div>
           <div className="flex items-start gap-3">
             <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">3</span>
-            <p>Set the POST body format to JSON: <code className="bg-gray-100 px-1 rounded">{"{"}&quot;sender&quot;: &quot;%sender%&quot;, &quot;message&quot;: &quot;%message%&quot;{"}"}</code></p>
+            <p>From then on, every SMS the phone receives is forwarded here automatically — no manual re-entry needed.</p>
           </div>
           <div className="flex items-start gap-3">
             <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">4</span>
-            <p>When the school receives a payment SMS, it will automatically appear in <strong>Payment Alerts</strong> for review{form.sms_auto_credit ? " or auto-credit if confidence is high enough" : ""}.</p>
+            <p>Payments appear in <strong>Payment Alerts</strong> for review{form.sms_auto_credit ? ", or auto-credit immediately if confidence is high enough" : ""}.</p>
           </div>
         </CardContent>
       </Card>
