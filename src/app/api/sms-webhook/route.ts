@@ -63,12 +63,16 @@ function extractAmount(text: string): number | null {
 }
 
 // Parse SMS text to extract payment details
+// Supports two formats:
+// 1. Bank alert: "CR:N42,000.00\nDesc:LOVETH OMOS RE/FAVOR VICTOR\nDT:05/MAY/26..."
+// 2. Simple: "S019 4900" or "Payment 5000 for Student Adeji ST001"
 function parseSMS(text: string): {
   amount: number | null;
   studentNumber: string | null;
   studentName: string | null;
   reference: string | null;
   currency: string;
+  isDebit: boolean;
 } {
   const result = {
     amount: null as number | null,
@@ -76,14 +80,58 @@ function parseSMS(text: string): {
     studentName: null as string | null,
     reference: null as string | null,
     currency: "NGN",
+    isDebit: false,
   };
 
+  // ---------- DETECT DEBIT vs CREDIT ----------
+  // If message contains "DR:" it's a debit — flag it to skip
+  if (/\bDR\s*[:]\s*N/i.test(text)) {
+    result.isDebit = true;
+    return result; // don't bother parsing further
+  }
+
+  // ---------- BANK ALERT FORMAT ----------
+  // Try to parse "CR:N42,000.00" format first
+  const crMatch = text.match(/CR\s*[:]\s*N([0-9,]+(?:\.[0-9]{2})?)/i);
+  if (crMatch) {
+    const amt = parseFloat(crMatch[1].replace(/,/g, ""));
+    if (amt > 0) result.amount = amt;
+
+    // Extract name from "Desc:" line
+    const descMatch = text.match(/Desc\s*[:]\s*(.+?)(?:\n|DT:|$)/i);
+    if (descMatch) {
+      let desc = descMatch[1].trim();
+      // Remove common prefixes like "COB TRF TO", "NIP/", slashes, account refs
+      desc = desc.replace(/^(COB\s+TRF\s+(TO|FROM)|NIP\s*(CR|DR)?|TRF\s+(FROM|TO)|TRANSFER\s+(FROM|TO))\s*/i, "");
+      desc = desc.replace(/\*{2,}\d+/g, "").trim(); // remove **3387 style refs
+      desc = desc.replace(/\s+NOTE\s+.*$/i, "").trim(); // remove "NOTE BOOK PRODUC" etc after name
+      // What remains should be a name — could have "/" separating sender/receiver
+      // Take the first meaningful name segment
+      const nameParts = desc.split(/[\/\\]/);
+      const nameCandidate = nameParts[0].trim();
+      if (nameCandidate.length >= 3) {
+        result.studentName = nameCandidate
+          .split(/\s+/)
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(" ");
+      }
+    }
+
+    // Try to find a student code in the Desc or message body
+    const codeInMsg = text.match(/\b(S[0-9]{3})\b/i);
+    if (codeInMsg) result.studentNumber = codeInMsg[1].toUpperCase();
+
+    return result;
+  }
+
+  // ---------- SIMPLE FORMAT ----------
+  // Fallback: use the generic amount extractor
   result.amount = extractAmount(text);
 
-  // Extract student number — patterns like "S019", "STU-0001", "ST001", "Student No: 2026001"
+  // Extract student number — patterns like "S019", "STU-0001", "ST001"
   const studentNoPatterns = [
-    /\b(S[0-9]{3})\b/i,                              // S019, S583 — current format
-    /(?:STU|ST)[-\s]?([0-9]{3,6})/i,                 // STU-0001, ST001
+    /\b(S[0-9]{3})\b/i,
+    /(?:STU|ST)[-\s]?([0-9]{3,6})/i,
     /(?:student\s*(?:no|number|id|code))[:\s]*([A-Z0-9\-\/]+)/i,
     /(?:admission\s*(?:no|number))[:\s]*([A-Z0-9\-\/]+)/i,
   ];
@@ -91,7 +139,6 @@ function parseSMS(text: string): {
   for (const pattern of studentNoPatterns) {
     const match = text.match(pattern);
     if (match) {
-      // For the S### pattern, the full match IS the code
       result.studentNumber = match[1] || match[0];
       break;
     }
@@ -249,6 +296,16 @@ export async function POST(request: Request) {
 
     // Parse the SMS
     const parsed = parseSMS(messageText);
+
+    // Skip debit messages entirely — only process credits
+    if (parsed.isDebit) {
+      return NextResponse.json({
+        success: false,
+        skipped: true,
+        reason: "Debit (DR) message — only credit (CR) messages are processed.",
+      });
+    }
+
     const confidence = calculateConfidence(parsed);
 
     // ---------- STUDENT MATCHING ----------
