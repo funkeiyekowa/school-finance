@@ -265,16 +265,25 @@ export async function POST(request: Request) {
     const willAutoCredit = autoCreditEnabled && meetsThreshold && !!matchedStudentId && !!parsed.amount;
 
     // ---------- DUPLICATE CHECK ----------
+    // Use student number + amount (NOT sender number, since all bank
+    // alerts come from the same sender). A duplicate is: same student
+    // code + same amount within 5 minutes.
     let isDuplicate = false;
     const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    if (sender && parsed.amount) {
-      const { data: dupeCheck } = await supabase
+    if (parsed.amount && (parsed.studentNumber || matchedStudentId)) {
+      let query = supabase
         .from("sms_inbox")
         .select("id")
-        .eq("sender", sender)
         .eq("parsed_amount", parsed.amount)
-        .gte("created_at", fiveMinAgo)
-        .limit(1);
+        .gte("created_at", fiveMinAgo);
+
+      if (parsed.studentNumber) {
+        query = query.eq("parsed_student_number", parsed.studentNumber);
+      } else if (matchedStudentId) {
+        query = query.eq("matched_student_id", matchedStudentId);
+      }
+
+      const { data: dupeCheck } = await query.limit(1);
       if (dupeCheck && dupeCheck.length > 0) {
         isDuplicate = true;
       }
@@ -286,7 +295,7 @@ export async function POST(request: Request) {
 
     if (isDuplicate) {
       matchStatus = "duplicate";
-      matchReason = `Duplicate — same sender and same amount (₦${parsed.amount?.toLocaleString()}) received within 5 minutes of a previous message${matchedStudentName ? ` for "${matchedStudentName}"` : ""}. Payment NOT posted. Likely a repeated bank notification.`;
+      matchReason = `Duplicate — same student (${parsed.studentNumber || matchedStudentName}) and same amount (₦${parsed.amount?.toLocaleString()}) received within 5 minutes of a previous message. Payment NOT posted. Likely a repeated bank notification.`;
 
     } else if (willAutoCredit) {
       // Will be auto-posted — status set to "matched" after insert
