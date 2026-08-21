@@ -73,6 +73,8 @@ function parseSMS(text: string): {
   reference: string | null;
   currency: string;
   isDebit: boolean;
+  payeeName: string | null;
+  transactionDate: string | null;
 } {
   const result = {
     amount: null as number | null,
