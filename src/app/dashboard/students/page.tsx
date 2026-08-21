@@ -11,6 +11,8 @@ import { Input, Select } from "@/components/ui/Input";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { ImportStudentsModal } from "@/components/students/ImportStudentsModal";
+import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { cn } from "@/lib/utils";
 import { GraduationCap, Plus, Search, ChevronRight, Upload, Trash2, Check, X, Pencil } from "lucide-react";
 import Link from "next/link";
@@ -33,7 +35,7 @@ const EDITABLE_COLUMNS: { key: keyof Student; label: string; type: "text" | "sel
 ];
 
 export default function StudentsPage() {
-  const { canEdit, isAdmin, profile } = useAuth();
+  const { canEdit, isAdmin, isDeveloper, profile } = useAuth();
   const supabase = createClient();
   const [students, setStudents] = useState<StudentWithBalance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,6 +98,20 @@ export default function StudentsPage() {
     unpaid: students.filter(s => s.payment_status === "unpaid").length,
     outstanding: students.reduce((sum, s) => sum + Math.max(0, s.balance), 0),
   };
+
+  // Bulk delete (developer only)
+  const { selectedIds, toggle: toggleBulkSelect, selectAll: bulkSelectAll, clearSelection: bulkClear } = useBulkSelect(filtered.map(s => s.id));
+
+  async function bulkDeleteSelected(ids: string[]) {
+    for (const id of ids) { await supabase.from("students").delete().eq("id", id); }
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete Students", details: `${ids.length} students deleted` });
+    load();
+  }
+  async function bulkDeleteAll() {
+    await supabase.from("students").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Purge All Students", details: "All students deleted" });
+    load();
+  }
 
   function startEdit(studentId: string, key: string, currentValue: string) {
     if (!canEdit) return;
@@ -206,11 +222,16 @@ export default function StudentsPage() {
       </div>
 
       {loading ? <LoadingSpinner /> : (
+        <>
+          <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="students"
+            onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
+            onSelectAll={bulkSelectAll} onClearSelection={bulkClear} isDeveloper={isDeveloper} />
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[#0F2A47] text-white">
+                  {isDeveloper && <th className="w-8 px-2 py-3" />}
                   <th className="text-left px-4 py-3 text-xs font-semibold">Student</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Grade</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Guardian</th>
@@ -223,12 +244,13 @@ export default function StudentsPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={8}><EmptyState message="No students found." icon={<GraduationCap size={32} />} /></td></tr>
+                  <tr><td colSpan={isDeveloper ? 9 : 8}><EmptyState message="No students found." icon={<GraduationCap size={32} />} /></td></tr>
                 ) : (
                   filtered.map(s => {
                     const isSaving = savingId === s.id;
                     return (
                       <tr key={s.id} className={cn("border-b border-gray-50 hover:bg-gray-50 transition-colors group", isSaving && "opacity-50")}>
+                        <RowCheckbox id={s.id} selectedIds={selectedIds} onToggle={toggleBulkSelect} isDeveloper={isDeveloper} />
                         {/* Name — editable */}
                         <EditableCell
                           value={s.full_name}
@@ -343,6 +365,7 @@ export default function StudentsPage() {
             </table>
           </div>
         </Card>
+        </>
       )}
 
       {showAdd && <AddStudentModal onClose={() => { setShowAdd(false); load(); }} />}
