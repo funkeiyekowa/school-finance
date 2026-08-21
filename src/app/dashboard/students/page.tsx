@@ -147,6 +147,42 @@ export default function StudentsPage() {
     setEditValue("");
   }
 
+  // Special save for name fields — also recalculates full_name
+  async function saveNameField() {
+    if (!editingCell) return;
+    const { id, key } = editingCell;
+    setSavingId(id);
+
+    // Get current student to recalculate full_name
+    const student = students.find(s => s.id === id);
+    const currentLast = (student as any)?.last_name || "";
+    const currentFirst = (student as any)?.first_name || "";
+    const currentMiddle = (student as any)?.middle_name || "";
+
+    // Apply the edit to the right field
+    const newLast = key === "last_name" ? editValue : currentLast;
+    const newFirst = key === "first_name" ? editValue : currentFirst;
+    const newMiddle = key === "middle_name" ? editValue : currentMiddle;
+    const newFullName = [newLast, newFirst, newMiddle].filter(Boolean).join(" ");
+
+    const { error } = await supabase
+      .from("students")
+      .update({
+        [key]: editValue || null,
+        full_name: newFullName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+
+    if (!error) {
+      setStudents(prev => prev.map(s => s.id === id ? { ...s, [key]: editValue, full_name: newFullName } : s));
+    }
+
+    setSavingId(null);
+    setEditingCell(null);
+    setEditValue("");
+  }
+
   async function confirmDelete() {
     if (!deleteTarget) return;
     setSavingId(deleteTarget.id);
@@ -232,10 +268,12 @@ export default function StudentsPage() {
               <thead>
                 <tr className="bg-[#0F2A47] text-white">
                   {isDeveloper && <th className="w-8 px-2 py-3" />}
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Student</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold">Student ID</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold">Last Name</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold">First Name</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold">Middle</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Grade</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Guardian</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Phone</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold">Balance</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Enrolled</th>
@@ -244,31 +282,58 @@ export default function StudentsPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={isDeveloper ? 9 : 8}><EmptyState message="No students found." icon={<GraduationCap size={32} />} /></td></tr>
+                  <tr><td colSpan={isDeveloper ? 11 : 10}><EmptyState message="No students found." icon={<GraduationCap size={32} />} /></td></tr>
                 ) : (
                   filtered.map(s => {
                     const isSaving = savingId === s.id;
                     return (
                       <tr key={s.id} className={cn("border-b border-gray-50 hover:bg-gray-50 transition-colors group", isSaving && "opacity-50")}>
                         <RowCheckbox id={s.id} selectedIds={selectedIds} onToggle={toggleBulkSelect} isDeveloper={isDeveloper} />
-                        {/* Name — editable */}
+                        {/* Student ID — read only */}
+                        <td className="px-4 py-3">
+                          <div className="text-xs text-gray-500 font-mono font-semibold">{s.student_code}</div>
+                        </td>
+                        {/* Last Name — editable */}
                         <EditableCell
-                          value={s.full_name}
-                          isEditing={editingCell?.id === s.id && editingCell.key === "full_name"}
+                          value={(s as any).last_name || ""}
+                          isEditing={editingCell?.id === s.id && editingCell.key === "last_name"}
                           canEdit={canEdit}
                           editValue={editValue}
                           setEditValue={setEditValue}
-                          onStartEdit={() => startEdit(s.id, "full_name", s.full_name)}
-                          onSave={saveEdit}
+                          onStartEdit={() => startEdit(s.id, "last_name", (s as any).last_name || "")}
+                          onSave={saveNameField}
                           onCancel={cancelEdit}
                           onKeyDown={handleKeyDown}
-                          inputRef={inputRef}
-                          renderDisplay={() => (
-                            <>
-                              <div className="font-medium text-gray-900">{s.full_name}</div>
-                              <div className="text-xs text-gray-400 font-mono">{s.student_code}</div>
-                            </>
-                          )}
+                          inputRef={editingCell?.key === "last_name" ? inputRef : undefined}
+                          renderDisplay={() => <span className="font-medium text-gray-900">{(s as any).last_name || "—"}</span>}
+                        />
+                        {/* First Name — editable */}
+                        <EditableCell
+                          value={(s as any).first_name || ""}
+                          isEditing={editingCell?.id === s.id && editingCell.key === "first_name"}
+                          canEdit={canEdit}
+                          editValue={editValue}
+                          setEditValue={setEditValue}
+                          onStartEdit={() => startEdit(s.id, "first_name", (s as any).first_name || "")}
+                          onSave={saveNameField}
+                          onCancel={cancelEdit}
+                          onKeyDown={handleKeyDown}
+                          inputRef={editingCell?.key === "first_name" ? inputRef : undefined}
+                          renderDisplay={() => <span className="text-gray-800">{(s as any).first_name || "—"}</span>}
+                        />
+                        {/* Middle Name — editable */}
+                        <EditableCell
+                          value={(s as any).middle_name || ""}
+                          isEditing={editingCell?.id === s.id && editingCell.key === "middle_name"}
+                          canEdit={canEdit}
+                          editValue={editValue}
+                          setEditValue={setEditValue}
+                          onStartEdit={() => startEdit(s.id, "middle_name", (s as any).middle_name || "")}
+                          onSave={saveNameField}
+                          onCancel={cancelEdit}
+                          onKeyDown={handleKeyDown}
+                          inputRef={editingCell?.key === "middle_name" ? inputRef : undefined}
+                          renderDisplay={() => <span className="text-gray-600">{(s as any).middle_name || "—"}</span>}
                         />
                         {/* Grade — editable */}
                         <EditableCell
@@ -297,20 +362,6 @@ export default function StudentsPage() {
                           onKeyDown={handleKeyDown}
                           inputRef={editingCell?.key === "guardian_name" ? inputRef : undefined}
                           renderDisplay={() => <span className="text-gray-600">{s.guardian_name || "—"}</span>}
-                        />
-                        {/* Phone — editable */}
-                        <EditableCell
-                          value={s.guardian_phone || ""}
-                          isEditing={editingCell?.id === s.id && editingCell.key === "guardian_phone"}
-                          canEdit={canEdit}
-                          editValue={editValue}
-                          setEditValue={setEditValue}
-                          onStartEdit={() => startEdit(s.id, "guardian_phone", s.guardian_phone || "")}
-                          onSave={saveEdit}
-                          onCancel={cancelEdit}
-                          onKeyDown={handleKeyDown}
-                          inputRef={editingCell?.key === "guardian_phone" ? inputRef : undefined}
-                          renderDisplay={() => <span className="text-gray-600">{s.guardian_phone || "—"}</span>}
                         />
                         <td className="px-4 py-3 text-right font-bold">{fmtMoney(Math.max(0, s.balance))}</td>
                         <td className="px-4 py-3"><StatusBadge status={s.payment_status} /></td>
