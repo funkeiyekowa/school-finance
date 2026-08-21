@@ -13,7 +13,10 @@ import { Upload, Download, AlertTriangle, CheckCircle2, X } from "lucide-react";
 // so "Full Name", "full_name", "FULL NAME" all resolve the same way.
 const FIELD_DEFS: { key: string; label: string; required: boolean; aliases: string[] }[] = [
   { key: "student_code", label: "Student ID", required: false, aliases: ["student id", "student code", "id", "code", "admission no", "admission number"] },
-  { key: "full_name", label: "Full Name", required: true, aliases: ["full name", "name", "student name"] },
+  { key: "last_name", label: "Last Name", required: true, aliases: ["last name", "lastname", "surname", "family name"] },
+  { key: "first_name", label: "First Name", required: true, aliases: ["first name", "firstname", "given name"] },
+  { key: "middle_name", label: "Middle Name", required: false, aliases: ["middle name", "middlename", "other name", "other names"] },
+  { key: "full_name", label: "Full Name", required: false, aliases: ["full name", "name", "student name"] },
   { key: "grade", label: "Grade / Class", required: false, aliases: ["grade", "class", "grade/class", "grade / class"] },
   { key: "academic_year", label: "Academic Year", required: false, aliases: ["academic year", "year", "session"] },
   { key: "gender", label: "Gender", required: false, aliases: ["gender", "sex"] },
@@ -130,7 +133,21 @@ export function ImportStudentsModal({ onClose }: { onClose: () => void }) {
       });
 
       const errors: string[] = [];
-      if (!data.full_name) errors.push("Missing full name");
+      if (!data.last_name && !data.full_name) errors.push("Missing last name");
+      if (!data.first_name && !data.full_name) errors.push("Missing first name");
+
+      // If they have full_name but not last/first, split it
+      if (data.full_name && !data.last_name) {
+        const parts = data.full_name.trim().split(/\s+/);
+        data.last_name = parts[0] || "";
+        data.first_name = parts[1] || "";
+        data.middle_name = parts.slice(2).join(" ") || "";
+      }
+
+      // Generate full_name from parts
+      if (data.last_name) {
+        data.full_name = [data.last_name, data.first_name, data.middle_name].filter(Boolean).join(" ");
+      }
 
       return { rowIndex: i + 2, data, errors }; // +2: header row + 1-index
     });
@@ -182,7 +199,10 @@ export function ImportStudentsModal({ onClose }: { onClose: () => void }) {
 
       const payload = {
         student_code: code,
-        full_name: row.data.full_name,
+        full_name: row.data.full_name || [row.data.last_name, row.data.first_name, row.data.middle_name].filter(Boolean).join(" "),
+        last_name: row.data.last_name || null,
+        first_name: row.data.first_name || null,
+        middle_name: row.data.middle_name || null,
         grade: row.data.grade || null,
         academic_year: row.data.academic_year || null,
         gender: row.data.gender || null,

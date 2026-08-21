@@ -445,10 +445,14 @@ function AddStudentModal({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({
-    student_code: "", full_name: "", grade: "", academic_year: "",
+    student_code: "", last_name: "", first_name: "", middle_name: "",
+    grade: "", academic_year: "",
     gender: "", date_of_birth: "", admission_date: today(),
     guardian_name: "", guardian_phone: "", guardian_email: "", address: "", notes: "",
   });
+
+  // Auto-generated full name (read-only, never edited directly)
+  const fullName = [form.last_name, form.first_name, form.middle_name].filter(Boolean).join(" ");
 
   useEffect(() => {
     supabase.from("students").select("student_code").then(({ data }) => {
@@ -466,18 +470,33 @@ function AddStudentModal({ onClose }: { onClose: () => void }) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.full_name.trim()) { setError("Full name is required."); return; }
+    if (!form.last_name.trim()) { setError("Last name is required."); return; }
+    if (!form.first_name.trim()) { setError("First name is required."); return; }
     setLoading(true);
     setError("");
     const { error } = await supabase.from("students").insert({
-      ...form,
+      student_code: form.student_code,
+      full_name: fullName,
+      last_name: form.last_name,
+      first_name: form.first_name,
+      middle_name: form.middle_name || null,
+      grade: form.grade || null,
+      academic_year: form.academic_year || null,
+      gender: form.gender || null,
+      date_of_birth: form.date_of_birth || null,
+      admission_date: form.admission_date || null,
+      address: form.address || null,
+      guardian_name: form.guardian_name || null,
+      guardian_phone: form.guardian_phone || null,
+      guardian_email: form.guardian_email || null,
+      notes: form.notes || null,
       status: "active",
     });
     if (error) { setError(error.message); setLoading(false); }
     else {
       await supabase.from("activity_log").insert({
         user_email: profile?.email, user_name: profile?.full_name,
-        action: "Add Student", details: `${form.student_code} — ${form.full_name}`,
+        action: "Add Student", details: `${form.student_code} — ${fullName}`,
       });
       onClose();
     }
@@ -486,9 +505,19 @@ function AddStudentModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} title="Add New Student" size="lg">
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
-      <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Input label="Student ID" value={form.student_code} onChange={set("student_code")} required />
-        <Input label="Full Name" value={form.full_name} onChange={set("full_name")} required />
+      <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="sm:col-span-3">
+          <Input label="Student ID" value={form.student_code} onChange={set("student_code")} required />
+        </div>
+        <Input label="Last Name *" value={form.last_name} onChange={set("last_name")} required placeholder="e.g. Okafor" />
+        <Input label="First Name *" value={form.first_name} onChange={set("first_name")} required placeholder="e.g. Ada" />
+        <Input label="Middle Name" value={form.middle_name} onChange={set("middle_name")} placeholder="Optional" />
+        <div className="sm:col-span-3">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Full Name (auto-generated)</label>
+          <div className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700">
+            {fullName || <span className="text-gray-400">Enter last name and first name above</span>}
+          </div>
+        </div>
         <Input label="Class / Grade" value={form.grade} onChange={set("grade")} placeholder="e.g. Grade 5 / SS2" />
         <Input label="Academic Year" value={form.academic_year} onChange={set("academic_year")} placeholder="e.g. 2025/2026" />
         <Select label="Gender" value={form.gender} onChange={set("gender")}
@@ -496,15 +525,13 @@ function AddStudentModal({ onClose }: { onClose: () => void }) {
           placeholder="Select gender" />
         <Input label="Date of Birth" type="date" value={form.date_of_birth} onChange={set("date_of_birth")} />
         <Input label="Admission Date" type="date" value={form.admission_date} onChange={set("admission_date")} />
-        <div className="sm:col-span-2">
+        <div className="sm:col-span-3">
           <Input label="Address" value={form.address} onChange={set("address")} />
         </div>
         <Input label="Guardian Name" value={form.guardian_name} onChange={set("guardian_name")} />
         <Input label="Guardian Phone" value={form.guardian_phone} onChange={set("guardian_phone")} placeholder="+234 800 000 0000" />
-        <div className="sm:col-span-2">
-          <Input label="Guardian Email" type="email" value={form.guardian_email} onChange={set("guardian_email")} />
-        </div>
-        <div className="sm:col-span-2 flex justify-end gap-3 pt-2">
+        <Input label="Guardian Email" type="email" value={form.guardian_email} onChange={set("guardian_email")} />
+        <div className="sm:col-span-3 flex justify-end gap-3 pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button type="submit" loading={loading} variant="gold">Add Student</Button>
         </div>
