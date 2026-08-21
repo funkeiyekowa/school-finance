@@ -222,13 +222,23 @@ function AlertDetailModal({
 }: { alert: SmsInbox; students: Student[]; fees: FeeSchedule[]; onClose: () => void }) {
   const supabase = createClient();
   const { profile } = useAuth();
-  const [action, setAction] = useState<"view" | "approve" | "reject" | "duplicate" | "edit">("view");
+  const [action, setAction] = useState<"view" | "approve" | "reject" | "duplicate">("view");
   const [reviewNote, setReviewNote] = useState("");
-  const [selectedStudentId, setSelectedStudentId] = useState(alert.matched_student_id || "");
-  const [selectedFeeId, setSelectedFeeId] = useState(alert.matched_fee_id || "");
   const [editAmount, setEditAmount] = useState(String(alert.parsed_amount || ""));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [vendors, setVendors] = useState<{ id: string; name: string; vendor_code: string; category: string | null }[]>([]);
+
+  // Detect type
+  const isExpense = alert.parser_version === "v3-expense";
+
+  // For income: student selection
+  const [selectedStudentId, setSelectedStudentId] = useState(alert.matched_student_id || "");
+  const [selectedFeeId, setSelectedFeeId] = useState(alert.matched_fee_id || "");
+
+  // For expense: vendor selection + category
+  const [selectedVendorId, setSelectedVendorId] = useState("");
+  const [expenseCategory, setExpenseCategory] = useState("Other Expense");
 
   const selectedStudent = students.find(s => s.id === selectedStudentId);
   const studentOptions = students.map(s => ({ value: s.id, label: s.full_name, sublabel: s.student_code }));
@@ -238,83 +248,130 @@ function AlertDetailModal({
       .map(f => ({ value: f.id, label: f.name, sublabel: `${fmtMoney(f.amount)} · ${f.category}` })),
   ];
 
+  const vendorOptions = vendors.map(v => ({ value: v.id, label: v.name, sublabel: v.vendor_code + (v.category ? ` · ${v.category}` : "") }));
+  const expenseCategoryOptions = [
+    "Rent", "Utilities", "Salaries & Wages", "Teaching Supplies & Materials",
+    "Maintenance & Repairs", "Transport", "Textbook Purchases",
+    "Administrative & Office", "Insurance", "Other Expense",
+  ].map(c => ({ value: c, label: c }));
+
+  // Load vendors when action is approve and this is an expense
+  useEffect(() => {
+    if (isExpense && action === "approve") {
+      supabase.from("vendors").select("id, name, vendor_code, category").order("name").then(({ data }) => {
+        setVendors(data ?? []);
+      });
+    }
+  }, [isExpense, action, supabase]);
+
   async function runAction() {
     setLoading(true);
     setError("");
     try {
       if (action === "approve") {
-        if (!selectedStudentId) { setError("Select a student to apply the payment."); setLoading(false); return; }
         if (!editAmount || isNaN(parseFloat(editAmount)) || parseFloat(editAmount) <= 0) {
           setError("Enter a valid positive amount."); setLoading(false); return;
         }
 
-        // Get next receipt number
-        const { data: existing } = await supabase.from("income_entries").select("receipt_no");
-        const receiptNo = generateCode("RCT-", (existing ?? []).map(e => e.receipt_no));
+        if (isExpense) {
+          // ========== EXPENSE APPROVAL ==========
+          // Generate voucher number
+          const { data: existing } = await supabase.from("expense_entries").select("voucher_no");
+          const voucherNo = generateCode("VCH-", (existing ?? []).map(e => e.voucher_no));
+          const selectedVendor = vendors.find(v => v.id === selectedVendorId);
 
-        // Create income entry
-        await supabase.from("income_entries").insert({
-          receipt_no: receiptNo,
-          date: (alert.received_at || alert.created_at).substring(0, 10),
-          student_id: selectedStudentId,
-          student_name: selectedStudent?.full_name,
-          category: "School Fees",
-          description: `SMS Payment — Ref: ${alert.parsed_reference || alert.event_id || "—"}`,
-          amount: parseFloat(editAmount),
-          payment_method: "Bank Transfer",
-          term: null,
-          recorded_by: profile?.full_name || profile?.email,
-          reconciled: false,
-          payment_source: "smsgate_sms",
-          sms_inbox_id: alert.id,
-          notes: reviewNote || null,
-        });
+          await supabase.from("expense_entries").insert({
+            voucher_no: voucherNo,
+            date: (alert.received_at || alert.created_at).substring(0, 10),
+            vendor_id: selectedVendorId || null,
+            vendor_name: selectedVendor?.name || alert.parsed_student_name || "Unknown",
+            category: expenseCategory,
+            description: `Bank DR Alert — ${alert.parsed_reference || "Manual approval"}`,
+            amount: parseFloat(editAmount),
+            payment_method: "Bank Transfer",
+            approved_by: profile?.full_name || profile?.email,
+            reconciled: false,
+            notes: reviewNote || null,
+          });
 
-        // Update SMS record
-        await supabase.from("sms_inbox").update({
-          match_status: "matched",
-          processing_status: "confirmed",
-          matched_student_id: selectedStudentId,
-          matched_fee_id: selectedFeeId || null,
-          review_notes: reviewNote || null,
-          reviewed_by: profile?.id,
-          reviewed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }).eq("id", alert.id);
+          await supabase.from("sms_inbox").update({
+            match_status: "matched",
+            processing_status: "confirmed",
+            review_notes: reviewNote || null,
+            reviewed_by: profile?.id,
+            reviewed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq("id", alert.id);
 
-        await supabase.from("activity_log").insert({
-          user_email: profile?.email, user_name: profile?.full_name,
-          action: "Approve SMS Payment",
-          details: `${receiptNo} — ${selectedStudent?.full_name} — ${fmtMoney(parseFloat(editAmount))}`,
-        });
+          await supabase.from("activity_log").insert({
+            user_email: profile?.email, user_name: profile?.full_name,
+            action: "Approve Expense Alert",
+            details: `${voucherNo} — ${selectedVendor?.name || alert.parsed_student_name} — ${fmtMoney(parseFloat(editAmount))} — ${expenseCategory}`,
+          });
+
+        } else {
+          // ========== INCOME APPROVAL (student payment) ==========
+          if (!selectedStudentId) { setError("Select a student to apply the payment."); setLoading(false); return; }
+
+          const { data: existing } = await supabase.from("income_entries").select("receipt_no");
+          const receiptNo = generateCode("RCT-", (existing ?? []).map(e => e.receipt_no));
+
+          await supabase.from("income_entries").insert({
+            receipt_no: receiptNo,
+            date: (alert.received_at || alert.created_at).substring(0, 10),
+            student_id: selectedStudentId,
+            student_name: selectedStudent?.full_name,
+            category: "School Fees",
+            description: `SMS Payment — Ref: ${alert.parsed_reference || "—"}`,
+            amount: parseFloat(editAmount),
+            payment_method: "Bank Transfer",
+            term: null,
+            recorded_by: profile?.full_name || profile?.email,
+            reconciled: false,
+            payment_source: "smsgate_sms",
+            sms_inbox_id: alert.id,
+            notes: reviewNote || null,
+          });
+
+          await supabase.from("sms_inbox").update({
+            match_status: "matched",
+            processing_status: "confirmed",
+            matched_student_id: selectedStudentId,
+            matched_fee_id: selectedFeeId || null,
+            review_notes: reviewNote || null,
+            reviewed_by: profile?.id,
+            reviewed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq("id", alert.id);
+
+          await supabase.from("activity_log").insert({
+            user_email: profile?.email, user_name: profile?.full_name,
+            action: "Approve SMS Payment",
+            details: `${receiptNo} — ${selectedStudent?.full_name} — ${fmtMoney(parseFloat(editAmount))}`,
+          });
+        }
 
       } else if (action === "reject") {
         if (!reviewNote.trim()) { setError("A review note is required to reject."); setLoading(false); return; }
         await supabase.from("sms_inbox").update({
-          match_status: "rejected",
-          processing_status: "rejected",
-          review_notes: reviewNote,
-          reviewed_by: profile?.id,
-          reviewed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          match_status: "rejected", processing_status: "rejected",
+          review_notes: reviewNote, reviewed_by: profile?.id,
+          reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
         }).eq("id", alert.id);
         await supabase.from("activity_log").insert({
           user_email: profile?.email, user_name: profile?.full_name,
-          action: "Reject SMS Payment", details: `${alert.id} — ${reviewNote}`,
+          action: isExpense ? "Reject Expense Alert" : "Reject SMS Payment", details: `${alert.id} — ${reviewNote}`,
         });
 
       } else if (action === "duplicate") {
         await supabase.from("sms_inbox").update({
-          match_status: "duplicate",
-          processing_status: "duplicate",
-          review_notes: reviewNote || "Marked as duplicate",
-          reviewed_by: profile?.id,
-          reviewed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          match_status: "duplicate", processing_status: "duplicate",
+          review_notes: reviewNote || "Marked as duplicate", reviewed_by: profile?.id,
+          reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
         }).eq("id", alert.id);
         await supabase.from("activity_log").insert({
           user_email: profile?.email, user_name: profile?.full_name,
-          action: "Mark SMS Duplicate", details: alert.id,
+          action: "Mark Duplicate", details: alert.id,
         });
       }
 
@@ -326,9 +383,14 @@ function AlertDetailModal({
   }
 
   return (
-    <Modal open onClose={onClose} title="Payment Alert Details" size="xl">
+    <Modal open onClose={onClose} title={isExpense ? "Expense Alert Details" : "Payment Alert Details"} size="xl">
       <div className="space-y-4">
         {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
+
+        {/* Type badge */}
+        <div className={cn("inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold", isExpense ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
+          {isExpense ? "↑ Expense (Debit)" : "↓ Income (Credit)"}
+        </div>
 
         {/* SMS text */}
         <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
@@ -336,44 +398,64 @@ function AlertDetailModal({
           <p className="text-sm text-gray-800 font-medium leading-relaxed">{alert.message_text}</p>
           <div className="flex items-center gap-4 mt-3 text-xs text-gray-400">
             <span>From: <strong>{alert.sender || "—"}</strong></span>
-            <span>To: {alert.recipient || "—"}</span>
-            {alert.sim_number && <span>SIM: {alert.sim_number}</span>}
             <span>{fmtDateTime(alert.received_at || alert.created_at)}</span>
           </div>
         </div>
 
-        {/* Match reason / system comment */}
+        {/* System comment */}
         {alert.match_reason && (
-          <div className={cn(
-            "rounded-xl p-4 border text-sm",
+          <div className={cn("rounded-xl p-4 border text-sm",
             alert.match_status === "matched" ? "bg-green-50 border-green-200 text-green-800" :
             alert.match_status === "duplicate" ? "bg-purple-50 border-purple-200 text-purple-800" :
             alert.match_status === "rejected" ? "bg-red-50 border-red-200 text-red-800" :
-            alert.match_status === "needs_review" ? "bg-amber-50 border-amber-200 text-amber-800" :
-            "bg-gray-50 border-gray-200 text-gray-700"
+            "bg-amber-50 border-amber-200 text-amber-800"
           )}>
             <div className="text-xs font-semibold uppercase tracking-wide opacity-70 mb-1">System Comment</div>
             <p className="font-medium">{alert.match_reason}</p>
           </div>
         )}
 
-        {/* Parsed data */}
+        {/* Parsed data — context-aware labels */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {[
-            { label: "Student No.", value: alert.parsed_student_number },
-            { label: "Student Name", value: alert.parsed_student_name },
-            { label: "Amount", value: alert.parsed_amount ? fmtMoney(alert.parsed_amount) : null },
-            { label: "Currency", value: alert.parsed_currency },
-            { label: "Reference", value: alert.parsed_reference },
-            { label: "Match Status", value: null },
-          ].map(({ label, value }) => (
-            <div key={label} className="bg-white border border-gray-100 rounded-lg p-3">
-              <div className="text-xs text-gray-400 mb-1">{label}</div>
-              {label === "Match Status"
-                ? <StatusBadge status={alert.match_status} />
-                : <div className="text-sm font-semibold text-gray-800">{value || "—"}</div>}
-            </div>
-          ))}
+          {isExpense ? (
+            <>
+              <div className="bg-white border border-gray-100 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Vendor / Payee</div>
+                <div className="text-sm font-semibold text-gray-800">{alert.parsed_student_name || "—"}</div>
+              </div>
+              <div className="bg-white border border-gray-100 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Amount (Debit)</div>
+                <div className="text-sm font-semibold text-red-700">{alert.parsed_amount ? fmtMoney(alert.parsed_amount) : "—"}</div>
+              </div>
+              <div className="bg-white border border-gray-100 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Reference</div>
+                <div className="text-sm font-semibold text-gray-800">{alert.parsed_reference || "—"}</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="bg-white border border-gray-100 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Student No.</div>
+                <div className="text-sm font-semibold text-gray-800">{alert.parsed_student_number || "—"}</div>
+              </div>
+              <div className="bg-white border border-gray-100 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Student Name</div>
+                <div className="text-sm font-semibold text-gray-800">{alert.parsed_student_name || "—"}</div>
+              </div>
+              <div className="bg-white border border-gray-100 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Amount (Credit)</div>
+                <div className="text-sm font-semibold text-green-700">{alert.parsed_amount ? fmtMoney(alert.parsed_amount) : "—"}</div>
+              </div>
+              <div className="bg-white border border-gray-100 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Reference</div>
+                <div className="text-sm font-semibold text-gray-800">{alert.parsed_reference || "—"}</div>
+              </div>
+            </>
+          )}
+          <div className="bg-white border border-gray-100 rounded-lg p-3">
+            <div className="text-xs text-gray-400 mb-1">Match Status</div>
+            <StatusBadge status={alert.match_status} />
+          </div>
         </div>
 
         {/* Confidence */}
@@ -381,20 +463,38 @@ function AlertDetailModal({
           <div className="flex items-center gap-3 bg-white border border-gray-100 rounded-lg p-3">
             <span className="text-xs text-gray-500 font-medium">Confidence:</span>
             <div className="flex-1 h-2 bg-gray-100 rounded-full">
-              <div className="h-full rounded-full bg-[#C9A227] transition-all"
-                style={{ width: `${(alert.confidence_score * 100).toFixed(0)}%` }} />
+              <div className="h-full rounded-full bg-[#C9A227]" style={{ width: `${(alert.confidence_score * 100).toFixed(0)}%` }} />
             </div>
             <span className="text-sm font-bold text-[#0F2A47]">{(alert.confidence_score * 100).toFixed(0)}%</span>
           </div>
         )}
 
-        {/* Student & fee assignment */}
-        {(action === "approve" || action === "edit") && (
+        {/* APPROVE FORM — different for income vs expense */}
+        {action === "approve" && (
           <div className="space-y-3 bg-[#FBF6E8] border border-[#F4E9C7] rounded-xl p-4">
-            <div className="text-sm font-semibold text-[#0F2A47]">Assign Payment To</div>
-            <SearchableSelect label="Student" options={studentOptions} value={selectedStudentId} onChange={setSelectedStudentId} placeholder="Select student…" />
-            <SearchableSelect label="Fee / Invoice (optional)" options={feeOptions} value={selectedFeeId} onChange={setSelectedFeeId} placeholder="No specific fee" />
-            <Input label="Amount (₦)" type="number" value={editAmount} onChange={e => setEditAmount(e.target.value)} min="0" step="0.01" />
+            <div className="text-sm font-semibold text-[#0F2A47]">
+              {isExpense ? "Record Expense To" : "Assign Payment To"}
+            </div>
+
+            {isExpense ? (
+              <>
+                <SearchableSelect label="Vendor / Payee" options={vendorOptions} value={selectedVendorId} onChange={setSelectedVendorId} placeholder="Select vendor (optional — will use parsed name if blank)…" />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Expense Category</label>
+                  <select value={expenseCategory} onChange={e => setExpenseCategory(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white">
+                    {expenseCategoryOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+                <Input label="Amount (₦)" type="number" value={editAmount} onChange={e => setEditAmount(e.target.value)} min="0" step="0.01" />
+              </>
+            ) : (
+              <>
+                <SearchableSelect label="Student" options={studentOptions} value={selectedStudentId} onChange={setSelectedStudentId} placeholder="Select student…" />
+                <SearchableSelect label="Fee / Invoice (optional)" options={feeOptions} value={selectedFeeId} onChange={setSelectedFeeId} placeholder="No specific fee" />
+                <Input label="Amount (₦)" type="number" value={editAmount} onChange={e => setEditAmount(e.target.value)} min="0" step="0.01" />
+              </>
+            )}
           </div>
         )}
 
@@ -404,8 +504,8 @@ function AlertDetailModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Review Note {action === "reject" ? "(required)" : "(optional)"}
             </label>
-            <textarea value={reviewNote} onChange={e => setReviewNote(e.target.value)}
-              rows={2} placeholder="Add a note about this decision…"
+            <textarea value={reviewNote} onChange={e => setReviewNote(e.target.value)} rows={2}
+              placeholder="Add a note about this decision…"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] resize-none" />
           </div>
         )}
@@ -417,7 +517,7 @@ function AlertDetailModal({
               {alert.match_status !== "matched" && alert.match_status !== "rejected" && alert.match_status !== "duplicate" && (
                 <>
                   <Button variant="gold" size="sm" onClick={() => setAction("approve")}>
-                    <CheckCircle size={13} /> Approve & Apply
+                    <CheckCircle size={13} /> {isExpense ? "Approve & Record Expense" : "Approve & Apply Payment"}
                   </Button>
                   <Button variant="danger" size="sm" onClick={() => setAction("reject")}>
                     <XCircle size={13} /> Reject
@@ -432,7 +532,9 @@ function AlertDetailModal({
           ) : (
             <>
               <Button variant="gold" loading={loading} onClick={runAction}>
-                {action === "approve" ? "Confirm & Apply Payment" : action === "reject" ? "Confirm Rejection" : "Confirm Duplicate"}
+                {action === "approve"
+                  ? (isExpense ? "Confirm & Record Expense" : "Confirm & Apply Payment")
+                  : action === "reject" ? "Confirm Rejection" : "Confirm Duplicate"}
               </Button>
               <Button variant="secondary" size="sm" onClick={() => { setAction("view"); setError(""); }}>
                 Cancel
