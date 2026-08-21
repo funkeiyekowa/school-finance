@@ -378,7 +378,7 @@ export async function POST(request: Request) {
       message_text: messageText,
       received_at: receivedAt,
       parsed_student_number: parsed.studentNumber,
-      parsed_student_name: parsed.studentName,
+      parsed_student_name: matchedStudentName || parsed.studentName,
       parsed_amount: parsed.amount,
       parsed_currency: parsed.currency,
       parsed_reference: parsed.reference,
@@ -425,10 +425,11 @@ export async function POST(request: Request) {
         sms_inbox_id: inserted.id,
       });
 
-      // Update SMS record — already set to "matched" in insert, update reason
+      // Update SMS record — already set to "matched" in insert, update with student details
       await supabase.from("sms_inbox").update({
         processing_status: "confirmed",
-        match_reason: matchReason, // keep the descriptive reason we built above
+        match_reason: matchReason,
+        parsed_student_name: matchedStudentName,
       }).eq("id", inserted.id);
 
       // Log it
