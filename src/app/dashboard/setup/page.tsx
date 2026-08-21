@@ -473,7 +473,7 @@ function SmsGatewayTab() {
       "sms_gateway_url", "sms_gateway_username", "sms_gateway_password",
       "sms_gateway_device_id", "sms_auto_credit", "sms_auto_credit_min_confidence",
       "sms_webhook_secret", "sms_webhook_id", "sms_webhook_registered_at",
-      "sms_gateway_provider", "sms_allowed_senders",
+      "sms_gateway_provider", "sms_allowed_senders", "sms_auto_expense",
     ];
     const merged = { ...form, ...extra };
     const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -827,6 +827,39 @@ function SmsGatewayTab() {
               </p>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Auto-expense toggle */}
+      <Card>
+        <CardHeader><CardTitle>Expense Auto-Post (Debits)</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex items-start gap-4 p-4 rounded-xl border border-gray-200 bg-gray-50">
+            <label className="relative inline-flex items-center cursor-pointer mt-0.5">
+              <input
+                type="checkbox"
+                checked={(form as any).sms_auto_expense || false}
+                onChange={async (e) => {
+                  const checked = e.target.checked;
+                  setForm((f: any) => ({ ...f, sms_auto_expense: checked }));
+                  await persist({ sms_auto_expense: checked } as any);
+                }}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-300 peer-focus:ring-2 peer-focus:ring-[#C9A227] rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-[#0F2A47] after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+            </label>
+            <div>
+              <div className="font-semibold text-sm text-gray-900">
+                {(form as any).sms_auto_expense ? "Auto-Expense is ON" : "Auto-Expense is OFF (Manual Review)"}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {(form as any).sms_auto_expense
+                  ? "When a debit (DR) bank alert is received, the expense is automatically recorded in the Expense Ledger with auto-detected category and payee."
+                  : "Debit alerts appear in Payment Alerts for manual review. Staff must approve before the expense is posted to the ledger."
+                }
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

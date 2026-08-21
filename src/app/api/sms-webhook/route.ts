@@ -81,62 +81,79 @@ function parseSMS(text: string): {
     reference: null as string | null,
     currency: "NGN",
     isDebit: false,
+    payeeName: null as string | null,
+    transactionDate: null as string | null,
   };
 
   // ---------- DETECT DEBIT vs CREDIT ----------
-  // If message contains "DR:" it's a debit — flag it to skip
-  if (/\bDR\s*[:]\s*N/i.test(text)) {
-    result.isDebit = true;
-    return result; // don't bother parsing further
-  }
+  const isDR = /\bDR\s*[:]\s*N/i.test(text);
+  const isCR = /\bCR\s*[:]\s*N/i.test(text);
+  result.isDebit = isDR && !isCR; // if both somehow present, treat as credit
 
-  // ---------- BANK ALERT FORMAT ----------
-  // Try to parse "CR:N42,000.00" format first
-  const crMatch = text.match(/CR\s*[:]\s*N([0-9,]+(?:\.[0-9]{2})?)/i);
-  if (crMatch) {
-    const amt = parseFloat(crMatch[1].replace(/,/g, ""));
+  // ---------- BANK ALERT FORMAT (works for both CR and DR) ----------
+  // Parse amount from "CR:N42,000.00" or "DR:N200,000.00"
+  const amtMatch = text.match(/(?:CR|DR)\s*[:]\s*N([0-9,]+(?:\.[0-9]{2})?)/i);
+  if (amtMatch) {
+    const amt = parseFloat(amtMatch[1].replace(/,/g, ""));
     if (amt > 0) result.amount = amt;
 
-    // Extract student code and name from "Desc:" line
+    // Extract description/payee from "Desc:" line
     const descMatch = text.match(/Desc\s*[:]\s*(.+?)(?:\n|DT:|$)/i);
     if (descMatch) {
       let desc = descMatch[1].trim();
 
       // Remove common bank transfer prefixes
       desc = desc.replace(/^(COB\s+TRF\s+(TO|FROM)|NIP\s*(CR|DR)?|TRF\s+(FROM|TO)|TRANSFER\s+(FROM|TO))\s*/i, "");
-      desc = desc.replace(/\*{2,}\d+/g, "").trim(); // remove **3387 style refs
-      desc = desc.replace(/\s+NOTE\s+.*$/i, "").trim(); // remove trailing "NOTE BOOK PRODUC"
+      desc = desc.replace(/\*{2,}\d+/g, "").trim(); // remove **3387 style account refs
+      desc = desc.replace(/\s+NOTE\s+.*$/i, "").trim(); // remove trailing notes
 
-      // Check if Desc starts with a student code like "S327 Aimien Samuel"
-      const codeAtStart = desc.match(/^(S[0-9]{3,4})\s+(.+)/i);
-      if (codeAtStart) {
-        result.studentNumber = codeAtStart[1].toUpperCase();
-        // Everything after the code is the student name
-        const nameRaw = codeAtStart[2].split(/[\/\\]/)[0].trim();
-        if (nameRaw.length >= 2) {
-          result.studentName = nameRaw
+      if (result.isDebit) {
+        // ---------- DEBIT: extract payee name ----------
+        const nameParts = desc.split(/[\/\\]/);
+        const payeeRaw = nameParts[0].trim();
+        if (payeeRaw.length >= 2) {
+          result.payeeName = payeeRaw
             .split(/\s+/)
             .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
             .join(" ");
         }
+        // Store full desc as reference for the expense
+        result.reference = desc;
       } else {
-        // No student code — treat the whole Desc as a name (take first segment before /)
-        const nameParts = desc.split(/[\/\\]/);
-        const nameCandidate = nameParts[0].trim();
-        if (nameCandidate.length >= 3) {
-          result.studentName = nameCandidate
-            .split(/\s+/)
-            .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-            .join(" ");
+        // ---------- CREDIT: extract student code + name ----------
+        const codeAtStart = desc.match(/^(S[0-9]{3,4})\s+(.+)/i);
+        if (codeAtStart) {
+          result.studentNumber = codeAtStart[1].toUpperCase();
+          const nameRaw = codeAtStart[2].split(/[\/\\]/)[0].trim();
+          if (nameRaw.length >= 2) {
+            result.studentName = nameRaw
+              .split(/\s+/)
+              .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(" ");
+          }
+        } else {
+          // No student code — treat the whole Desc as a name
+          const nameParts = desc.split(/[\/\\]/);
+          const nameCandidate = nameParts[0].trim();
+          if (nameCandidate.length >= 3) {
+            result.studentName = nameCandidate
+              .split(/\s+/)
+              .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(" ");
+          }
         }
       }
     }
 
     // Also check for student code elsewhere in the message (if not found in Desc)
-    if (!result.studentNumber) {
+    if (!result.studentNumber && !result.isDebit) {
       const codeInMsg = text.match(/\b(S[0-9]{3,4})\b/i);
       if (codeInMsg) result.studentNumber = codeInMsg[1].toUpperCase();
     }
+
+    // Extract transaction date from "DT:" field
+    const dtMatch = text.match(/DT\s*[:]\s*([^\n]+)/i);
+    if (dtMatch) result.transactionDate = dtMatch[1].trim();
 
     return result;
   }
@@ -314,14 +331,163 @@ export async function POST(request: Request) {
     // Parse the SMS
     const parsed = parseSMS(messageText);
 
-    // Skip debit messages entirely — only process credits
+    // ============================================================
+    // DEBIT (DR) → EXPENSE ALERT PROCESSING
+    // ============================================================
     if (parsed.isDebit) {
+      // Detect expense category from description keywords
+      const descLower = (parsed.payeeName || parsed.reference || "").toLowerCase();
+      let expenseCategory = "Other Expense";
+      const categoryKeywords: Record<string, string[]> = {
+        "Rent": ["rent", "landlord", "lease"],
+        "Utilities": ["electricity", "water", "nepa", "phcn", "dstv", "internet", "airtime", "mtn", "glo", "airtel", "9mobile"],
+        "Salaries & Wages": ["salary", "wages", "payroll", "staff"],
+        "Teaching Supplies & Materials": ["books", "textbook", "stationery", "supplies", "materials", "printing", "paper"],
+        "Maintenance & Repairs": ["repair", "maintenance", "plumbing", "electrical", "fixing"],
+        "Transport": ["transport", "fuel", "diesel", "petrol", "uber", "bolt", "logistics"],
+        "Textbook Purchases": ["textbook", "notebook", "note book"],
+        "Administrative & Office": ["office", "admin", "stamp", "certificate", "registration"],
+        "Insurance": ["insurance", "hmo", "health"],
+      };
+      for (const [cat, keywords] of Object.entries(categoryKeywords)) {
+        if (keywords.some(kw => descLower.includes(kw))) {
+          expenseCategory = cat;
+          break;
+        }
+      }
+
+      // Check auto-expense setting
+      const { data: expSettings } = await supabase
+        .from("school_settings")
+        .select("sms_auto_expense")
+        .limit(1)
+        .single();
+      const autoExpenseEnabled = (expSettings as any)?.sms_auto_expense === true;
+
+      // Try to match vendor by name
+      let matchedVendorId: string | null = null;
+      let matchedVendorName: string | null = null;
+      if (parsed.payeeName) {
+        const words = parsed.payeeName.split(/\s+/).filter(w => w.length >= 3);
+        for (const word of words) {
+          const { data: vendor } = await supabase
+            .from("vendors")
+            .select("id, name")
+            .ilike("name", `%${word}%`)
+            .limit(1)
+            .maybeSingle();
+          if (vendor) {
+            matchedVendorId = vendor.id;
+            matchedVendorName = vendor.name;
+            break;
+          }
+        }
+      }
+
+      const expMatchStatus = autoExpenseEnabled ? "matched" : "needs_review";
+      const expMatchReason = autoExpenseEnabled
+        ? `Auto-posted expense ✓ — ₦${parsed.amount?.toLocaleString()} debited. Payee: "${parsed.payeeName || "Unknown"}". Category: ${expenseCategory}.${matchedVendorName ? ` Matched vendor: "${matchedVendorName}".` : ""}`
+        : `Review required (expense) — ₦${parsed.amount?.toLocaleString()} debited to "${parsed.payeeName || "Unknown"}". Auto-expense posting is disabled. Approve to record as expense.${matchedVendorName ? ` Suggested vendor: "${matchedVendorName}".` : ""}`;
+
+      const expRef = generatePaymentRef(receivedAt, parsed.payeeName);
+
+      // Insert into sms_inbox as an expense alert
+      const { data: expInserted, error: expError } = await supabase.from("sms_inbox").insert({
+        event_id: eventId,
+        message_id: messageId,
+        device_id: deviceId,
+        sender: sender,
+        sim_number: simNumber || null,
+        message_text: messageText,
+        received_at: receivedAt,
+        parsed_student_number: null,
+        parsed_student_name: parsed.payeeName, // reuse field for payee name
+        parsed_amount: parsed.amount,
+        parsed_currency: parsed.currency,
+        parsed_reference: expRef,
+        parser_version: "v3-expense",
+        processing_status: autoExpenseEnabled ? "confirmed" : "received",
+        match_status: expMatchStatus,
+        match_reason: expMatchReason,
+        matched_student_id: null,
+        confidence_score: matchedVendorId ? 0.8 : 0.5,
+        raw_payload: body,
+      }).select("id").single();
+
+      if (expError) {
+        return NextResponse.json({ error: expError.message }, { status: 500 });
+      }
+
+      // Auto-post expense if enabled
+      let autoExpensePosted = false;
+      if (autoExpenseEnabled && parsed.amount && expInserted?.id) {
+        // Generate voucher number
+        const { data: voucherNos } = await supabase.from("expense_entries").select("voucher_no");
+        const existingVNos = (voucherNos ?? []).map((r: any) => r.voucher_no);
+        let maxVNum = 0;
+        existingVNos.forEach((vn: string) => {
+          const n = parseInt(vn.replace("VCH-", ""), 10);
+          if (!isNaN(n) && n > maxVNum) maxVNum = n;
+        });
+        const voucherNo = `VCH-${String(maxVNum + 1).padStart(4, "0")}`;
+
+        // Parse date from DT field or use received time
+        let expenseDate = new Date(receivedAt).toISOString().substring(0, 10);
+        if (parsed.transactionDate) {
+          // Try to parse "05/MAY/26 08:24AM" format
+          const dtParsed = new Date(parsed.transactionDate.replace(/(\d{2})\/([A-Z]+)\/(\d{2})/, "$2 $1, 20$3"));
+          if (!isNaN(dtParsed.getTime())) expenseDate = dtParsed.toISOString().substring(0, 10);
+        }
+
+        await supabase.from("expense_entries").insert({
+          voucher_no: voucherNo,
+          date: expenseDate,
+          vendor_id: matchedVendorId,
+          vendor_name: matchedVendorName || parsed.payeeName,
+          category: expenseCategory,
+          description: `Bank DR Alert — ${parsed.reference || parsed.payeeName || "auto-posted"}`,
+          amount: parsed.amount,
+          payment_method: "Bank Transfer",
+          approved_by: "System (Auto-Expense)",
+          reconciled: false,
+          notes: `SMS Alert: ${messageText.substring(0, 200)}`,
+        });
+
+        // Update sms_inbox
+        await supabase.from("sms_inbox").update({
+          processing_status: "confirmed",
+          match_reason: expMatchReason,
+          parsed_reference: `${expRef} / ${voucherNo}`,
+        }).eq("id", expInserted.id);
+
+        // Log it
+        await supabase.from("activity_log").insert({
+          action: "Auto-Post Expense (DR Alert)",
+          details: `${voucherNo} — ${parsed.payeeName || "Unknown"} — ₦${parsed.amount.toLocaleString()} — ${expenseCategory}`,
+        });
+
+        autoExpensePosted = true;
+      }
+
       return NextResponse.json({
-        success: false,
-        skipped: true,
-        reason: "Debit (DR) message — only credit (CR) messages are processed.",
+        success: true,
+        id: expInserted?.id,
+        type: "expense",
+        auto_posted: autoExpensePosted,
+        parsed: {
+          amount: parsed.amount,
+          payee: parsed.payeeName,
+          category: expenseCategory,
+          reference: expRef,
+          vendor_matched: matchedVendorName,
+          match_status: expMatchStatus,
+        },
       });
     }
+
+    // ============================================================
+    // CREDIT (CR) → INCOME / STUDENT PAYMENT PROCESSING
+    // ============================================================
 
     const confidence = calculateConfidence(parsed);
 
