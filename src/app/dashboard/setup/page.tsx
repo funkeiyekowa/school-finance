@@ -434,6 +434,7 @@ function SmsGatewayTab() {
     sms_webhook_id: "",
     sms_webhook_registered_at: "",
     sms_allowed_senders: "",
+    sms_auto_expense: false,
   });
 
   const load = useCallback(() => {
@@ -452,6 +453,7 @@ function SmsGatewayTab() {
           sms_webhook_id: (data as any).sms_webhook_id || "",
           sms_webhook_registered_at: (data as any).sms_webhook_registered_at || "",
           sms_allowed_senders: (data as any).sms_allowed_senders || "",
+          sms_auto_expense: (data as any).sms_auto_expense || false,
         });
       }
       setLoading(false);
@@ -838,10 +840,10 @@ function SmsGatewayTab() {
             <label className="relative inline-flex items-center cursor-pointer mt-0.5">
               <input
                 type="checkbox"
-                checked={(form as any).sms_auto_expense || false}
+                checked={form.sms_auto_expense || false}
                 onChange={async (e) => {
                   const checked = e.target.checked;
-                  setForm((f: any) => ({ ...f, sms_auto_expense: checked }));
+                  setForm(f => ({ ...f, sms_auto_expense: checked }));
                   await persist({ sms_auto_expense: checked } as any);
                 }}
                 className="sr-only peer"
@@ -850,10 +852,10 @@ function SmsGatewayTab() {
             </label>
             <div>
               <div className="font-semibold text-sm text-gray-900">
-                {(form as any).sms_auto_expense ? "Auto-Expense is ON" : "Auto-Expense is OFF (Manual Review)"}
+                {form.sms_auto_expense ? "Auto-Expense is ON" : "Auto-Expense is OFF (Manual Review)"}
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                {(form as any).sms_auto_expense
+                {form.sms_auto_expense
                   ? "When a debit (DR) bank alert is received, the expense is automatically recorded in the Expense Ledger with auto-detected category and payee."
                   : "Debit alerts appear in Payment Alerts for manual review. Staff must approve before the expense is posted to the ledger."
                 }
@@ -888,3 +890,5 @@ function SmsGatewayTab() {
     </div>
   );
 }
+
+
