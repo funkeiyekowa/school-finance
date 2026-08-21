@@ -208,11 +208,10 @@ export async function POST(request: Request) {
     const parsed = parseSMS(messageText);
     const confidence = calculateConfidence(parsed);
 
-    // Determine match status and generate explanatory reason
-    let matchStatus = "unmatched";
-    let matchReason = "";
+    // ---------- STUDENT MATCHING ----------
     let matchedStudentId: string | null = null;
     let matchedStudentName: string | null = null;
+    let matchedBy = ""; // how we matched: "code+name", "code", "name", or ""
 
     // Try to match student by code first (highest confidence)
     if (parsed.studentNumber) {
@@ -225,6 +224,7 @@ export async function POST(request: Request) {
       if (student) {
         matchedStudentId = student.id;
         matchedStudentName = student.full_name;
+        matchedBy = "code";
       }
     }
 
@@ -239,55 +239,92 @@ export async function POST(request: Request) {
       if (student) {
         matchedStudentId = student.id;
         matchedStudentName = student.full_name;
+        matchedBy = "name";
       }
     }
 
-    // Build the match reason explanation
-    if (parsed.amount && matchedStudentId && parsed.studentNumber && parsed.studentName) {
-      matchStatus = "needs_review";
-      matchReason = `Matched — name "${matchedStudentName}" and student no "${parsed.studentNumber}" both match. Amount: ₦${parsed.amount.toLocaleString()}.`;
-    } else if (parsed.amount && matchedStudentId && parsed.studentNumber) {
-      matchStatus = "needs_review";
-      matchReason = `Matched — student no "${parsed.studentNumber}" matches "${matchedStudentName}". Amount: ₦${parsed.amount.toLocaleString()}.`;
-    } else if (parsed.amount && matchedStudentId && parsed.studentName) {
-      matchStatus = "needs_review";
-      matchReason = `Matched — name "${parsed.studentName}" matches student "${matchedStudentName}". Amount: ₦${parsed.amount.toLocaleString()}.`;
-    } else if (parsed.amount && !matchedStudentId && parsed.studentNumber) {
-      matchStatus = "needs_review";
-      matchReason = `Amount ₦${parsed.amount.toLocaleString()} parsed with student no "${parsed.studentNumber}", but no matching student found in database. Manual assignment needed.`;
-    } else if (parsed.amount && !matchedStudentId && parsed.studentName) {
-      matchStatus = "needs_review";
-      matchReason = `Amount ₦${parsed.amount.toLocaleString()} parsed with name "${parsed.studentName}", but no matching student found in database. Manual assignment needed.`;
-    } else if (parsed.amount && !parsed.studentNumber && !parsed.studentName) {
-      matchStatus = "unmatched";
-      matchReason = `Amount ₦${parsed.amount.toLocaleString()} parsed but no student identifier found in the message. Cannot auto-match.`;
-    } else {
-      matchStatus = "unmatched";
-      matchReason = `Could not parse a valid amount or student identifier from this message.`;
+    // If matched by code AND the name was also parsed, note it
+    if (matchedBy === "code" && parsed.studentName) {
+      matchedBy = "code+name";
     }
 
-    // Check for duplicate (same sender + same amount within 5 minutes)
-    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const { data: existingMsgs } = await supabase
-      .from("sms_inbox")
-      .select("id")
-      .eq("sender", sender)
-      .gte("created_at", fiveMinAgo)
-      .limit(1);
+    // ---------- CHECK AUTO-CREDIT SETTING EARLY ----------
+    // We need to know this BEFORE generating the reason, so the comment
+    // can honestly tell the reviewer whether the payment was auto-posted or not.
+    const { data: settings } = await supabase
+      .from("school_settings")
+      .select("sms_auto_credit, sms_auto_credit_min_confidence")
+      .limit(1)
+      .single();
 
-    if (existingMsgs && existingMsgs.length > 0 && parsed.amount) {
+    const autoCreditEnabled = settings?.sms_auto_credit === true;
+    const minConfidence = settings?.sms_auto_credit_min_confidence || 0.80;
+    const meetsThreshold = confidence >= minConfidence;
+    const willAutoCredit = autoCreditEnabled && meetsThreshold && !!matchedStudentId && !!parsed.amount;
+
+    // ---------- DUPLICATE CHECK ----------
+    let isDuplicate = false;
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    if (sender && parsed.amount) {
       const { data: dupeCheck } = await supabase
         .from("sms_inbox")
-        .select("id, parsed_amount, parsed_student_name")
+        .select("id")
         .eq("sender", sender)
         .eq("parsed_amount", parsed.amount)
         .gte("created_at", fiveMinAgo)
         .limit(1);
-
       if (dupeCheck && dupeCheck.length > 0) {
-        matchStatus = "duplicate";
-        matchReason = `Duplicate — same sender and same amount (₦${parsed.amount.toLocaleString()}) received within 5 minutes of a previous message${matchedStudentName ? ` for "${matchedStudentName}"` : ""}. Likely a repeated notification.`;
+        isDuplicate = true;
       }
+    }
+
+    // ---------- DETERMINE STATUS + REASON ----------
+    let matchStatus: string;
+    let matchReason: string;
+
+    if (isDuplicate) {
+      matchStatus = "duplicate";
+      matchReason = `Duplicate — same sender and same amount (₦${parsed.amount?.toLocaleString()}) received within 5 minutes of a previous message${matchedStudentName ? ` for "${matchedStudentName}"` : ""}. Payment NOT posted. Likely a repeated bank notification.`;
+
+    } else if (willAutoCredit) {
+      // Will be auto-posted — status set to "matched" after insert
+      matchStatus = "matched";
+      const howMatched = matchedBy === "code+name"
+        ? `name "${matchedStudentName}" and student no "${parsed.studentNumber}" both match`
+        : matchedBy === "code"
+        ? `student no "${parsed.studentNumber}" matches "${matchedStudentName}"`
+        : `name "${parsed.studentName}" matches student "${matchedStudentName}"`;
+      matchReason = `Auto-credited ✓ — ${howMatched}. ₦${parsed.amount!.toLocaleString()} posted to ${matchedStudentName}'s account automatically (confidence ${Math.round(confidence * 100)}% ≥ threshold ${Math.round(minConfidence * 100)}%).`;
+
+    } else if (matchedStudentId && parsed.amount) {
+      // Found a match but NOT auto-crediting — explain why
+      matchStatus = "needs_review";
+      const howMatched = matchedBy === "code+name"
+        ? `name "${matchedStudentName}" and student no "${parsed.studentNumber}" both match`
+        : matchedBy === "code"
+        ? `student no "${parsed.studentNumber}" matches "${matchedStudentName}"`
+        : `name "${parsed.studentName}" matches student "${matchedStudentName}"`;
+
+      if (!autoCreditEnabled) {
+        matchReason = `Review required — ${howMatched}. Amount: ₦${parsed.amount.toLocaleString()}. Auto-credit is DISABLED in settings. An admin must manually approve to post this payment to the student's account.`;
+      } else if (!meetsThreshold) {
+        matchReason = `Review required — ${howMatched}. Amount: ₦${parsed.amount.toLocaleString()}. Confidence (${Math.round(confidence * 100)}%) is below the auto-credit threshold (${Math.round(minConfidence * 100)}%). Manual approval needed.`;
+      } else {
+        matchReason = `Review required — ${howMatched}. Amount: ₦${parsed.amount.toLocaleString()}. Approve to post payment.`;
+      }
+
+    } else if (parsed.amount && !matchedStudentId && (parsed.studentNumber || parsed.studentName)) {
+      matchStatus = "needs_review";
+      const identifier = parsed.studentNumber || parsed.studentName;
+      matchReason = `Review required — amount ₦${parsed.amount.toLocaleString()} parsed with identifier "${identifier}", but NO matching student found in the database. Assign a student manually before approving.`;
+
+    } else if (parsed.amount && !parsed.studentNumber && !parsed.studentName) {
+      matchStatus = "unmatched";
+      matchReason = `Unmatched — amount ₦${parsed.amount.toLocaleString()} parsed but no student name or number found in the message. Cannot determine which student to credit.`;
+
+    } else {
+      matchStatus = "unmatched";
+      matchReason = `Unmatched — could not parse a valid payment amount or student identifier from this message.`;
     }
 
     // Insert into sms_inbox
@@ -318,63 +355,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Check if auto-credit is enabled
+    // Execute auto-credit if determined above
     let autoCredit = false;
-    if (matchedStudentId && parsed.amount && matchStatus === "needs_review") {
-      const { data: settings } = await supabase
-        .from("school_settings")
-        .select("sms_auto_credit, sms_auto_credit_min_confidence")
-        .limit(1)
-        .single();
+    if (willAutoCredit && inserted?.id) {
+      // Generate receipt number
+      const { data: receiptNos } = await supabase.from("income_entries").select("receipt_no");
+      const existingNos = (receiptNos ?? []).map((r: any) => r.receipt_no);
+      let maxNum = 0;
+      existingNos.forEach((rn: string) => {
+        const n = parseInt(rn.replace("RCT-", ""), 10);
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      });
+      const receiptNo = `RCT-${String(maxNum + 1).padStart(4, "0")}`;
 
-      if (settings?.sms_auto_credit && confidence >= (settings.sms_auto_credit_min_confidence || 0.80)) {
-        // Auto-credit: create income entry and mark SMS as matched
-        const { data: receiptNos } = await supabase.from("income_entries").select("receipt_no");
-        const existingNos = (receiptNos ?? []).map((r: any) => r.receipt_no);
-        let maxNum = 0;
-        existingNos.forEach((rn: string) => {
-          const n = parseInt(rn.replace("RCT-", ""), 10);
-          if (!isNaN(n) && n > maxNum) maxNum = n;
-        });
-        const receiptNo = `RCT-${String(maxNum + 1).padStart(4, "0")}`;
+      // Create income entry
+      await supabase.from("income_entries").insert({
+        receipt_no: receiptNo,
+        date: new Date(receivedAt).toISOString().substring(0, 10),
+        student_id: matchedStudentId,
+        student_name: matchedStudentName || parsed.studentName,
+        category: "School Fees",
+        description: `SMS Payment — ${parsed.reference || sender || "auto-credited"}`,
+        amount: parsed.amount!,
+        payment_method: "Bank Transfer",
+        recorded_by: "System (Auto-Credit)",
+        reconciled: false,
+        payment_source: "smsgate_auto",
+        sms_inbox_id: inserted.id,
+      });
 
-        // Get student name
-        const { data: student } = await supabase
-          .from("students")
-          .select("full_name")
-          .eq("id", matchedStudentId)
-          .single();
+      // Update SMS record — already set to "matched" in insert, update reason
+      await supabase.from("sms_inbox").update({
+        processing_status: "confirmed",
+        match_reason: matchReason, // keep the descriptive reason we built above
+      }).eq("id", inserted.id);
 
-        await supabase.from("income_entries").insert({
-          receipt_no: receiptNo,
-          date: new Date(receivedAt).toISOString().substring(0, 10),
-          student_id: matchedStudentId,
-          student_name: student?.full_name || parsed.studentName,
-          category: "School Fees",
-          description: `SMS Payment — ${parsed.reference || sender || "auto-credited"}`,
-          amount: parsed.amount,
-          payment_method: "Bank Transfer",
-          recorded_by: "System (Auto-Credit)",
-          reconciled: false,
-          payment_source: "smsgate_auto",
-          sms_inbox_id: inserted?.id,
-        });
+      // Log it
+      await supabase.from("activity_log").insert({
+        action: "Auto-Credit SMS Payment",
+        details: `${receiptNo} — ${matchedStudentName || parsed.studentName} — ₦${parsed.amount!.toLocaleString()} (confidence: ${Math.round(confidence * 100)}%)`,
+      });
 
-        // Update SMS record to matched
-        await supabase.from("sms_inbox").update({
-          match_status: "matched",
-          processing_status: "confirmed",
-          match_reason: "auto_credit",
-        }).eq("id", inserted?.id);
-
-        // Log it
-        await supabase.from("activity_log").insert({
-          action: "Auto-Credit SMS Payment",
-          details: `${receiptNo} — ${student?.full_name || parsed.studentName} — ₦${parsed.amount} (confidence: ${Math.round(confidence * 100)}%)`,
-        });
-
-        autoCredit = true;
-      }
+      autoCredit = true;
     }
 
     return NextResponse.json({
