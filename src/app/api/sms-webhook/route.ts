@@ -97,29 +97,46 @@ function parseSMS(text: string): {
     const amt = parseFloat(crMatch[1].replace(/,/g, ""));
     if (amt > 0) result.amount = amt;
 
-    // Extract name from "Desc:" line
+    // Extract student code and name from "Desc:" line
     const descMatch = text.match(/Desc\s*[:]\s*(.+?)(?:\n|DT:|$)/i);
     if (descMatch) {
       let desc = descMatch[1].trim();
-      // Remove common prefixes like "COB TRF TO", "NIP/", slashes, account refs
+
+      // Remove common bank transfer prefixes
       desc = desc.replace(/^(COB\s+TRF\s+(TO|FROM)|NIP\s*(CR|DR)?|TRF\s+(FROM|TO)|TRANSFER\s+(FROM|TO))\s*/i, "");
       desc = desc.replace(/\*{2,}\d+/g, "").trim(); // remove **3387 style refs
-      desc = desc.replace(/\s+NOTE\s+.*$/i, "").trim(); // remove "NOTE BOOK PRODUC" etc after name
-      // What remains should be a name — could have "/" separating sender/receiver
-      // Take the first meaningful name segment
-      const nameParts = desc.split(/[\/\\]/);
-      const nameCandidate = nameParts[0].trim();
-      if (nameCandidate.length >= 3) {
-        result.studentName = nameCandidate
-          .split(/\s+/)
-          .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-          .join(" ");
+      desc = desc.replace(/\s+NOTE\s+.*$/i, "").trim(); // remove trailing "NOTE BOOK PRODUC"
+
+      // Check if Desc starts with a student code like "S327 Aimien Samuel"
+      const codeAtStart = desc.match(/^(S[0-9]{3,4})\s+(.+)/i);
+      if (codeAtStart) {
+        result.studentNumber = codeAtStart[1].toUpperCase();
+        // Everything after the code is the student name
+        const nameRaw = codeAtStart[2].split(/[\/\\]/)[0].trim();
+        if (nameRaw.length >= 2) {
+          result.studentName = nameRaw
+            .split(/\s+/)
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(" ");
+        }
+      } else {
+        // No student code — treat the whole Desc as a name (take first segment before /)
+        const nameParts = desc.split(/[\/\\]/);
+        const nameCandidate = nameParts[0].trim();
+        if (nameCandidate.length >= 3) {
+          result.studentName = nameCandidate
+            .split(/\s+/)
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(" ");
+        }
       }
     }
 
-    // Try to find a student code in the Desc or message body
-    const codeInMsg = text.match(/\b(S[0-9]{3})\b/i);
-    if (codeInMsg) result.studentNumber = codeInMsg[1].toUpperCase();
+    // Also check for student code elsewhere in the message (if not found in Desc)
+    if (!result.studentNumber) {
+      const codeInMsg = text.match(/\b(S[0-9]{3,4})\b/i);
+      if (codeInMsg) result.studentNumber = codeInMsg[1].toUpperCase();
+    }
 
     return result;
   }
@@ -128,9 +145,9 @@ function parseSMS(text: string): {
   // Fallback: use the generic amount extractor
   result.amount = extractAmount(text);
 
-  // Extract student number — patterns like "S019", "STU-0001", "ST001"
+  // Extract student number — patterns like "S019", "S327", "STU-0001", "ST001"
   const studentNoPatterns = [
-    /\b(S[0-9]{3})\b/i,
+    /\b(S[0-9]{3,4})\b/i,
     /(?:STU|ST)[-\s]?([0-9]{3,6})/i,
     /(?:student\s*(?:no|number|id|code))[:\s]*([A-Z0-9\-\/]+)/i,
     /(?:admission\s*(?:no|number))[:\s]*([A-Z0-9\-\/]+)/i,
@@ -330,6 +347,7 @@ export async function POST(request: Request) {
 
     // Also try matching by name if code didn't match
     if (!matchedStudentId && parsed.studentName) {
+      // Try full name first
       const { data: student } = await supabase
         .from("students")
         .select("id, full_name, student_code")
@@ -340,6 +358,25 @@ export async function POST(request: Request) {
         matchedStudentId = student.id;
         matchedStudentName = student.full_name;
         matchedBy = "name";
+      }
+
+      // If no match, try each word of the name separately (handles partial/imperfect names)
+      if (!matchedStudentId) {
+        const words = parsed.studentName.split(/\s+/).filter(w => w.length >= 3);
+        for (const word of words) {
+          const { data: s } = await supabase
+            .from("students")
+            .select("id, full_name, student_code")
+            .or(`full_name.ilike.%${word}%,last_name.ilike.%${word}%,first_name.ilike.%${word}%`)
+            .limit(1)
+            .maybeSingle();
+          if (s) {
+            matchedStudentId = s.id;
+            matchedStudentName = s.full_name;
+            matchedBy = "name";
+            break;
+          }
+        }
       }
     }
 
