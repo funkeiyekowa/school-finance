@@ -433,6 +433,7 @@ function SmsGatewayTab() {
     sms_webhook_secret: "",
     sms_webhook_id: "",
     sms_webhook_registered_at: "",
+    sms_allowed_senders: "",
   });
 
   const load = useCallback(() => {
@@ -450,6 +451,7 @@ function SmsGatewayTab() {
           sms_webhook_secret: data.sms_webhook_secret || "",
           sms_webhook_id: (data as any).sms_webhook_id || "",
           sms_webhook_registered_at: (data as any).sms_webhook_registered_at || "",
+          sms_allowed_senders: (data as any).sms_allowed_senders || "",
         });
       }
       setLoading(false);
@@ -471,7 +473,7 @@ function SmsGatewayTab() {
       "sms_gateway_url", "sms_gateway_username", "sms_gateway_password",
       "sms_gateway_device_id", "sms_auto_credit", "sms_auto_credit_min_confidence",
       "sms_webhook_secret", "sms_webhook_id", "sms_webhook_registered_at",
-      "sms_gateway_provider",
+      "sms_gateway_provider", "sms_allowed_senders",
     ];
     const merged = { ...form, ...extra };
     const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -696,6 +698,16 @@ function SmsGatewayTab() {
               onChange={set("sms_webhook_secret")}
               placeholder="Shared secret to validate incoming webhooks"
             />
+
+            <div className="sm:col-span-2">
+              <Input
+                label="Allowed Senders (whitelist)"
+                value={form.sms_allowed_senders}
+                onChange={set("sms_allowed_senders")}
+                placeholder="e.g. GTBank, Zenith, 1234, 5678"
+                helpText="Comma-separated list of sender names or numbers. Only SMS from these senders will be processed. Leave blank to accept all."
+              />
+            </div>
 
             <div className="sm:col-span-2 flex flex-wrap items-center gap-3 pt-2">
               <Button type="submit" variant="secondary" loading={saving}>

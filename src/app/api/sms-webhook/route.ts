@@ -206,6 +206,36 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    // ---------- SENDER WHITELIST CHECK ----------
+    // If the school configured allowed senders, only process messages from those.
+    // Matching is case-insensitive and partial (e.g. "gtbank" matches sender "GTBank").
+    const { data: whitelistSettings } = await supabase
+      .from("school_settings")
+      .select("sms_allowed_senders")
+      .limit(1)
+      .single();
+
+    const allowedSendersRaw = (whitelistSettings as any)?.sms_allowed_senders || "";
+    if (allowedSendersRaw.trim()) {
+      const allowedList = allowedSendersRaw
+        .split(",")
+        .map((s: string) => s.trim().toLowerCase())
+        .filter((s: string) => s.length > 0);
+
+      const senderLower = (sender || "").toLowerCase();
+      const isAllowed = allowedList.some((allowed: string) =>
+        senderLower.includes(allowed) || allowed.includes(senderLower)
+      );
+
+      if (!isAllowed) {
+        return NextResponse.json({
+          success: false,
+          skipped: true,
+          reason: `Sender "${sender}" is not in the allowed senders list. Message ignored.`,
+        });
+      }
+    }
+
     // Parse the SMS
     const parsed = parseSMS(messageText);
     const confidence = calculateConfidence(parsed);
