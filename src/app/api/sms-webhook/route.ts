@@ -80,9 +80,10 @@ function parseSMS(text: string): {
 
   result.amount = extractAmount(text);
 
-  // Extract student number — patterns like "STU-0001", "ST001", "Student No: 2026001"
+  // Extract student number — patterns like "S019", "STU-0001", "ST001", "Student No: 2026001"
   const studentNoPatterns = [
-    /(?:STU|ST)[-\s]?([0-9]{3,6})/i,
+    /\b(S[0-9]{3})\b/i,                              // S019, S583 — current format
+    /(?:STU|ST)[-\s]?([0-9]{3,6})/i,                 // STU-0001, ST001
     /(?:student\s*(?:no|number|id|code))[:\s]*([A-Z0-9\-\/]+)/i,
     /(?:admission\s*(?:no|number))[:\s]*([A-Z0-9\-\/]+)/i,
   ];
@@ -90,7 +91,8 @@ function parseSMS(text: string): {
   for (const pattern of studentNoPatterns) {
     const match = text.match(pattern);
     if (match) {
-      result.studentNumber = match[0].match(/[A-Z0-9\-\/]+$/i)?.[0] || match[1];
+      // For the S### pattern, the full match IS the code
+      result.studentNumber = match[1] || match[0];
       break;
     }
   }
