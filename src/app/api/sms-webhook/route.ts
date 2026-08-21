@@ -133,6 +133,17 @@ function parseSMS(text: string): {
 }
 
 // Calculate confidence score based on what was parsed
+// Generate a payment reference: PAY + YYYYMMDD + LASTNAME (uppercase)
+function generatePaymentRef(receivedAt: string, studentName: string | null): string {
+  const d = new Date(receivedAt || Date.now());
+  const dateStr = d.getFullYear().toString() +
+    String(d.getMonth() + 1).padStart(2, "0") +
+    String(d.getDate()).padStart(2, "0");
+  const lastName = (studentName || "").split(" ")[0].toUpperCase().replace(/[^A-Z]/g, "") || "UNK";
+  return `PAY${dateStr}${lastName}`;
+}
+
+// Calculate confidence score based on what was parsed
 function calculateConfidence(parsed: ReturnType<typeof parseSMS>): number {
   let score = 0;
   if (parsed.amount) score += 0.4;
@@ -381,7 +392,7 @@ export async function POST(request: Request) {
       parsed_student_name: matchedStudentName || parsed.studentName,
       parsed_amount: parsed.amount,
       parsed_currency: parsed.currency,
-      parsed_reference: parsed.reference,
+      parsed_reference: parsed.reference || generatePaymentRef(receivedAt, matchedStudentName),
       parser_version: "v2",
       processing_status: "received",
       match_status: matchStatus,
