@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { StatusBadge } from "@/components/ui/Badge";
+import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { MessageSquare, Search, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
 import type { SmsInbox, Student, FeeSchedule } from "@/lib/types";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
@@ -18,7 +20,7 @@ import { generateCode } from "@/lib/utils";
 type AlertStatus = "all" | "needs_review" | "matched" | "unmatched" | "duplicate" | "rejected";
 
 export default function SmsAlertsPage() {
-  const { profile, canEdit } = useAuth();
+  const { profile, canEdit, isDeveloper } = useAuth();
   const supabase = createClient();
   const [alerts, setAlerts] = useState<SmsInbox[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -63,6 +65,20 @@ export default function SmsAlertsPage() {
     rejected: alerts.filter(a => a.match_status === "rejected").length,
   };
 
+  // Bulk delete (developer only)
+  const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(filtered.map(a => a.id));
+
+  async function bulkDeleteSelected(ids: string[]) {
+    for (const id of ids) { await supabase.from("sms_inbox").delete().eq("id", id); }
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete SMS Alerts", details: `${ids.length} alerts deleted` });
+    load();
+  }
+  async function bulkDeleteAll() {
+    await supabase.from("sms_inbox").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Purge All SMS Alerts", details: "All SMS alerts deleted" });
+    load();
+  }
+
   return (
     <div className="p-6 space-y-5">
       <PageHeader title="Payment Alerts" subtitle="Incoming SMS fee payment notifications">
@@ -102,11 +118,16 @@ export default function SmsAlertsPage() {
       </div>
 
       {loading ? <LoadingSpinner /> : (
+        <>
+          <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="SMS alerts"
+            onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
+            onSelectAll={selectAll} onClearSelection={clearSelection} isDeveloper={isDeveloper} />
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[#0F2A47] text-white">
+                  {isDeveloper && <th className="w-8 px-2 py-3" />}
                   <th className="text-left px-4 py-3 text-xs font-semibold">Received</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Sender</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Student No.</th>
@@ -120,12 +141,13 @@ export default function SmsAlertsPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={9}><EmptyState message="No SMS alerts found." icon={<MessageSquare size={32} />} /></td></tr>
+                  <tr><td colSpan={isDeveloper ? 10 : 9}><EmptyState message="No SMS alerts found." icon={<MessageSquare size={32} />} /></td></tr>
                 ) : (
                   filtered.map(alert => (
                     <tr key={alert.id}
                       className={cn("border-b border-gray-50 hover:bg-gray-50 cursor-pointer", alert.match_status === "needs_review" && "bg-amber-50/30")}
                       onClick={() => setSelected(alert)}>
+                      <RowCheckbox id={alert.id} selectedIds={selectedIds} onToggle={toggleSelect} isDeveloper={isDeveloper} />
                       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDateTime(alert.received_at || alert.created_at)}</td>
                       <td className="px-4 py-3 text-gray-600 text-xs">{alert.sender || "—"}</td>
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-[#0F2A47]">{alert.parsed_student_number || "—"}</td>
@@ -167,6 +189,7 @@ export default function SmsAlertsPage() {
             </table>
           </div>
         </Card>
+        </>
       )}
 
       {selected && (
