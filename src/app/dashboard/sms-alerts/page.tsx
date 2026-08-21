@@ -81,7 +81,7 @@ export default function SmsAlertsPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Payment Alerts" subtitle="Incoming SMS fee payment notifications">
+      <PageHeader title="Payment Alerts" subtitle="Bank SMS alerts — income (CR) and expenses (DR) from your school account">
         {process.env.NODE_ENV !== "production" && (
           <TestSMSButton onInserted={load} />
         )}
@@ -128,12 +128,12 @@ export default function SmsAlertsPage() {
               <thead>
                 <tr className="bg-[#0F2A47] text-white">
                   {isDeveloper && <th className="w-8 px-2 py-3" />}
+                  <th className="text-left px-4 py-3 text-xs font-semibold">Type</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Received</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Sender</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Student No.</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Student Name</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold">Code</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold">Student / Vendor</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold">Amount</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Match Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Reason</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Confidence</th>
                   <th className="px-4 py-3" />
@@ -143,17 +143,29 @@ export default function SmsAlertsPage() {
                 {filtered.length === 0 ? (
                   <tr><td colSpan={isDeveloper ? 10 : 9}><EmptyState message="No SMS alerts found." icon={<MessageSquare size={32} />} /></td></tr>
                 ) : (
-                  filtered.map(alert => (
+                  filtered.map(alert => {
+                    const isExpense = alert.parser_version === "v3-expense";
+                    return (
                     <tr key={alert.id}
                       className={cn("border-b border-gray-50 hover:bg-gray-50 cursor-pointer", alert.match_status === "needs_review" && "bg-amber-50/30")}
                       onClick={() => setSelected(alert)}>
                       <RowCheckbox id={alert.id} selectedIds={selectedIds} onToggle={toggleSelect} isDeveloper={isDeveloper} />
+                      <td className="px-4 py-3">
+                        <span className={cn(
+                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold",
+                          isExpense ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
+                        )}>
+                          {isExpense ? "↑ Expense" : "↓ Income"}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDateTime(alert.received_at || alert.created_at)}</td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">{alert.sender || "—"}</td>
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-[#0F2A47]">{alert.parsed_student_number || "—"}</td>
-                      <td className="px-4 py-3">{alert.parsed_student_name || "—"}</td>
-                      <td className="px-4 py-3 text-right font-bold">
-                        {alert.parsed_amount ? fmtMoney(alert.parsed_amount) : "—"}
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-gray-900">{alert.parsed_student_name || "—"}</div>
+                        <div className="text-xs text-gray-400">{isExpense ? "Vendor / Payee" : "Student"}</div>
+                      </td>
+                      <td className={cn("px-4 py-3 text-right font-bold", isExpense ? "text-red-700" : "text-green-700")}>
+                        {alert.parsed_amount ? (isExpense ? "-" : "+") + fmtMoney(alert.parsed_amount) : "—"}
                       </td>
                       <td className="px-4 py-3"><StatusBadge status={alert.match_status} /></td>
                       <td className="px-4 py-3 text-xs text-gray-500 max-w-[220px]">
@@ -183,7 +195,8 @@ export default function SmsAlertsPage() {
                         )}
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
