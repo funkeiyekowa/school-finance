@@ -79,7 +79,11 @@ export async function POST(request: Request) {
   // label often holds years of old mail; replaying it would back-post
   // thousands of transactions. The script filters by date too, but an
   // outdated or hand-edited script must not be able to bypass this.
-  const startDate = settings.email_start_date as string | null;
+  // Falls back to today when unset, which also covers the window before
+  // the migration adds the column. Defaulting to "no cutoff" here would let
+  // a label full of old alerts back-post itself.
+  const startDate =
+    (settings.email_start_date as string | null) ?? new Date().toISOString().substring(0, 10);
   if (startDate) {
     const cutoff = new Date(`${startDate}T00:00:00Z`);
     if (!isNaN(cutoff.getTime()) && new Date(receivedAt) < cutoff) {

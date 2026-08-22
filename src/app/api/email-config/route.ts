@@ -41,7 +41,16 @@ export async function GET(request: Request) {
     maxPerRun: Number(s.email_max_per_run) || 25,
     // Cutoff for the script's Gmail search. Alerts older than this are left
     // alone, which is what stops a label full of history being replayed.
-    startDate: (s.email_start_date as string) || null,
+    //
+    // Defaults to today when unset — including when the column doesn't
+    // exist yet because the migration hasn't run. "No cutoff" is the one
+    // value we must never hand out by accident, since a bank label
+    // routinely holds years of alerts.
+    startDate: (s.email_start_date as string) || todayIso(),
     webhookUrl: new URL("/api/email-webhook", request.url).toString(),
   });
+}
+
+function todayIso(): string {
+  return new Date().toISOString().substring(0, 10);
 }
