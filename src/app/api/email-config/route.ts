@@ -39,6 +39,9 @@ export async function GET(request: Request) {
     allowedSenders: splitList(s.email_allowed_senders),
     subjectKeywords: splitList(s.email_subject_keywords),
     maxPerRun: Number(s.email_max_per_run) || 25,
+    // Cutoff for the script's Gmail search. Alerts older than this are left
+    // alone, which is what stops a label full of history being replayed.
+    startDate: (s.email_start_date as string) || null,
     webhookUrl: new URL("/api/email-webhook", request.url).toString(),
   });
 }

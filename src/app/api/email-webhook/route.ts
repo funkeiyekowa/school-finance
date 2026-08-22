@@ -75,6 +75,22 @@ export async function POST(request: Request) {
     if (!isNaN(parsedDate.getTime())) receivedAt = parsedDate.toISOString();
   }
 
+  // History cutoff, enforced here as well as in the script. A bank alert
+  // label often holds years of old mail; replaying it would back-post
+  // thousands of transactions. The script filters by date too, but an
+  // outdated or hand-edited script must not be able to bypass this.
+  const startDate = settings.email_start_date as string | null;
+  if (startDate) {
+    const cutoff = new Date(`${startDate}T00:00:00Z`);
+    if (!isNaN(cutoff.getTime()) && new Date(receivedAt) < cutoff) {
+      return NextResponse.json({
+        success: false,
+        skipped: true,
+        reason: `Email is dated ${receivedAt.substring(0, 10)}, before the ${startDate} start date in Setup → Email Alerts. Ignored as history.`,
+      });
+    }
+  }
+
   // Subject filtering happens here as well as in the script, so a
   // misconfigured or stale script can't push through unwanted mail.
   const keywords = String(settings.email_subject_keywords ?? "")

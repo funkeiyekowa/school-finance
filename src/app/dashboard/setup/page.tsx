@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -63,7 +63,7 @@ function SchoolSettingsTab() {
   const [saved, setSaved] = useState(false);
   const [form, setForm] = useState({
     school_name: "", address: "", phone: "", email: "",
-    currency_symbol: "₦", currency_code: "NGN",
+    currency_symbol: "â‚¦", currency_code: "NGN",
     receipt_prefix: "RCT-", voucher_prefix: "VCH-",
     receipt_footer: "Thank you for your payment.", current_term: "Term 1", current_year: "2026",
   });
@@ -113,7 +113,7 @@ function SchoolSettingsTab() {
           </div>
           <Input label="Phone" value={form.phone} onChange={set("phone")} />
           <Input label="Email" type="email" value={form.email} onChange={set("email")} />
-          <Input label="Currency Symbol" value={form.currency_symbol} onChange={set("currency_symbol")} helpText="e.g. ₦" />
+          <Input label="Currency Symbol" value={form.currency_symbol} onChange={set("currency_symbol")} helpText="e.g. â‚¦" />
           <Input label="Currency Code" value={form.currency_code} onChange={set("currency_code")} helpText="e.g. NGN" />
           <Input label="Receipt Prefix" value={form.receipt_prefix} onChange={set("receipt_prefix")} helpText="e.g. RCT-" />
           <Input label="Voucher Prefix" value={form.voucher_prefix} onChange={set("voucher_prefix")} helpText="e.g. VCH-" />
@@ -126,7 +126,7 @@ function SchoolSettingsTab() {
             <Button type="submit" variant="gold" loading={saving}>
               <Save size={14} /> Save Settings
             </Button>
-            {saved && <span className="text-green-600 text-sm font-medium">✓ Saved successfully</span>}
+            {saved && <span className="text-green-600 text-sm font-medium">âœ“ Saved successfully</span>}
           </div>
         </form>
       </CardContent>
@@ -192,8 +192,8 @@ function FeeScheduleTab() {
                       <td className="px-4 py-3 font-medium">{fee.name}</td>
                       <td className="px-4 py-3 text-gray-600">{fee.category}</td>
                       <td className="px-4 py-3 text-gray-600">{fee.grade || "All grades"}</td>
-                      <td className="px-4 py-3 text-gray-600">{fee.term || "—"}</td>
-                      <td className="px-4 py-3 text-gray-600">{fee.academic_year || "—"}</td>
+                      <td className="px-4 py-3 text-gray-600">{fee.term || "â€”"}</td>
+                      <td className="px-4 py-3 text-gray-600">{fee.academic_year || "â€”"}</td>
                       <td className="px-4 py-3 text-right font-bold">{fmtMoney(fee.amount)}</td>
                       <td className="px-4 py-3">
                         <button onClick={() => toggleActive(fee)}
@@ -252,7 +252,7 @@ function AddFeeModal({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-2 gap-3">
           <Select label="Category" value={form.category} onChange={set("category")}
             options={INCOME_CATEGORIES.map(c => ({ value: c, label: c }))} />
-          <Input label="Amount (₦)" type="number" value={form.amount} onChange={set("amount")} min="0" step="0.01" required />
+          <Input label="Amount (â‚¦)" type="number" value={form.amount} onChange={set("amount")} min="0" step="0.01" required />
           <Input label="Grade (optional)" value={form.grade} onChange={set("grade")} placeholder="e.g. Grade 5 or leave blank for all" />
           <Input label="Term (optional)" value={form.term} onChange={set("term")} placeholder="e.g. Term 1" />
           <div className="col-span-2">
@@ -526,11 +526,11 @@ function SmsGatewayTab() {
       setConnTestResult({
         ok: data.ok,
         msg: data.ok
-          ? `✓ Connected. ${data.existingWebhooks ?? 0} webhook(s) currently registered on this account.`
-          : `✗ ${data.error}`,
+          ? `âœ“ Connected. ${data.existingWebhooks ?? 0} webhook(s) currently registered on this account.`
+          : `âœ— ${data.error}`,
       });
     } catch (err: unknown) {
-      setConnTestResult({ ok: false, msg: `✗ ${err instanceof Error ? err.message : "Connection failed"}` });
+      setConnTestResult({ ok: false, msg: `âœ— ${err instanceof Error ? err.message : "Connection failed"}` });
     } finally {
       setConnTesting(false);
     }
@@ -560,12 +560,12 @@ function SmsGatewayTab() {
           user_email: profile?.email, user_name: profile?.full_name,
           action: "Register SMS Webhook", details: `Webhook ID: ${data.webhookId}`,
         });
-        setConnTestResult({ ok: true, msg: "✓ Webhook registered! Your gateway will now forward every incoming SMS to this app." });
+        setConnTestResult({ ok: true, msg: "âœ“ Webhook registered! Your gateway will now forward every incoming SMS to this app." });
       } else {
-        setConnTestResult({ ok: false, msg: `✗ ${data.error}` });
+        setConnTestResult({ ok: false, msg: `âœ— ${data.error}` });
       }
     } catch (err: unknown) {
-      setConnTestResult({ ok: false, msg: `✗ ${err instanceof Error ? err.message : "Registration failed"}` });
+      setConnTestResult({ ok: false, msg: `âœ— ${err instanceof Error ? err.message : "Registration failed"}` });
     } finally {
       setRegistering(false);
     }
@@ -596,10 +596,10 @@ function SmsGatewayTab() {
         });
         setConnTestResult({ ok: true, msg: "Webhook removed. SMS will no longer be forwarded to this app." });
       } else {
-        setConnTestResult({ ok: false, msg: `✗ ${data.error}` });
+        setConnTestResult({ ok: false, msg: `âœ— ${data.error}` });
       }
     } catch (err: unknown) {
-      setConnTestResult({ ok: false, msg: `✗ ${err instanceof Error ? err.message : "Removal failed"}` });
+      setConnTestResult({ ok: false, msg: `âœ— ${err instanceof Error ? err.message : "Removal failed"}` });
     } finally {
       setUnregistering(false);
     }
@@ -618,12 +618,12 @@ function SmsGatewayTab() {
       });
       const data = await res.json();
       if (data.success) {
-        setTestResult({ ok: true, msg: `✓ Webhook working! Parsed: ₦${data.parsed.amount?.toLocaleString()}, Student: ${data.parsed.student_number || data.parsed.student_name || "unknown"}` });
+        setTestResult({ ok: true, msg: `âœ“ Webhook working! Parsed: â‚¦${data.parsed.amount?.toLocaleString()}, Student: ${data.parsed.student_number || data.parsed.student_name || "unknown"}` });
       } else {
-        setTestResult({ ok: false, msg: `✗ Error: ${data.error}` });
+        setTestResult({ ok: false, msg: `âœ— Error: ${data.error}` });
       }
     } catch (err: unknown) {
-      setTestResult({ ok: false, msg: `✗ Connection failed: ${err instanceof Error ? err.message : ""}` });
+      setTestResult({ ok: false, msg: `âœ— Connection failed: ${err instanceof Error ? err.message : ""}` });
     }
   }
 
@@ -641,23 +641,23 @@ function SmsGatewayTab() {
         <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", isConnected ? "bg-green-500" : "bg-gray-400")} />
         <div className="flex-1">
           <div className={cn("text-sm font-semibold", isConnected ? "text-green-800" : "text-gray-600")}>
-            {isConnected ? "Connected — SMS Gate is forwarding messages to this app" : "Not connected"}
+            {isConnected ? "Connected â€” SMS Gate is forwarding messages to this app" : "Not connected"}
           </div>
           {isConnected && form.sms_webhook_registered_at && (
             <div className="text-xs text-green-600 mt-0.5">
-              Registered {new Date(form.sms_webhook_registered_at).toLocaleString("en-NG")} · Webhook ID: <span className="font-mono">{form.sms_webhook_id}</span>
+              Registered {new Date(form.sms_webhook_registered_at).toLocaleString("en-NG")} Â· Webhook ID: <span className="font-mono">{form.sms_webhook_id}</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Gateway connection form — fully self-service, nothing hardcoded */}
+      {/* Gateway connection form â€” fully self-service, nothing hardcoded */}
       <Card>
         <CardHeader><CardTitle>Connect Your SMS Gateway</CardTitle></CardHeader>
         <CardContent>
           <p className="text-sm text-gray-500 mb-4">
-            Enter the credentials shown in your SMS Gateway Android app (Home tab → Cloud server section), then test the
-            connection and register the webhook. Every school uses their own account — nothing here is shared or hardcoded.
+            Enter the credentials shown in your SMS Gateway Android app (Home tab â†’ Cloud server section), then test the
+            connection and register the webhook. Every school uses their own account â€” nothing here is shared or hardcoded.
           </p>
           <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
             <div className="sm:col-span-2">
@@ -731,7 +731,7 @@ function SmsGatewayTab() {
                   Unregister Webhook
                 </Button>
               )}
-              {saved && <span className="text-green-600 text-sm font-medium">✓ Saved</span>}
+              {saved && <span className="text-green-600 text-sm font-medium">âœ“ Saved</span>}
             </div>
           </form>
 
@@ -881,7 +881,7 @@ function SmsGatewayTab() {
           </div>
           <div className="flex items-start gap-3">
             <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">3</span>
-            <p>From then on, every SMS the phone receives is forwarded here automatically — no manual re-entry needed.</p>
+            <p>From then on, every SMS the phone receives is forwarded here automatically â€” no manual re-entry needed.</p>
           </div>
           <div className="flex items-start gap-3">
             <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">4</span>
@@ -896,7 +896,7 @@ function SmsGatewayTab() {
 
 
 /**
- * Email Alerts — configuration for the Gmail → webhook pipeline.
+ * Email Alerts â€” configuration for the Gmail â†’ webhook pipeline.
  *
  * Every value here is read by the Apps Script at runtime via
  * /api/email-config, so the script itself never needs editing once it's
@@ -924,6 +924,7 @@ function EmailAlertsTab() {
     email_processed_label: "BankAlerts/Processed",
     email_webhook_secret: "",
     email_max_per_run: "25",
+    email_start_date: "",
   });
 
   const [health, setHealth] = useState({
@@ -945,6 +946,7 @@ function EmailAlertsTab() {
         email_processed_label: d.email_processed_label ?? "BankAlerts/Processed",
         email_webhook_secret: d.email_webhook_secret ?? "",
         email_max_per_run: String(d.email_max_per_run ?? 25),
+        email_start_date: d.email_start_date ?? "",
       });
       setHealth({
         lastReceivedAt: d.email_last_received_at ?? null,
@@ -965,10 +967,13 @@ function EmailAlertsTab() {
   const configUrl = `${appOrigin}/api/email-config`;
 
   async function persist(extra: Record<string, unknown> = {}) {
+    const startDate = String(extra.email_start_date ?? form.email_start_date).trim();
     const payload: Record<string, unknown> = {
       ...form,
       ...extra,
       email_max_per_run: parseInt(String(extra.email_max_per_run ?? form.email_max_per_run), 10) || 25,
+      // A date column rejects "", so an empty field must go in as null.
+      email_start_date: startDate || null,
       updated_at: new Date().toISOString(),
     };
     if (settingsId) {
@@ -999,8 +1004,19 @@ function EmailAlertsTab() {
   }
 
   async function toggleEnabled(checked: boolean) {
-    setForm(f => ({ ...f, email_alerts_enabled: checked }));
-    await persist({ email_alerts_enabled: checked });
+    // Turning the channel on without a cutoff would let the script walk
+    // back through every old alert in the label, so default to today.
+    const needsCutoff = checked && !form.email_start_date;
+    const today = new Date().toISOString().substring(0, 10);
+    const extra: Record<string, unknown> = { email_alerts_enabled: checked };
+    if (needsCutoff) extra.email_start_date = today;
+
+    setForm(f => ({
+      ...f,
+      email_alerts_enabled: checked,
+      email_start_date: needsCutoff ? today : f.email_start_date,
+    }));
+    await persist(extra);
   }
 
   /** Rotate the shared secret. The Apps Script must be updated to match. */
@@ -1015,7 +1031,7 @@ function EmailAlertsTab() {
       user_email: profile?.email,
       user_name: profile?.full_name,
       action: "Rotate Email Webhook Secret",
-      details: "A new secret was generated — the Apps Script must be updated.",
+      details: "A new secret was generated â€” the Apps Script must be updated.",
     });
   }
 
@@ -1045,10 +1061,10 @@ function EmailAlertsTab() {
       if (data.success && !data.skipped) {
         setTestResult({
           ok: true,
-          msg: `Webhook is live. Parsed ₦${Number(data.parsed?.amount ?? 0).toLocaleString()} as ${data.type}, status "${data.parsed?.match_status}". Check Payment Alerts for the test entry.`,
+          msg: `Webhook is live. Parsed â‚¦${Number(data.parsed?.amount ?? 0).toLocaleString()} as ${data.type}, status "${data.parsed?.match_status}". Check Payment Alerts for the test entry.`,
         });
       } else if (data.skipped) {
-        setTestResult({ ok: false, msg: `Skipped — ${data.reason}` });
+        setTestResult({ ok: false, msg: `Skipped â€” ${data.reason}` });
       } else {
         setTestResult({ ok: false, msg: data.error || "Unknown error." });
       }
@@ -1088,15 +1104,15 @@ function EmailAlertsTab() {
             {!form.email_alerts_enabled
               ? "Email alerts are off"
               : isConnected
-              ? "Connected — the Gmail script is checking in"
+              ? "Connected â€” the Gmail script is checking in"
               : "Enabled, but the Gmail script hasn't checked in yet"}
           </div>
           <div className="text-xs text-gray-500 mt-0.5">
             {health.lastSyncAt
               ? `Script last checked in ${fmtDateTime(health.lastSyncAt)}`
               : "Install the Apps Script below to start the sync."}
-            {health.lastReceivedAt && ` · Last email processed ${fmtDateTime(health.lastReceivedAt)}`}
-            {` · ${health.totalReceived} email${health.totalReceived === 1 ? "" : "s"} processed in total`}
+            {health.lastReceivedAt && ` Â· Last email processed ${fmtDateTime(health.lastReceivedAt)}`}
+            {` Â· ${health.totalReceived} email${health.totalReceived === 1 ? "" : "s"} processed in total`}
           </div>
         </div>
         <Button size="sm" variant="secondary" onClick={load}>
@@ -1132,7 +1148,7 @@ function EmailAlertsTab() {
           <div className="mt-3 flex items-start gap-2 text-xs text-gray-500">
             <CheckCircle2 size={14} className="text-green-600 shrink-0 mt-0.5" />
             <p>
-              Running SMS and email together is safe — if the same transaction arrives on both
+              Running SMS and email together is safe â€” if the same transaction arrives on both
               channels within 30 minutes, the second one is flagged as a duplicate and nothing is
               posted twice.
             </p>
@@ -1190,6 +1206,22 @@ function EmailAlertsTab() {
               onChange={set("email_max_per_run")}
               helpText="Keeps each 5-minute run inside Apps Script's execution limit."
             />
+            <Input
+              label="Only Process Alerts From"
+              type="date"
+              value={form.email_start_date}
+              onChange={set("email_start_date")}
+              helpText="Emails older than this date are ignored. Bank labels often hold years of alerts â€” this stops them being posted as new transactions."
+            />
+            <div className="sm:col-span-2 flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <AlertTriangle size={16} className="text-blue-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-800">
+                Your <strong>{form.email_gmail_label || "BankAlerts"}</strong> label currently holds
+                thousands of past alerts. Keep the start date at today unless you genuinely want
+                older transactions posted to the ledger â€” and if you do, raise it a few days at a
+                time so you can check the results.
+              </p>
+            </div>
             <div className="sm:col-span-2 flex items-center gap-3 pt-2">
               <Button type="submit" variant="gold" loading={saving}>
                 <Save size={14} /> Save Filters
@@ -1235,7 +1267,7 @@ function EmailAlertsTab() {
                 {form.email_webhook_secret
                   ? showSecret
                     ? form.email_webhook_secret
-                    : "•".repeat(24)
+                    : "â€¢".repeat(24)
                   : "Not generated yet"}
               </code>
               <Button size="sm" variant="secondary" onClick={() => setShowSecret(s => !s)}>
@@ -1295,8 +1327,8 @@ function EmailAlertsTab() {
             {[
               <>In Gmail, create a filter for your bank's alert address and apply the label <strong>{form.email_gmail_label || "BankAlerts"}</strong>. Tick &ldquo;Also apply to matching conversations&rdquo;.</>,
               <>Go to <a href="https://script.google.com" target="_blank" rel="noreferrer" className="text-[#0F2A47] underline font-medium">script.google.com</a> and create a new project.</>,
-              <>Paste the script below. The secret is already filled in — nothing else to edit.</>,
-              <>Click the clock icon (Triggers) → Add Trigger → function <code className="bg-gray-100 px-1 rounded">processBankEmails</code>, time-driven, minutes timer, every 5 minutes.</>,
+              <>Paste the script below. The secret is already filled in â€” nothing else to edit.</>,
+              <>Click the clock icon (Triggers) â†’ Add Trigger â†’ function <code className="bg-gray-100 px-1 rounded">processBankEmails</code>, time-driven, minutes timer, every 5 minutes.</>,
               <>Run <code className="bg-gray-100 px-1 rounded">processBankEmails</code> once manually and approve the Gmail permission prompt.</>,
               <>Turn on the switch at the top of this page. Alerts will appear under <strong>Payment Alerts</strong>.</>,
             ].map((step, i) => (
@@ -1352,10 +1384,27 @@ function buildAppsScript(configUrl: string, secret: string): string {
  * fetched on every run, so this script should not need editing again.
  *
  * Setup: add a time-driven trigger for processBankEmails, every 5 minutes.
+ *
+ * Two things this script is deliberately careful about:
+ *
+ *  1. It tracks individual MESSAGE ids, not thread labels. Gmail groups
+ *     messages with the same subject into one thread, and bank alerts all
+ *     share a subject, so a thread-level "done" flag would silently drop
+ *     every alert that Gmail collapsed into an already-processed thread.
+ *
+ *  2. A message is only recorded as forwarded after the app confirms it
+ *     with a 2xx. Anything that fails is retried on the next run instead
+ *     of being lost.
  */
 
 var CONFIG_URL = ${JSON.stringify(configUrl)};
 var SECRET = ${JSON.stringify(secret)};
+
+/** Property key holding the ids of messages already forwarded. */
+var SEEN_KEY = 'sfs_forwarded_message_ids';
+
+/** How many message ids to remember. Comfortably above daily alert volume. */
+var SEEN_LIMIT = 600;
 
 function processBankEmails() {
   var config = fetchConfig_();
@@ -1366,38 +1415,65 @@ function processBankEmails() {
     return;
   }
 
-  var sourceLabel = GmailApp.getUserLabelByName(config.gmailLabel);
-  if (!sourceLabel) {
-    Logger.log('Gmail label "' + config.gmailLabel + '" not found. Create it or update Setup.');
+  var seen = loadSeen_();
+  var cutoff = config.startDate ? new Date(config.startDate + 'T00:00:00') : null;
+
+  // Let Gmail do the date filtering; it is far cheaper than fetching
+  // thousands of old threads and discarding them here.
+  var query = 'label:' + quoteLabel_(config.gmailLabel);
+  if (config.startDate) {
+    query += ' after:' + config.startDate.replace(/-/g, '/');
+  }
+
+  var threads = GmailApp.search(query, 0, config.maxPerRun || 25);
+  if (threads.length === 0) {
+    Logger.log('No threads matched: ' + query);
     return;
   }
 
   var processedLabel = getOrCreateLabel_(config.processedLabel);
-  var threads = sourceLabel.getThreads(0, config.maxPerRun || 25);
-  var sent = 0;
-  var skipped = 0;
+  var sent = 0, failed = 0, skippedOld = 0, skippedFilter = 0, skippedSeen = 0;
 
   for (var t = 0; t < threads.length; t++) {
     var thread = threads[t];
-    if (hasLabel_(thread, config.processedLabel)) continue;
-
     var messages = thread.getMessages();
+    var anySent = false;
+
     for (var m = 0; m < messages.length; m++) {
       var message = messages[m];
+      var id = message.getId();
 
-      if (!senderAllowed_(message.getFrom(), config.allowedSenders)) { skipped++; continue; }
-      if (!subjectAllowed_(message.getSubject(), config.subjectKeywords)) { skipped++; continue; }
+      // Message-level memory. This is what makes a new alert inside an
+      // old thread still get forwarded.
+      if (seen[id]) { skippedSeen++; continue; }
 
-      if (postMessage_(config.webhookUrl, message)) sent++;
-      else skipped++;
+      if (cutoff && message.getDate() < cutoff) { skippedOld++; continue; }
+      if (!senderAllowed_(message.getFrom(), config.allowedSenders)) { skippedFilter++; continue; }
+      if (!subjectAllowed_(message.getSubject(), config.subjectKeywords)) { skippedFilter++; continue; }
+
+      if (postMessage_(config.webhookUrl, message)) {
+        seen[id] = 1;
+        sent++;
+        anySent = true;
+      } else {
+        // Left out of "seen" on purpose so the next run retries it.
+        failed++;
+      }
     }
 
-    // Label the thread so its messages are never forwarded again.
-    thread.addLabel(processedLabel);
-    thread.removeLabel(sourceLabel);
+    // Informational only — the label is a progress marker for you, never
+    // a skip condition for the script.
+    if (anySent) thread.addLabel(processedLabel);
   }
 
-  Logger.log('Forwarded ' + sent + ' email(s), skipped ' + skipped + '.');
+  saveSeen_(seen);
+
+  Logger.log(
+    'Forwarded ' + sent + ', failed ' + failed +
+    ', already-sent ' + skippedSeen +
+    ', too old ' + skippedOld +
+    ', filtered out ' + skippedFilter + '.'
+  );
 }
 
 /** Fetch filtering rules from the app. */
@@ -1419,7 +1495,7 @@ function fetchConfig_() {
   }
 }
 
-/** POST a single message to the app's webhook. */
+/** POST a single message to the app's webhook. Returns true only on 2xx. */
 function postMessage_(webhookUrl, message) {
   var payload = {
     from: message.getFrom(),
@@ -1440,14 +1516,53 @@ function postMessage_(webhookUrl, message) {
     });
 
     var code = response.getResponseCode();
-    if (code >= 200 && code < 300) return true;
+    var text = response.getContentText();
 
-    Logger.log('Webhook rejected message ' + message.getId() + ' (' + code + '): ' + response.getContentText());
+    if (code >= 200 && code < 300) {
+      // The app answers 200 with skipped:true for duplicates and for mail
+      // older than the start date. Those are settled outcomes, so treat
+      // them as done rather than retrying them forever.
+      Logger.log('Sent ' + message.getId() + ': ' + text.substring(0, 180));
+      return true;
+    }
+
+    Logger.log('Webhook rejected ' + message.getId() + ' (' + code + '): ' + text.substring(0, 300));
     return false;
   } catch (err) {
-    Logger.log('Webhook error for message ' + message.getId() + ': ' + err);
+    Logger.log('Webhook error for ' + message.getId() + ': ' + err);
     return false;
   }
+}
+
+/** Load the set of already-forwarded message ids. */
+function loadSeen_() {
+  var raw = PropertiesService.getScriptProperties().getProperty(SEEN_KEY);
+  if (!raw) return {};
+  try {
+    var ids = JSON.parse(raw);
+    var set = {};
+    for (var i = 0; i < ids.length; i++) set[ids[i]] = 1;
+    return set;
+  } catch (err) {
+    Logger.log('Could not read forwarded-id memory, starting fresh: ' + err);
+    return {};
+  }
+}
+
+/**
+ * Persist the set, keeping only the newest ids. Script properties cap out
+ * around 9KB per value, so this stays bounded. The app also rejects
+ * duplicates by message id, so trimming can never cause a double post.
+ */
+function saveSeen_(set) {
+  var ids = Object.keys(set);
+  if (ids.length > SEEN_LIMIT) ids = ids.slice(ids.length - SEEN_LIMIT);
+  PropertiesService.getScriptProperties().setProperty(SEEN_KEY, JSON.stringify(ids));
+}
+
+/** Labels containing spaces or slashes need quoting in a Gmail query. */
+function quoteLabel_(name) {
+  return /[\\s]/.test(name) ? '"' + name + '"' : name;
 }
 
 /** Case-insensitive partial match against the allowed sender list. */
@@ -1474,14 +1589,6 @@ function getOrCreateLabel_(name) {
   return GmailApp.getUserLabelByName(name) || GmailApp.createLabel(name);
 }
 
-function hasLabel_(thread, name) {
-  var labels = thread.getLabels();
-  for (var i = 0; i < labels.length; i++) {
-    if (labels[i].getName() === name) return true;
-  }
-  return false;
-}
-
 /** Run manually to confirm the app is reachable and the secret is correct. */
 function testConnection() {
   var config = fetchConfig_();
@@ -1489,7 +1596,30 @@ function testConnection() {
     Logger.log('Could not reach the app. Check CONFIG_URL and SECRET.');
     return;
   }
-  Logger.log('Connected. Enabled: ' + config.enabled + ', label: ' + config.gmailLabel);
+  Logger.log(
+    'Connected.\\n' +
+    '  enabled:    ' + config.enabled + '\\n' +
+    '  label:      ' + config.gmailLabel + '\\n' +
+    '  startDate:  ' + config.startDate + '\\n' +
+    '  senders:    ' + JSON.stringify(config.allowedSenders) + '\\n' +
+    '  keywords:   ' + JSON.stringify(config.subjectKeywords) + '\\n' +
+    '  maxPerRun:  ' + config.maxPerRun
+  );
+
+  var query = 'label:' + quoteLabel_(config.gmailLabel);
+  if (config.startDate) query += ' after:' + config.startDate.replace(/-/g, '/');
+  var threads = GmailApp.search(query, 0, config.maxPerRun || 25);
+  Logger.log('Query "' + query + '" matches ' + threads.length + ' thread(s) in this batch.');
+}
+
+/**
+ * Troubleshooting helper: forget which messages were forwarded so the next
+ * run re-sends everything in range. Safe — the app rejects duplicates by
+ * message id, so nothing is posted twice.
+ */
+function resetForwardedMemory() {
+  PropertiesService.getScriptProperties().deleteProperty(SEEN_KEY);
+  Logger.log('Forwarded-message memory cleared. The next run will re-check the current window.');
 }
 `;
 }

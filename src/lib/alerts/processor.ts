@@ -116,9 +116,11 @@ export async function processAlert(
     }
   }
 
-  const parsed = parseAlert(messageText);
+  // The subject carries the direction and often the amount for banks that
+  // don't use CR:/DR: tokens, so it has to reach the parser.
+  const parsed = parseAlert(messageText, input.subject ?? "");
 
-  return parsed.isDebit
+  return parsed.direction === "debit"
     ? processDebit(supabase, input, parsed, settings)
     : processCredit(supabase, input, parsed, settings);
 }
@@ -400,8 +402,18 @@ async function processCredit(
     isDebit: false,
   });
 
+  // An alert whose direction we couldn't establish must never post itself.
+  // Treating an unrecognised debit as income would silently overstate
+  // income and credit a student who never paid.
+  const directionKnown = parsed.direction === "credit";
+
   const willAutoCredit =
-    autoCreditEnabled && meetsThreshold && !isDuplicate && !!matchedStudentId && !!parsed.amount;
+    autoCreditEnabled &&
+    meetsThreshold &&
+    directionKnown &&
+    !isDuplicate &&
+    !!matchedStudentId &&
+    !!parsed.amount;
 
   const channelLabel = channel === "email" ? "Email" : "SMS";
   const amountLabel = parsed.amount?.toLocaleString() ?? "—";
@@ -418,6 +430,9 @@ async function processCredit(
   if (isDuplicate) {
     matchStatus = "duplicate";
     matchReason = `Duplicate — ₦${amountLabel} for ${parsed.studentNumber || matchedStudentName} was already recorded in the last ${DEDUPE_WINDOW_MINUTES} minutes. Payment NOT posted. Likely the same transaction arriving via both SMS and email.`;
+  } else if (!directionKnown) {
+    matchStatus = "needs_review";
+    matchReason = `Review required — could not tell whether this alert is a credit or a debit, so nothing has been posted. Amount read: ₦${amountLabel}${parsed.studentName || parsed.studentNumber ? `, identifier "${parsed.studentNumber || parsed.studentName}"` : ""}. This usually means the bank's wording isn't recognised yet — check the alert text and confirm the direction manually. Source: ${channelLabel} (format: ${parsed.format}).`;
   } else if (willAutoCredit) {
     matchStatus = "matched";
     matchReason = `Auto-credited ✓ — ${howMatched}. ₦${amountLabel} posted to ${matchedStudentName}'s account automatically (confidence ${Math.round(confidence * 100)}% ≥ threshold ${Math.round(minConfidence * 100)}%). Source: ${channelLabel}.`;

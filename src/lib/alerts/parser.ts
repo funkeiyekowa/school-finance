@@ -6,18 +6,29 @@
  * SMS and email at once, and the two can never drift apart.
  */
 
+/**
+ * Which way the money moved. "unknown" is a real, expected outcome for
+ * bank formats we don't recognise, and it must never be collapsed into
+ * "credit" — posting a debit as income corrupts the ledger silently.
+ */
+export type AlertDirection = "credit" | "debit" | "unknown";
+
 export interface ParsedAlert {
   amount: number | null;
   studentNumber: string | null;
   studentName: string | null;
   reference: string | null;
   currency: string;
+  direction: AlertDirection;
+  /** Convenience mirror of `direction === "debit"`. */
   isDebit: boolean;
   payeeName: string | null;
   /** Free-text purpose of a debit, e.g. "LOGISTICS" from "IYEKOWA F **8514 LOGISTICS" */
   purpose: string | null;
   /** Raw value of the bank's DT: field, e.g. "05/MAY/26 08:24AM" */
   transactionDate: string | null;
+  /** Which shape the parser recognised — surfaced in the UI for diagnosis. */
+  format: "fidelity-labelled" | "subject-amount" | "labelled-fields" | "freeform";
 }
 
 /**
@@ -38,8 +49,12 @@ export function extractAmount(text: string): number | null {
 
   // Hyphens/colons/slashes aren't alphanumeric, so the lookbehind above
   // won't catch "STU-0003" or "REF: 893421" on its own.
+  //
+  // The leading \b matters: without it these tokens match inside ordinary
+  // words, and "ID" sits inside "Paid" — which threw away the amount in
+  // "Paid 22500" entirely.
   const codePrefixRegex =
-    /(STU|ST|ADM|REF|TXN|ACC|ACCT|ID|NO|ITEM|PIN|SIM|SUB)[\s\-\/:#]*$/i;
+    /\b(STU|ST|ADM|REF|TXN|ACC|ACCT|ID|NO|ITEM|PIN|SIM|SUB)[\s\-\/:#]*$/i;
 
   const candidates: { value: number; raw: string; index: number }[] = [];
   let m: RegExpExecArray | null;
@@ -115,68 +130,226 @@ function splitPayeeAndPurpose(desc: string): { payee: string; purpose: string } 
 }
 
 /**
+ * Remove the headers Gmail adds when a message is forwarded.
+ *
+ * A forwarded alert carries "From:", "Date:" and "Subject:" lines from the
+ * original. Left in place they feed junk into the amount and name
+ * extractors — the forwarder's own name can easily be mistaken for the
+ * payer's.
+ */
+function stripForwardPreamble(text: string): string {
+  return text
+    .replace(/^-{2,}\s*(Forwarded message|Original Message)\s*-{2,}\s*$/gim, "")
+    .replace(/^\s*(From|Sent|To|Cc|Bcc|Date|Subject|Reply-To)\s*:.*$/gim, "")
+    .replace(/^\s*>+\s?/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Blank out balance figures so they can't be mistaken for the transaction
+ * amount. Nigerian alerts quote the running balance right next to the
+ * amount ("Bal:N3,897,345.44CR"), and it is almost always the larger
+ * number, so a "biggest number wins" heuristic would pick it every time.
+ */
+function maskBalances(text: string): string {
+  return text
+    .replace(
+      /\b(?:available|ledger|closing|opening|current|book)?\s*bal(?:ance)?\s*[:\-]?\s*(?:NGN|N|₦)?\s*[0-9,]+(?:\.[0-9]{1,2})?\s*(?:CR|DR)?/gi,
+      " "
+    )
+    .replace(/\b(?:CR|DR)\b(?=\s*$)/gim, " ");
+}
+
+/** Count how many times a global pattern matches. */
+function countMatches(text: string, pattern: RegExp): number {
+  const m = text.match(pattern);
+  return m ? m.length : 0;
+}
+
+/**
+ * Work out whether money came in or went out.
+ *
+ * Checked in order of how explicit the signal is. The balance suffix
+ * ("Bal:N3,897,345.44CR") looks like a direction marker but isn't, so it's
+ * masked out before any word counting happens.
+ */
+export function detectDirection(text: string, subject = ""): AlertDirection {
+  // 1. Labelled amount token — unambiguous (Fidelity).
+  const hasDR = /\bDR\s*:\s*N?\s*[0-9]/i.test(text);
+  const hasCR = /\bCR\s*:\s*N?\s*[0-9]/i.test(text);
+  if (hasDR && !hasCR) return "debit";
+  if (hasCR && !hasDR) return "credit";
+
+  // 2. Subject line — e.g. "Union Bank Transaction Alert (Credit 9,000.00 NGN)".
+  const subjDebit = /\bdebit(?:ed)?\b/i.test(subject);
+  const subjCredit = /\bcredit(?:ed)?\b/i.test(subject);
+  if (subjDebit && !subjCredit) return "debit";
+  if (subjCredit && !subjDebit) return "credit";
+
+  // 3. Explicit transaction-type field, common in HTML bank emails.
+  const typeField = text.match(/\b(?:transaction|txn|trans)\s*type\s*[:\-]\s*(\w+)/i);
+  if (typeField) {
+    const t = typeField[1].toLowerCase();
+    if (t.startsWith("deb") || t.startsWith("dr")) return "debit";
+    if (t.startsWith("cre") || t.startsWith("cr")) return "credit";
+  }
+
+  // 4. Fall back to weighing the wording of the body.
+  const body = maskBalances(text);
+  const debitHits = countMatches(
+    body,
+    /\b(debit(?:ed)?|withdraw(?:al|n)?|transfer\s+to|payment\s+to|outflow|purchase)\b/gi
+  );
+  const creditHits = countMatches(
+    body,
+    /\b(credit(?:ed)?|deposit(?:ed)?|transfer\s+from|received\s+from|inflow|lodg(?:ed|ement))\b/gi
+  );
+  if (debitHits > creditHits) return "debit";
+  if (creditHits > debitHits) return "credit";
+
+  return "unknown";
+}
+
+/** Field labels banks use for the transaction narration. */
+const NARRATION_LABEL =
+  /(?:Desc(?:ription)?|Narration|Remarks?|Particulars|Transaction\s+Details|Payment\s+Details|Details)\s*[:\-]\s*/i;
+
+/** Labels that mark the start of the *next* field, ending the narration. */
+const NEXT_FIELD_LABEL =
+  /\s(?:DT|Date|Time|Bal(?:ance)?|Amount|Acct|Account|Ref(?:erence)?|Transaction\s+Type|Value\s+Date|Available)\s*[:\-]/i;
+
+/**
+ * Pull the narration out of a labelled bank email.
+ *
+ * Returns null rather than guessing, because the caller must not fall back
+ * to scanning the whole body for a name — the salutation ("Dear IYEKOWA F
+ * MRS") is the account holder, not the person who paid.
+ */
+function extractNarration(text: string): string | null {
+  const labelMatch = text.match(NARRATION_LABEL);
+  if (!labelMatch || labelMatch.index === undefined) return null;
+
+  const after = text.slice(labelMatch.index + labelMatch[0].length);
+  const lineEnd = after.search(/\r?\n/);
+  const fieldEnd = after.search(NEXT_FIELD_LABEL);
+
+  const ends = [lineEnd, fieldEnd].filter(i => i > 0);
+  const end = ends.length > 0 ? Math.min(...ends) : after.length;
+
+  const value = after.slice(0, end).trim();
+  return value.length >= 2 ? value : null;
+}
+
+/**
+ * Find an amount that is explicitly labelled as the transaction value.
+ * Tried before the generic scanner so a currency-tagged figure always
+ * beats "largest number in the text".
+ */
+function extractLabelledAmount(text: string): number | null {
+  const patterns = [
+    /\b(?:CR|DR)\s*:\s*(?:NGN|N|₦)?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i,
+    /\bamount\s*(?:\((?:NGN|naira)\))?\s*[:\-]\s*(?:NGN|N|₦)?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i,
+    /\b(?:NGN|₦)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i,
+    /\b([0-9,]+(?:\.[0-9]{1,2})?)\s*(?:NGN|naira)\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const m = text.match(pattern);
+    if (m) {
+      const value = parseFloat(m[1].replace(/,/g, ""));
+      if (!isNaN(value) && value > 0) return value;
+    }
+  }
+  return null;
+}
+
+/** Remove a leading salutation so it can't be read as a counterparty name. */
+function stripSalutation(text: string): string {
+  return text.replace(/^\s*(dear|hello|hi)\b[^,\n]{0,60}[,\n]/i, " ");
+}
+
+/**
+ * Populate counterparty fields from a bank narration.
+ *
+ * Credits read as "S327 Aimien Samuel" (student code then name); debits as
+ * "IYEKOWA F **8514 LOGISTICS" (payee, account ref, purpose). Shared by
+ * every format so the two never diverge.
+ */
+function applyNarration(result: ParsedAlert, rawDesc: string): void {
+  const desc = rawDesc
+    .replace(
+      /^(COB\s+TRF\s+(TO|FROM)|NIP\s*(CR|DR)?|TRF\s+(FROM|TO)|TRANSFER\s+(FROM|TO))\s*/i,
+      ""
+    )
+    .replace(/\s+NOTE\s+.*$/i, "")
+    .trim();
+
+  if (result.isDebit) {
+    const { payee, purpose } = splitPayeeAndPurpose(desc);
+    if (payee.length >= 2) result.payeeName = titleCase(payee);
+    result.purpose = purpose || null;
+    result.reference = purpose || desc;
+    return;
+  }
+
+  const cleaned = desc.replace(/\*{2,}\d+/g, "").trim();
+  const codeAtStart = cleaned.match(/^(S[0-9]{3,4})\s+(.+)/i);
+  if (codeAtStart) {
+    result.studentNumber = codeAtStart[1].toUpperCase();
+    const nameRaw = codeAtStart[2].split(/[\/\\]/)[0].trim();
+    if (nameRaw.length >= 2) result.studentName = titleCase(nameRaw);
+  } else {
+    // A code can appear mid-narration too; remove it before reading a name
+    // so it doesn't end up glued to the front of the name.
+    const withoutCode = cleaned.replace(/\b(S[0-9]{3,4})\b/i, "").trim();
+    const nameCandidate = withoutCode.split(/[\/\\]/)[0].trim();
+    if (nameCandidate.length >= 3) result.studentName = titleCase(nameCandidate);
+  }
+  if (!result.reference) result.reference = desc;
+}
+
+/**
  * Parse a bank alert (from SMS or email) into structured payment data.
  *
- * Handles two shapes:
- *  1. Bank alert  — "CR:N42,000.00 Desc:S327 Aimien Samuel DT:05/MAY/26"
- *  2. Simple text — "S019 4900" or "Payment 5000 for Student Adeji ST001"
+ * Handles, in order of preference:
+ *  1. Fidelity labelled  — "CR:N42,000.00 Desc:S327 Aimien Samuel DT:05/MAY/26"
+ *  2. Subject-carried    — "Union Bank Transaction Alert (Credit 9,000.00 NGN)"
+ *  3. Labelled fields    — HTML emails with "Narration:" / "Amount:" rows
+ *  4. Free-form text     — "S019 4900" or "Payment 5000 for Student Adeji ST001"
+ *
+ * `subject` matters: several banks put the direction and the amount only in
+ * the subject line, so parsing the body alone loses both.
  */
-export function parseAlert(text: string): ParsedAlert {
+export function parseAlert(rawText: string, subject: string | null = ""): ParsedAlert {
+  const text = stripForwardPreamble(rawText);
+  const subj = (subject || "").trim();
+
+  const direction = detectDirection(text, subj);
+
   const result: ParsedAlert = {
     amount: null,
     studentNumber: null,
     studentName: null,
     reference: null,
     currency: "NGN",
-    isDebit: false,
+    direction,
+    isDebit: direction === "debit",
     payeeName: null,
     purpose: null,
     transactionDate: null,
+    format: "freeform",
   };
-
-  // ---------- Direction ----------
-  // Bank emails end with a balance line like "Bal:N3,897,345.44CR", so we
-  // anchor on the labelled amount (DR:N... / CR:N...) rather than a bare
-  // "CR" anywhere in the body.
-  const isDR = /\bDR\s*:\s*N?[0-9]/i.test(text);
-  const isCR = /\bCR\s*:\s*N?[0-9]/i.test(text);
-  result.isDebit = isDR && !isCR;
 
   // ---------- Bank alert format ----------
   const amtMatch = text.match(/\b(?:CR|DR)\s*:\s*N?([0-9,]+(?:\.[0-9]{2})?)/i);
   if (amtMatch) {
+    result.format = "fidelity-labelled";
     const amt = parseFloat(amtMatch[1].replace(/,/g, ""));
     if (amt > 0) result.amount = amt;
 
     const descMatch = text.match(/Desc\s*:\s*(.+?)(?:\r?\n|DT\s*:|Bal\s*:|$)/i);
-    if (descMatch) {
-      let desc = descMatch[1].trim();
-      desc = desc.replace(
-        /^(COB\s+TRF\s+(TO|FROM)|NIP\s*(CR|DR)?|TRF\s+(FROM|TO)|TRANSFER\s+(FROM|TO))\s*/i,
-        ""
-      );
-      desc = desc.replace(/\s+NOTE\s+.*$/i, "").trim();
-
-      if (result.isDebit) {
-        const { payee, purpose } = splitPayeeAndPurpose(desc);
-        if (payee.length >= 2) result.payeeName = titleCase(payee);
-        result.purpose = purpose || null;
-        result.reference = purpose || desc;
-      } else {
-        // Students are asked to prefix the transfer description with their
-        // code, e.g. "S327 Aimien Samuel".
-        const cleaned = desc.replace(/\*{2,}\d+/g, "").trim();
-        const codeAtStart = cleaned.match(/^(S[0-9]{3,4})\s+(.+)/i);
-        if (codeAtStart) {
-          result.studentNumber = codeAtStart[1].toUpperCase();
-          const nameRaw = codeAtStart[2].split(/[\/\\]/)[0].trim();
-          if (nameRaw.length >= 2) result.studentName = titleCase(nameRaw);
-        } else {
-          const nameCandidate = cleaned.split(/[\/\\]/)[0].trim();
-          if (nameCandidate.length >= 3) result.studentName = titleCase(nameCandidate);
-        }
-      }
-    }
+    if (descMatch) applyNarration(result, descMatch[1].trim());
 
     if (!result.studentNumber && !result.isDebit) {
       const codeInMsg = text.match(/\b(S[0-9]{3,4})\b/i);
@@ -189,8 +362,42 @@ export function parseAlert(text: string): ParsedAlert {
     return result;
   }
 
+  // ---------- Subject-carried / labelled-field formats ----------
+  // Union Bank and most HTML bank emails carry no CR:/DR: token. The
+  // direction and often the amount appear only in the subject line
+  // ("Union Bank Transaction Alert (Credit 9,000.00 NGN)"), with the
+  // narration in a labelled row of the body.
+  const cleanBody = maskBalances(stripSalutation(text));
+  const narration = extractNarration(text);
+  const subjectAmount = subj ? extractLabelledAmount(subj) : null;
+  const bodyAmount = extractLabelledAmount(cleanBody);
+
+  if (subjectAmount || bodyAmount || narration) {
+    result.format = subjectAmount ? "subject-amount" : "labelled-fields";
+
+    // The subject is the bank's own one-line summary of the transaction, so
+    // it outranks anything scraped out of the body markup.
+    result.amount = subjectAmount ?? bodyAmount ?? extractAmount(cleanBody);
+
+    const dtMatch = text.match(
+      /\b(?:DT|(?:Value\s+|Transaction\s+)?Date(?:\s*(?:&|and)\s*Time)?)\s*[:\-]\s*([^\r\n]+?)(?:\s{2,}|\r?\n|$)/i
+    );
+    if (dtMatch) result.transactionDate = dtMatch[1].trim();
+
+    // A student code is distinctive enough to trust anywhere in the body.
+    const codeInMsg = (narration || cleanBody).match(/\b(S[0-9]{3,4})\b/i);
+    if (codeInMsg) result.studentNumber = codeInMsg[1].toUpperCase();
+
+    // Names are only read from an identified narration field. Scanning the
+    // whole body would pick up the salutation, which is the account holder
+    // rather than the person who paid.
+    if (narration) applyNarration(result, narration);
+
+    return result;
+  }
+
   // ---------- Simple format ----------
-  result.amount = extractAmount(text);
+  result.amount = extractAmount(maskBalances(text));
 
   const studentNoPatterns = [
     /\b(S[0-9]{3,4})\b/i,
