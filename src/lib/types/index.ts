@@ -28,6 +28,11 @@ export type TimetableEntry = Database["public"]["Tables"]["timetable_entries"]["
 export type AssessmentType = Database["public"]["Tables"]["assessment_types"]["Row"];
 export type GradingScale = Database["public"]["Tables"]["grading_scales"]["Row"];
 export type StudentScore = Database["public"]["Tables"]["student_scores"]["Row"];
+export type Question = Database["public"]["Tables"]["questions"]["Row"];
+export type Exam = Database["public"]["Tables"]["exams"]["Row"];
+export type ExamQuestion = Database["public"]["Tables"]["exam_questions"]["Row"];
+export type ExamAttempt = Database["public"]["Tables"]["exam_attempts"]["Row"];
+export type ExamAnswer = Database["public"]["Tables"]["exam_answers"]["Row"];
 
 export type PaymentStatus = "paid" | "partial" | "unpaid";
 

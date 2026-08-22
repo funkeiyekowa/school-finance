@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2,
   ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users,
-  Activity, MessageSquare, Menu, X, LogOut, ChevronRight, Clock,
+  Activity, MessageSquare, Menu, X, LogOut, ChevronRight, Clock, BookOpen,
 } from "lucide-react";
 
 interface NavItem {
@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/attendance", label: "Attendance", icon: <Users size={18} />, module: "attendance" },
   { href: "/dashboard/timetable", label: "Timetable", icon: <Clock size={18} />, module: "timetable" },
   { href: "/dashboard/assessments", label: "Assessments", icon: <FileBarChart size={18} />, module: "assessments" },
+  { href: "/dashboard/cbt", label: "CBT / Exams", icon: <BookOpen size={18} />, module: "cbt" },
   { href: "/dashboard/vendors", label: "Vendors", icon: <Building2 size={18} />, feature: "vendors", module: "finance" },
   { href: "/dashboard/reconciliation", label: "Reconcile", icon: <ArrowLeftRight size={18} />, feature: "reconciliation", module: "finance" },
   { href: "/dashboard/reports", label: "Reports", icon: <FileBarChart size={18} />, feature: "reports" },

@@ -455,6 +455,102 @@ export type Database = {
         };
         Update: Record<string, unknown>;
       };
+      questions: {
+        Row: {
+          id: string; subject_id: string | null; class_id: string | null;
+          topic: string | null; subtopic: string | null;
+          question_text: string; question_type: string;
+          options: Json; correct_answer: string | null;
+          explanation: string | null; difficulty: string;
+          marks: number; tags: string[] | null; media_url: string | null;
+          active: boolean; organization_id: string | null;
+          created_by: string | null; created_at: string; updated_at: string;
+        };
+        Insert: {
+          question_text: string; question_type?: string;
+          subject_id?: string | null; class_id?: string | null;
+          topic?: string | null; subtopic?: string | null;
+          options?: Json; correct_answer?: string | null;
+          explanation?: string | null; difficulty?: string;
+          marks?: number; tags?: string[] | null; media_url?: string | null;
+          active?: boolean; organization_id?: string | null;
+          created_by?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
+      exams: {
+        Row: {
+          id: string; title: string; description: string | null;
+          exam_type: string; subject_id: string | null; class_id: string | null;
+          academic_year_id: string | null; term: string | null;
+          duration_minutes: number; total_marks: number; pass_mark: number;
+          max_attempts: number; shuffle_questions: boolean; shuffle_options: boolean;
+          show_results: boolean; show_answers: boolean;
+          starts_at: string | null; ends_at: string | null;
+          status: string; settings: Json;
+          organization_id: string | null; created_by: string | null;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          title: string; exam_type?: string;
+          description?: string | null; subject_id?: string | null;
+          class_id?: string | null; academic_year_id?: string | null;
+          term?: string | null; duration_minutes?: number;
+          total_marks?: number; pass_mark?: number; max_attempts?: number;
+          shuffle_questions?: boolean; shuffle_options?: boolean;
+          show_results?: boolean; show_answers?: boolean;
+          starts_at?: string | null; ends_at?: string | null;
+          status?: string; settings?: Json;
+          organization_id?: string | null; created_by?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
+      exam_questions: {
+        Row: {
+          id: string; exam_id: string; question_id: string;
+          sort_order: number; marks_override: number | null;
+        };
+        Insert: {
+          exam_id: string; question_id: string;
+          sort_order?: number; marks_override?: number | null;
+        };
+        Update: Record<string, unknown>;
+      };
+      exam_attempts: {
+        Row: {
+          id: string; exam_id: string; student_id: string;
+          attempt_number: number; started_at: string;
+          submitted_at: string | null; time_spent_seconds: number | null;
+          total_score: number | null; total_marks: number | null;
+          percentage: number | null; passed: boolean | null;
+          status: string; organization_id: string | null; created_at: string;
+        };
+        Insert: {
+          exam_id: string; student_id: string;
+          attempt_number?: number; started_at?: string;
+          submitted_at?: string | null; time_spent_seconds?: number | null;
+          total_score?: number | null; total_marks?: number | null;
+          percentage?: number | null; passed?: boolean | null;
+          status?: string; organization_id?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
+      exam_answers: {
+        Row: {
+          id: string; attempt_id: string; question_id: string;
+          selected_option: string | null; answer_text: string | null;
+          is_correct: boolean | null; marks_awarded: number | null;
+          time_spent_seconds: number | null; flagged: boolean;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          attempt_id: string; question_id: string;
+          selected_option?: string | null; answer_text?: string | null;
+          is_correct?: boolean | null; marks_awarded?: number | null;
+          time_spent_seconds?: number | null; flagged?: boolean;
+        };
+        Update: Record<string, unknown>;
+      };
       // --- Multi-tenant tables ---
       organizations: {
         Row: {
