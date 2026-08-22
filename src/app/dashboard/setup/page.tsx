@@ -10,11 +10,11 @@ import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare, Pencil, Mail, RefreshCw, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare, Pencil, Mail, RefreshCw, CheckCircle2, AlertTriangle, FlaskConical } from "lucide-react";
 import type { FeeSchedule, SchoolSettings } from "@/lib/types";
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES } from "@/lib/types";
 
-type Tab = "school" | "fees" | "categories" | "sms" | "email";
+type Tab = "school" | "fees" | "categories" | "sms" | "email" | "tester";
 
 export default function SetupPage() {
   const [tab, setTab] = useState<Tab>("school");
@@ -35,6 +35,7 @@ export default function SetupPage() {
           { id: "categories", label: "Categories", icon: <Tags size={14} /> },
           { id: "sms", label: "SMS Gateway", icon: <MessageSquare size={14} /> },
           { id: "email", label: "Email Alerts", icon: <Mail size={14} /> },
+          { id: "tester", label: "Matching Tester", icon: <FlaskConical size={14} /> },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id as Tab)}
             className={cn(
@@ -51,6 +52,7 @@ export default function SetupPage() {
       {tab === "categories" && <CategoriesTab />}
       {tab === "sms" && <SmsGatewayTab />}
       {tab === "email" && <EmailAlertsTab />}
+      {tab === "tester" && <MatchingTesterTab />}
     </div>
   );
 }
@@ -1666,4 +1668,305 @@ function resetForwardedMemory() {
   Logger.log('Forwarded-message memory cleared. The next run will re-check the current window.');
 }
 `;
+}
+
+/**
+ * Matching Tester — dry-run the parse + match pipeline on pasted text.
+ *
+ * Calls POST /api/alert-test which reads but never writes. Shows every
+ * field the real pipeline would compute so you can verify rules before
+ * relying on them with live alerts.
+ */
+function MatchingTesterTab() {
+  const [text, setText] = useState("");
+  const [subject, setSubject] = useState("");
+  const [isHtml, setIsHtml] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function runTest() {
+    if (!text.trim()) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await fetch("/api/alert-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, subject, isHtml }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || `Error ${res.status}`);
+      } else {
+        setResult(data);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Request failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const r = result as Record<string, unknown> | null;
+  const direction = r?.direction as string | undefined;
+  const isDebit = direction === "debit";
+  const isCredit = direction === "credit";
+  const matchedStudent = r?.matchedStudent as { id: string; name: string; code: string; matchedBy: string } | null;
+  const matchedVendor = r?.matchedVendor as { id: string; name: string } | null;
+  const studentCandidates = (r?.studentCandidates ?? []) as { id: string; full_name: string; student_code: string; matchedBy: string }[];
+  const vendorCandidates = (r?.vendorCandidates ?? []) as { id: string; name: string; matchedBy: string }[];
+  const settings = r?.settings as { autoCreditEnabled: boolean; autoExpenseEnabled: boolean; minConfidencePercent: number } | null;
+
+  return (
+    <div className="space-y-6">
+      {/* Instructions */}
+      <Card>
+        <CardHeader><CardTitle>Matching Tester</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-600 mb-1">
+            Paste an SMS or email alert below. This runs the <strong>exact same pipeline</strong> as
+            the live webhooks but <strong>never posts anything</strong> to the ledger. Use it to
+            verify how a transaction would be parsed, which student or vendor it would match, what
+            the confidence score is, and whether it would auto-post or need review.
+          </p>
+          <p className="text-xs text-gray-400">
+            Tip: for email alerts, paste the plain-text body. If you only have the HTML source, tick
+            the HTML checkbox and it will be converted first.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Input */}
+      <Card>
+        <CardHeader><CardTitle>Alert Message</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Message Body</label>
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              rows={8}
+              placeholder={"Acct:**3387\nCR:N22,000.00\nDesc:S327 Aimien Samuel\nDT:05/MAY/26 08:24AM\nBal:N2,100,752.94CR"}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#C9A227] resize-y"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Email Subject (optional)"
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              placeholder="Union Bank Transaction Alert (Credit 9,000.00 NGN)"
+              helpText="Leave blank for SMS. For email, paste the subject line — it often carries the direction and amount."
+            />
+            <div className="flex items-end gap-4 pb-1">
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isHtml}
+                  onChange={e => setIsHtml(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-[#C9A227] focus:ring-[#C9A227]"
+                />
+                Body is HTML (will be converted to text first)
+              </label>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="gold" onClick={runTest} loading={loading} disabled={!text.trim()}>
+              <FlaskConical size={14} /> Run Test
+            </Button>
+            {error && <span className="text-sm text-red-600 font-medium">{error}</span>}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Results */}
+      {r && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Test Results</CardTitle>
+              <span className={cn(
+                "px-3 py-1 rounded-full text-xs font-bold",
+                isDebit ? "bg-red-100 text-red-700" : isCredit ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+              )}>
+                {isDebit ? "EXPENSE (Debit)" : isCredit ? "INCOME (Credit)" : "UNKNOWN DIRECTION"}
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {/* Simulated outcome */}
+            <div className={cn(
+              "rounded-xl p-4 border text-sm",
+              String(r.simulatedOutcome ?? "").includes("auto-post") || String(r.simulatedOutcome ?? "").includes("auto-credit")
+                ? "bg-green-50 border-green-200 text-green-800"
+                : String(r.simulatedOutcome ?? "").includes("unmatched")
+                ? "bg-gray-50 border-gray-200 text-gray-700"
+                : "bg-amber-50 border-amber-200 text-amber-800"
+            )}>
+              <div className="text-xs font-semibold uppercase tracking-wide opacity-70 mb-1">Simulated Outcome</div>
+              <p className="font-bold text-base mb-2">{String(r.simulatedOutcome)}</p>
+              <p className="font-medium">{String(r.simulatedReason)}</p>
+            </div>
+
+            {/* Confidence */}
+            <div className="flex items-center gap-3 bg-white border border-gray-100 rounded-lg p-3">
+              <span className="text-xs text-gray-500 font-medium w-20">Confidence:</span>
+              <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full transition-all", Number(r.confidencePercent) >= (settings?.minConfidencePercent ?? 80) ? "bg-green-500" : "bg-amber-500")}
+                  style={{ width: `${r.confidencePercent}%` }}
+                />
+              </div>
+              <span className="text-sm font-bold text-[#0F2A47] w-12 text-right">{String(r.confidencePercent)}%</span>
+              <span className="text-xs text-gray-400">(threshold: {settings?.minConfidencePercent ?? 80}%)</span>
+            </div>
+
+            {/* Parsed fields grid */}
+            <div>
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Parsed Fields</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                <ResultField label="Format" value={String(r.format ?? "—")} />
+                <ResultField label="Direction" value={String(r.direction ?? "—")} />
+                <ResultField label="Amount" value={r.amount != null ? `₦${Number(r.amount).toLocaleString()}` : "—"} />
+                <ResultField label="Currency" value={String(r.currency ?? "NGN")} />
+                <ResultField label="Transaction Date" value={String(r.transactionDate ?? "—")} />
+                <ResultField label="Date (ISO)" value={String(r.transactionDateISO ?? "—")} />
+                <ResultField label="Reference" value={String(r.reference ?? "—")} />
+                {isCredit && (
+                  <>
+                    <ResultField label="Student Number" value={String(r.studentNumber ?? "—")} highlight={!!r.studentNumber} />
+                    <ResultField label="Student Name (parsed)" value={String(r.studentName ?? "—")} highlight={!!r.studentName} />
+                  </>
+                )}
+                {isDebit && (
+                  <>
+                    <ResultField label="Payee Name" value={String(r.payeeName ?? "—")} highlight={!!r.payeeName} />
+                    <ResultField label="Purpose" value={String(r.purpose ?? "—")} />
+                    <ResultField label="Expense Category" value={String(r.expenseCategory ?? "—")} />
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Student match details */}
+            {isCredit && (
+              <div>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Student Match</div>
+                {matchedStudent ? (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <CheckCircle2 size={14} className="text-green-600" />
+                      <span className="text-sm font-bold text-green-800">Matched: {matchedStudent.name} ({matchedStudent.code})</span>
+                    </div>
+                    <p className="text-xs text-green-700">Matched by: {matchedStudent.matchedBy}</p>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle size={14} className="text-amber-600" />
+                      <span className="text-sm font-bold text-amber-800">No student matched</span>
+                    </div>
+                    <p className="text-xs text-amber-700 mt-1">
+                      {r.studentNumber || r.studentName
+                        ? `Searched for "${r.studentNumber || r.studentName}" but found no matching student.`
+                        : "No student code or name was found in the alert text."}
+                    </p>
+                  </div>
+                )}
+                {studentCandidates.length > 1 && (
+                  <div className="mt-2">
+                    <div className="text-xs text-gray-500 mb-1">All candidates found ({studentCandidates.length}):</div>
+                    <div className="space-y-1">
+                      {studentCandidates.map((c, i) => (
+                        <div key={i} className="text-xs bg-white border border-gray-100 rounded px-2 py-1 flex items-center gap-3">
+                          <span className="font-mono text-gray-500">{c.student_code}</span>
+                          <span className="font-medium text-gray-800">{c.full_name}</span>
+                          <span className="text-gray-400 ml-auto">via {c.matchedBy}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Vendor match details */}
+            {isDebit && (
+              <div>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Vendor Match</div>
+                {matchedVendor ? (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={14} className="text-green-600" />
+                      <span className="text-sm font-bold text-green-800">Matched: {matchedVendor.name}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle size={14} className="text-amber-600" />
+                      <span className="text-sm font-bold text-amber-800">No vendor matched</span>
+                    </div>
+                    <p className="text-xs text-amber-700 mt-1">
+                      {r.payeeName
+                        ? `Searched for "${r.payeeName}" but found no matching vendor. Would record under this payee name.`
+                        : "No payee name was found in the alert text."}
+                    </p>
+                  </div>
+                )}
+                {vendorCandidates.length > 1 && (
+                  <div className="mt-2">
+                    <div className="text-xs text-gray-500 mb-1">All candidates found ({vendorCandidates.length}):</div>
+                    <div className="space-y-1">
+                      {vendorCandidates.map((c, i) => (
+                        <div key={i} className="text-xs bg-white border border-gray-100 rounded px-2 py-1 flex items-center gap-3">
+                          <span className="font-medium text-gray-800">{c.name}</span>
+                          <span className="text-gray-400 ml-auto">via {c.matchedBy}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Settings context */}
+            {settings && (
+              <div>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Active Settings</div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <ResultField label="Auto-Credit" value={settings.autoCreditEnabled ? "ON" : "OFF"} highlight={settings.autoCreditEnabled} />
+                  <ResultField label="Auto-Expense" value={settings.autoExpenseEnabled ? "ON" : "OFF"} highlight={settings.autoExpenseEnabled} />
+                  <ResultField label="Min Confidence" value={`${settings.minConfidencePercent}%`} />
+                </div>
+              </div>
+            )}
+
+            {/* Processed text preview */}
+            <details className="text-xs text-gray-500">
+              <summary className="cursor-pointer font-medium text-gray-600 hover:text-gray-800">
+                Show processed text (after HTML strip / forward removal)
+              </summary>
+              <pre className="mt-2 bg-gray-50 border border-gray-100 rounded-lg p-3 whitespace-pre-wrap font-mono text-xs text-gray-700 max-h-48 overflow-y-auto">
+                {String(r.processedText)}
+              </pre>
+            </details>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function ResultField({ label, value, highlight }: { label: string; value: string | number | null | undefined; highlight?: boolean }) {
+  return (
+    <div className="bg-white border border-gray-100 rounded-lg p-2.5">
+      <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">{label}</div>
+      <div className={cn("text-sm font-semibold truncate", highlight ? "text-[#0F2A47]" : "text-gray-700")}>
+        {String(value ?? "—")}
+      </div>
+    </div>
+  );
 }
