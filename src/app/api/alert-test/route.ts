@@ -9,9 +9,9 @@ import {
 import {
   matchStudent,
   matchVendor,
-  calculateMatchConfidence,
 } from "@/lib/alerts/matcher";
 import { createServiceClient } from "@/lib/alerts/service";
+import { evaluatePolicy, loadPolicy, getConfidenceBand } from "@/lib/alerts/policy";
 
 /**
  * Dry-run the full parse + match pipeline on pasted SMS/email text.
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
 
   const autoCreditEnabled = settings.sms_auto_credit === true;
   const autoExpenseEnabled = settings.sms_auto_expense === true;
-  const minConfidence = Math.round(((settings.sms_auto_credit_min_confidence as number) || 0.8) * 100);
+  const policy = loadPolicy(settings);
 
   // ---------- Run the new matching engine (read-only) ----------
   const studentResult = await matchStudent(supabase, parsed.studentNumber, parsed.studentName);
@@ -59,16 +59,18 @@ export async function POST(request: Request) {
 
   const isDebit = parsed.direction === "debit";
   const isCredit = parsed.direction === "credit";
+  const directionKnown = isCredit;
 
-  const activeMatchResult = isDebit ? vendorResult : studentResult;
-  const confidence = isDebit
-    ? calculateMatchConfidence(parsed.amount, null, parsed.payeeName, vendorResult)
-    : calculateMatchConfidence(parsed.amount, parsed.studentNumber, parsed.studentName, studentResult);
-
-  const meetsThreshold = confidence >= minConfidence;
   const expenseCategory = detectExpenseCategory(parsed.payeeName, parsed.purpose, parsed.reference);
   const transactionDate = parseBankDate(parsed.transactionDate);
   const reference = parsed.reference || generatePaymentRef(new Date().toISOString(), studentResult.matchedName || parsed.payeeName);
+
+  // --- Policy evaluation for credits ---
+  const policyResult = evaluatePolicy(
+    policy, studentResult, null, parsed.amount, directionKnown, parsed.studentNumber, parsed.studentName
+  );
+  const confidence = policyResult.confidence;
+  const band = getConfidenceBand(confidence);
 
   // ---------- Simulate outcome ----------
   let simulatedOutcome: string;
@@ -77,53 +79,24 @@ export async function POST(request: Request) {
   if (isDebit) {
     if (autoExpenseEnabled && parsed.amount) {
       simulatedOutcome = "Would auto-post expense";
-      simulatedReason = `Auto-post expense ✓ — ₦${parsed.amount?.toLocaleString() ?? "—"} to "${parsed.payeeName || "Unknown"}". Category: ${expenseCategory}. Vendor match: ${vendorResult.status} — ${vendorResult.reason}`;
+      simulatedReason = `Auto-post expense — ₦${parsed.amount?.toLocaleString() ?? "—"} to "${parsed.payeeName || "Unknown"}". Category: ${expenseCategory}. Vendor: ${vendorResult.status} — ${vendorResult.reason}`;
     } else if (!autoExpenseEnabled) {
       simulatedOutcome = "Would need manual review (auto-expense OFF)";
-      simulatedReason = `Review required. ${vendorResult.reason}`;
+      simulatedReason = vendorResult.reason;
     } else {
       simulatedOutcome = "Would need manual review (no amount)";
-      simulatedReason = `No amount parsed. ${vendorResult.reason}`;
+      simulatedReason = vendorResult.reason;
     }
   } else if (isCredit) {
-    const directionKnown = true;
-    const wouldAutoCredit =
-      autoCreditEnabled &&
-      directionKnown &&
-      studentResult.status === "AUTO_MATCHED" &&
-      meetsThreshold &&
-      !!parsed.amount;
-
-    if (studentResult.status === "CONFLICT") {
-      simulatedOutcome = "CONFLICT — would need manual review";
-      simulatedReason = studentResult.reason;
-    } else if (studentResult.status === "AMBIGUOUS") {
-      simulatedOutcome = "AMBIGUOUS — would need manual review";
-      simulatedReason = studentResult.reason;
-    } else if (wouldAutoCredit) {
+    if (autoCreditEnabled && policyResult.decision === "AUTO_CREDIT") {
       simulatedOutcome = "Would auto-credit student";
-      simulatedReason = `Auto-credit ✓ — ${studentResult.reason} Confidence ${confidence}% ≥ threshold ${minConfidence}%.`;
-    } else if (studentResult.status === "AUTO_MATCHED" && parsed.amount) {
-      if (!autoCreditEnabled) {
-        simulatedOutcome = "Would need manual review (auto-credit OFF)";
-      } else if (!meetsThreshold) {
-        simulatedOutcome = `Would need manual review (confidence ${confidence}% < ${minConfidence}%)`;
-      } else {
-        simulatedOutcome = "Would need manual review";
-      }
-      simulatedReason = studentResult.reason;
-    } else if (studentResult.status === "MANUAL_REVIEW") {
-      simulatedOutcome = "Would need manual review (low confidence match)";
-      simulatedReason = studentResult.reason;
-    } else if (parsed.amount && (parsed.studentNumber || parsed.studentName)) {
-      simulatedOutcome = "Would need manual review (no student match)";
-      simulatedReason = studentResult.reason;
-    } else if (parsed.amount) {
-      simulatedOutcome = "Would be unmatched";
-      simulatedReason = "No student name or number found in the alert.";
+      simulatedReason = policyResult.explanation;
+    } else if (policyResult.decision === "AUTO_CREDIT" && !autoCreditEnabled) {
+      simulatedOutcome = "Would need review (auto-credit toggle OFF, but policy would allow)";
+      simulatedReason = policyResult.explanation;
     } else {
-      simulatedOutcome = "Would be unmatched (no amount)";
-      simulatedReason = "Could not read an amount or student identifier.";
+      simulatedOutcome = "Would need manual review";
+      simulatedReason = policyResult.explanation;
     }
   } else {
     simulatedOutcome = "Would need manual review (unknown direction)";
@@ -179,18 +152,28 @@ export async function POST(request: Request) {
     // Confidence and outcome
     confidence,
     confidencePercent: confidence,
+    confidenceBand: band,
     simulatedOutcome,
     simulatedReason,
+
+    // Policy decision (full explanation)
+    policyDecision: policyResult.decision,
+    policyRule: policyResult.rule,
+    policyEligible: policyResult.eligible,
+    policyBlockers: policyResult.blockers,
+    policyEvidence: policyResult.evidence,
+    policyWarnings: policyResult.warnings,
 
     // Settings context
     settings: {
       autoCreditEnabled,
       autoExpenseEnabled,
-      minConfidencePercent: minConfidence,
+      policyPreset: policy.preset,
+      minimumConfidence: policy.minimumConfidence,
     },
 
     // Audit trail
-    audit: activeMatchResult.audit,
+    audit: (isDebit ? vendorResult : studentResult).audit,
 
     // Raw text used (after HTML strip if applicable)
     processedText: messageText.substring(0, 1000),

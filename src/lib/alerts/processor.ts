@@ -29,6 +29,11 @@ import {
   type DuplicateResult,
   type IncomingAlert as DedupInput,
 } from "./dedup";
+import {
+  evaluatePolicy,
+  loadPolicy,
+  type PolicyDecisionResult,
+} from "./policy";
 
 export type AlertChannel = "sms" | "email";
 
@@ -375,28 +380,28 @@ async function processCredit(
 
   const matchedStudentId = studentResult.matchedId;
   const matchedStudentName = studentResult.matchedName;
-  const confidence = calculateMatchConfidence(parsed.amount, parsed.studentNumber, parsed.studentName, studentResult);
 
+  // --- Auto-Credit Policy Engine ---
+  // Replaces the old single-slider confidence threshold with a full
+  // rule-based decision system. Hard gates → evidence rules → confidence.
   const autoCreditEnabled = settings.sms_auto_credit === true;
-  const minConfidence = Math.round(((settings.sms_auto_credit_min_confidence as number) || 0.8) * 100);
-  const meetsThreshold = confidence >= minConfidence;
-
-  // Duplicate status from the new dedup service (already ran before matching).
-  const isPossibleDuplicate = dupResult.status === "POSSIBLE_DUPLICATE";
-
-  // An alert whose direction we couldn't establish must never post itself.
+  const policy = loadPolicy(settings);
   const directionKnown = parsed.direction === "credit";
 
-  // Auto-credit requires: toggle ON, direction known, match engine returned
-  // AUTO_MATCHED, confidence meets threshold, NOT a possible duplicate, has amount.
-  const willAutoCredit =
-    autoCreditEnabled &&
-    directionKnown &&
-    studentResult.status === "AUTO_MATCHED" &&
-    meetsThreshold &&
-    !isPossibleDuplicate &&
-    !!parsed.amount;
+  const policyResult: PolicyDecisionResult = evaluatePolicy(
+    policy,
+    studentResult,
+    dupResult,
+    parsed.amount,
+    directionKnown,
+    parsed.studentNumber,
+    parsed.studentName
+  );
 
+  // The policy engine decides. Auto-credit also requires the master toggle.
+  const willAutoCredit = autoCreditEnabled && policyResult.decision === "AUTO_CREDIT";
+
+  const confidence = policyResult.confidence;
   const channelLabel = channel === "email" ? "Email" : "SMS";
   const amountLabel = parsed.amount?.toLocaleString() ?? "—";
 
@@ -404,43 +409,30 @@ async function processCredit(
   let matchReason: string;
   let archiveStatus = "ACTIVE";
 
-  if (isPossibleDuplicate) {
+  if (dupResult.status === "POSSIBLE_DUPLICATE") {
     matchStatus = "needs_review";
-    matchReason = `POSSIBLE DUPLICATE — ${dupResult.reason} Payment NOT auto-credited. Confirm whether this is a separate payment or a duplicate.`;
+    matchReason = `POSSIBLE DUPLICATE — ${dupResult.reason} Payment NOT auto-credited.`;
     archiveStatus = "POSSIBLE_DUPLICATE";
-  } else if (!directionKnown) {
-    matchStatus = "needs_review";
-    matchReason = `Review required — could not determine if this is a credit or debit. Amount: ₦${amountLabel}. Source: ${channelLabel} (format: ${parsed.format}).`;
-  } else if (studentResult.status === "CONFLICT") {
-    matchStatus = "needs_review";
-    matchReason = `CONFLICT — ${studentResult.reason} Source: ${channelLabel}.`;
-  } else if (studentResult.status === "AMBIGUOUS") {
-    matchStatus = "needs_review";
-    matchReason = `AMBIGUOUS — ${studentResult.reason} Source: ${channelLabel}.`;
   } else if (willAutoCredit) {
     matchStatus = "matched";
-    matchReason = `Auto-credited ✓ — ${studentResult.reason} ₦${amountLabel} posted (confidence ${confidence}% ≥ threshold ${minConfidence}%). Source: ${channelLabel}.`;
-  } else if (studentResult.status === "AUTO_MATCHED" && parsed.amount) {
+    matchReason = `Auto-credited ✓ — ${policyResult.explanation} Source: ${channelLabel}.`;
+  } else if (!autoCreditEnabled && policyResult.decision === "AUTO_CREDIT") {
     matchStatus = "needs_review";
-    if (!autoCreditEnabled) {
-      matchReason = `Review required — ${studentResult.reason} Amount: ₦${amountLabel}. Auto-credit is DISABLED. Source: ${channelLabel}.`;
-    } else if (!meetsThreshold) {
-      matchReason = `Review required — ${studentResult.reason} Amount: ₦${amountLabel}. Confidence (${confidence}%) below threshold (${minConfidence}%). Source: ${channelLabel}.`;
-    } else {
-      matchReason = `Review required — ${studentResult.reason} Amount: ₦${amountLabel}. Source: ${channelLabel}.`;
-    }
-  } else if (studentResult.status === "MANUAL_REVIEW") {
-    matchStatus = "needs_review";
-    matchReason = `Review required — ${studentResult.reason} Amount: ₦${amountLabel}. Source: ${channelLabel}.`;
-  } else if (parsed.amount && (parsed.studentNumber || parsed.studentName)) {
-    matchStatus = "needs_review";
-    matchReason = `Review required — ₦${amountLabel} received with identifier "${parsed.studentNumber || parsed.studentName}", but NO matching student found. ${studentResult.reason} Source: ${channelLabel}.`;
-  } else if (parsed.amount) {
-    matchStatus = "unmatched";
-    matchReason = `Unmatched — ₦${amountLabel} received but no student name or number found in the alert. Source: ${channelLabel}.`;
+    matchReason = `Review required — policy would allow auto-credit but the master toggle is OFF. ${policyResult.explanation} Source: ${channelLabel}.`;
   } else {
-    matchStatus = "unmatched";
-    matchReason = `Unmatched — could not read a valid amount or student identifier. Source: ${channelLabel}.`;
+    // Policy said REVIEW_REQUIRED — use its explanation directly.
+    matchStatus = policyResult.blockers.length > 0 || studentResult.status === "NO_MATCH" ? (parsed.amount ? "needs_review" : "unmatched") : "needs_review";
+    if (!parsed.amount && !parsed.studentNumber && !parsed.studentName) {
+      matchStatus = "unmatched";
+      matchReason = `Unmatched — could not read a valid amount or student identifier. Source: ${channelLabel}.`;
+    } else {
+      matchReason = `${policyResult.explanation} Amount: ₦${amountLabel}. Source: ${channelLabel}.`;
+    }
+  }
+
+  // Append warnings to the reason
+  if (policyResult.warnings.length > 0) {
+    matchReason += " ⚠ " + policyResult.warnings.map(w => w.message).join(" ⚠ ");
   }
 
   const { data: inserted, error: insertError } = await supabase
@@ -469,8 +461,8 @@ async function processCredit(
       raw_payload: input.rawPayload,
       archive_status: archiveStatus,
       primary_alert_id: dupResult.primaryAlertId,
-      duplicate_confidence: isPossibleDuplicate ? dupResult.confidence : null,
-      duplicate_evidence: isPossibleDuplicate ? dupResult.evidence : null,
+      duplicate_confidence: dupResult.status === "POSSIBLE_DUPLICATE" ? dupResult.confidence : null,
+      duplicate_evidence: dupResult.status === "POSSIBLE_DUPLICATE" ? dupResult.evidence : null,
     })
     .select("id")
     .single();
@@ -503,7 +495,7 @@ async function processCredit(
 
     await supabase.from("activity_log").insert({
       action: `Auto-Credit Payment (${channelLabel} CR Alert)`,
-      details: `${receiptNo} — ${matchedStudentName} — ₦${parsed.amount.toLocaleString()} (confidence ${confidence}%, method ${studentResult.method})`,
+      details: `${receiptNo} — ${matchedStudentName} — ₦${parsed.amount.toLocaleString()} (confidence ${confidence}%, rule: ${policyResult.rule || studentResult.method})`,
     });
 
     autoPosted = true;
@@ -526,6 +518,9 @@ async function processCredit(
       student_match_result: studentResult.status,
       matched_student_id: matchedStudentId,
       candidate_count: studentResult.candidateCount,
+      policy_decision: policyResult.decision,
+      policy_rule: policyResult.rule,
+      policy_eligible: policyResult.eligible,
     },
   };
 }

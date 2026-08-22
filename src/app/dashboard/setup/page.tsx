@@ -14,7 +14,7 @@ import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare, Pencil, 
 import type { FeeSchedule, SchoolSettings } from "@/lib/types";
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES } from "@/lib/types";
 
-type Tab = "school" | "fees" | "categories" | "sms" | "email" | "tester";
+type Tab = "school" | "fees" | "categories" | "sms" | "email" | "policy" | "tester";
 
 export default function SetupPage() {
   const [tab, setTab] = useState<Tab>("school");
@@ -35,6 +35,7 @@ export default function SetupPage() {
           { id: "categories", label: "Categories", icon: <Tags size={14} /> },
           { id: "sms", label: "SMS Gateway", icon: <MessageSquare size={14} /> },
           { id: "email", label: "Email Alerts", icon: <Mail size={14} /> },
+          { id: "policy", label: "Auto-Credit Policy", icon: <CheckCircle2 size={14} /> },
           { id: "tester", label: "Matching Tester", icon: <FlaskConical size={14} /> },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id as Tab)}
@@ -52,6 +53,7 @@ export default function SetupPage() {
       {tab === "categories" && <CategoriesTab />}
       {tab === "sms" && <SmsGatewayTab />}
       {tab === "email" && <EmailAlertsTab />}
+      {tab === "policy" && <AutoCreditPolicyTab />}
       {tab === "tester" && <MatchingTesterTab />}
     </div>
   );
@@ -1668,6 +1670,273 @@ function resetForwardedMemory() {
   Logger.log('Forwarded-message memory cleared. The next run will re-check the current window.');
 }
 `;
+}
+
+/**
+ * Auto-Credit Policy — configurable rule-based auto-credit decision system.
+ */
+function AutoCreditPolicyTab() {
+  const supabase = createClient();
+  const { profile } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [auditLog, setAuditLog] = useState<Record<string, unknown>[]>([]);
+
+  const [policy, setPolicy] = useState({
+    preset: "balanced" as string,
+    minimumConfidence: 75,
+    allowExactCode: true,
+    allowThreeExactNames: true,
+    allowTwoExactNames: true,
+    allowExactPlusPrefix: true,
+    allowSingleName: false,
+    allowFuzzyOnly: false,
+    requireAmount: true,
+    requireCreditDirection: true,
+    requireUniqueCandidate: true,
+    blockDuplicates: true,
+    blockAmbiguous: true,
+    blockConflicts: true,
+  });
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("school_settings").select("auto_credit_policy").limit(1).single();
+    if (data && (data as Record<string, unknown>).auto_credit_policy) {
+      const p = (data as Record<string, unknown>).auto_credit_policy as Record<string, unknown>;
+      setPolicy(prev => ({ ...prev, ...p } as typeof prev));
+    }
+    const { data: logs } = await supabase.from("policy_audit_log").select("*").order("changed_at", { ascending: false }).limit(10);
+    setAuditLog(logs ?? []);
+    setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function savePolicy() {
+    setSaving(true);
+    const { data: current } = await supabase.from("school_settings").select("auto_credit_policy").limit(1).single();
+    const previousPolicy = current ? (current as Record<string, unknown>).auto_credit_policy : null;
+
+    await supabase.from("school_settings").update({ auto_credit_policy: policy }).neq("id", "");
+
+    await supabase.from("policy_audit_log").insert({
+      changed_by_email: profile?.email,
+      changed_by_name: profile?.full_name,
+      previous_policy: previousPolicy,
+      new_policy: policy,
+      preset_name: policy.preset,
+      changes_summary: `Policy updated to ${policy.preset} preset, min confidence ${policy.minimumConfidence}%`,
+    });
+
+    await supabase.from("activity_log").insert({
+      user_email: profile?.email,
+      user_name: profile?.full_name,
+      action: "Update Auto-Credit Policy",
+      details: `Preset: ${policy.preset}, min confidence: ${policy.minimumConfidence}%`,
+    });
+
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+    load();
+  }
+
+  function applyPreset(name: string) {
+    const presets: Record<string, typeof policy> = {
+      conservative: { preset: "conservative", minimumConfidence: 85, allowExactCode: true, allowThreeExactNames: true, allowTwoExactNames: true, allowExactPlusPrefix: false, allowSingleName: false, allowFuzzyOnly: false, requireAmount: true, requireCreditDirection: true, requireUniqueCandidate: true, blockDuplicates: true, blockAmbiguous: true, blockConflicts: true },
+      balanced: { preset: "balanced", minimumConfidence: 75, allowExactCode: true, allowThreeExactNames: true, allowTwoExactNames: true, allowExactPlusPrefix: true, allowSingleName: false, allowFuzzyOnly: false, requireAmount: true, requireCreditDirection: true, requireUniqueCandidate: true, blockDuplicates: true, blockAmbiguous: true, blockConflicts: true },
+      flexible: { preset: "flexible", minimumConfidence: 60, allowExactCode: true, allowThreeExactNames: true, allowTwoExactNames: true, allowExactPlusPrefix: true, allowSingleName: true, allowFuzzyOnly: false, requireAmount: true, requireCreditDirection: true, requireUniqueCandidate: true, blockDuplicates: true, blockAmbiguous: true, blockConflicts: true },
+    };
+    if (presets[name]) setPolicy({ ...presets[name], preset: name });
+  }
+
+  const evidenceRules = [
+    { key: "allowExactCode" as const, label: "Exact unique student/vendor code", strength: "Very Strong", rec: "recommended" as const, warn: "" },
+    { key: "allowThreeExactNames" as const, label: "3 exact name components", strength: "Very Strong", rec: "recommended" as const, warn: "" },
+    { key: "allowTwoExactNames" as const, label: "2 exact name components + unique candidate", strength: "Strong", rec: "recommended" as const, warn: "" },
+    { key: "allowExactPlusPrefix" as const, label: "Exact + prefix name match", strength: "Strong", rec: "recommended" as const, warn: "" },
+    { key: "allowSingleName" as const, label: "Single exact name only", strength: "Low", rec: "caution" as const, warn: "A single name may match multiple students. Increases risk of incorrect allocation." },
+    { key: "allowFuzzyOnly" as const, label: "Fuzzy/substring match only", strength: "Very Low", rec: "not_recommended" as const, warn: "Fuzzy-only matching can result in incorrect allocation. Not recommended." },
+  ];
+
+  const safetyGates = [
+    { key: "requireAmount" as const, label: "Amount must be present" },
+    { key: "requireCreditDirection" as const, label: "Credit direction must be confirmed" },
+    { key: "requireUniqueCandidate" as const, label: "Candidate must be unique" },
+    { key: "blockDuplicates" as const, label: "Confirmed duplicates cannot auto-credit" },
+    { key: "blockAmbiguous" as const, label: "Ambiguous matches cannot auto-credit" },
+    { key: "blockConflicts" as const, label: "Conflicting evidence blocks auto-credit" },
+  ];
+
+  if (loading) return <LoadingSpinner />;
+
+  return (
+    <div className="space-y-6">
+      {/* Header with preset selector */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Auto-Credit Policy</CardTitle>
+            <div className="flex items-center gap-2">
+              <select
+                value={policy.preset}
+                onChange={e => applyPreset(e.target.value)}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#C9A227]"
+              >
+                <option value="conservative">Conservative</option>
+                <option value="balanced">Balanced (Recommended)</option>
+                <option value="flexible">Flexible</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-600">
+            Automatically credit a payment <strong>only</strong> when the required safety conditions are satisfied.
+            The system evaluates identity evidence, checks safety gates, then applies the confidence threshold.
+          </p>
+          <p className="text-xs text-gray-400 mt-2">
+            A high confidence score alone is <strong>never</strong> enough — hard safety gates always block regardless of score.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Identity Evidence Rules */}
+      <Card>
+        <CardHeader><CardTitle>Identity Evidence</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-gray-500 mb-3">
+            Which types of identity evidence are sufficient for automatic credit? Each enabled rule can independently qualify a payment.
+          </p>
+          {evidenceRules.map(rule => (
+            <div key={rule.key} className={cn(
+              "flex items-start gap-3 p-3 rounded-lg border",
+              policy[rule.key] ? "bg-white border-gray-200" : "bg-gray-50 border-gray-100"
+            )}>
+              <label className="relative inline-flex items-center cursor-pointer mt-0.5">
+                <input
+                  type="checkbox"
+                  checked={policy[rule.key]}
+                  onChange={e => setPolicy(p => ({ ...p, [rule.key]: e.target.checked, preset: "custom" }))}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-gray-300 peer-focus:ring-2 peer-focus:ring-[#C9A227] rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-[#0F2A47] after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all" />
+              </label>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-gray-900">{rule.label}</span>
+                  <span className={cn(
+                    "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
+                    rule.strength === "Very Strong" ? "bg-green-100 text-green-700" :
+                    rule.strength === "Strong" ? "bg-blue-100 text-blue-700" :
+                    rule.strength === "Low" ? "bg-amber-100 text-amber-700" :
+                    "bg-red-100 text-red-700"
+                  )}>{rule.strength}</span>
+                  <span className={cn(
+                    "text-[10px] font-semibold",
+                    rule.rec === "recommended" ? "text-green-600" :
+                    rule.rec === "caution" ? "text-amber-600" : "text-red-600"
+                  )}>
+                    {rule.rec === "recommended" ? "✓ Recommended" : rule.rec === "caution" ? "⚠ Use with caution" : "✕ Not recommended"}
+                  </span>
+                </div>
+                {rule.warn && policy[rule.key] && (
+                  <p className="text-xs text-amber-700 mt-1 flex items-start gap-1">
+                    <AlertTriangle size={11} className="shrink-0 mt-0.5" /> {rule.warn}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* Safety Requirements */}
+      <Card>
+        <CardHeader><CardTitle>Safety Requirements (Hard Gates)</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-gray-500 mb-3">
+            These must ALL be true before auto-credit is even considered. A confidence score of 99% cannot override a failed safety gate.
+          </p>
+          {safetyGates.map(gate => (
+            <div key={gate.key} className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-white">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={policy[gate.key]}
+                  onChange={e => setPolicy(p => ({ ...p, [gate.key]: e.target.checked, preset: "custom" }))}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-gray-300 peer-focus:ring-2 peer-focus:ring-[#C9A227] rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-[#0F2A47] after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all" />
+              </label>
+              <span className="text-sm font-medium text-gray-900">{gate.label}</span>
+              {!policy[gate.key] && (
+                <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded">DISABLED — HIGH RISK</span>
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* Minimum Confidence */}
+      <Card>
+        <CardHeader><CardTitle>Minimum Confidence Threshold</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-xs text-gray-500 mb-3">
+            After safety gates pass and an evidence rule is satisfied, the numerical confidence score must also meet this threshold.
+            The score reflects how strongly the evidence identifies the specific student.
+          </p>
+          <div className="flex items-center gap-4">
+            <input
+              type="range"
+              min="50"
+              max="100"
+              step="5"
+              value={policy.minimumConfidence}
+              onChange={e => setPolicy(p => ({ ...p, minimumConfidence: parseInt(e.target.value), preset: "custom" }))}
+              className="flex-1 accent-[#C9A227]"
+            />
+            <span className="text-lg font-bold text-[#0F2A47] w-14 text-right">{policy.minimumConfidence}%</span>
+          </div>
+          <div className="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
+            <span>More auto-credits</span>
+            <span>Safer (more reviews)</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Save */}
+      <div className="flex items-center gap-3">
+        <Button variant="gold" loading={saving} onClick={savePolicy}>
+          <Save size={14} /> Save Policy
+        </Button>
+        {saved && <span className="text-green-600 text-sm font-medium">Policy saved</span>}
+      </div>
+
+      {/* Audit Trail */}
+      {auditLog.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Policy Change History</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {auditLog.map((log, i) => (
+                <div key={i} className="flex items-start gap-3 p-2 border-b border-gray-100 last:border-0 text-xs">
+                  <div className="shrink-0 w-2 h-2 rounded-full bg-[#C9A227] mt-1.5" />
+                  <div>
+                    <span className="font-medium text-gray-900">{String(log.changed_by_name || log.changed_by_email || "System")}</span>
+                    <span className="text-gray-400 ml-2">{log.changed_at ? fmtDateTime(String(log.changed_at)) : ""}</span>
+                    <p className="text-gray-600 mt-0.5">{String(log.changes_summary || `Preset: ${log.preset_name}`)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
 }
 
 /**
