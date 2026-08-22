@@ -1,0 +1,199 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
+import { cn } from "@/lib/utils";
+import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
+import { Plus, Save, Users, Search } from "lucide-react";
+
+interface DeptRow { id: string; name: string; }
+interface StaffRow { id: string; staff_code: string; full_name: string; email: string | null; phone: string | null; job_title: string | null; staff_type: string; department_id: string | null; status: string; date_joined: string | null; }
+
+export default function StaffPage() {
+  const { canEdit, profile, orgId } = useAuth();
+  const supabase = createClient();
+  const [loading, setLoading] = useState(true);
+  const [staff, setStaff] = useState<StaffRow[]>([]);
+  const [departments, setDepartments] = useState<DeptRow[]>([]);
+  const [search, setSearch] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<StaffRow | null>(null);
+  const [form, setForm] = useState({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active" });
+
+  const load = useCallback(async () => {
+    const [stRes, dpRes] = await Promise.all([
+      supabase.from("staff_members").select("*").order("full_name"),
+      supabase.from("departments").select("id, name").eq("active", true).order("name"),
+    ]);
+    setStaff(stRes.data as StaffRow[] ?? []);
+    setDepartments(dpRes.data as DeptRow[] ?? []);
+    setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => { load(); }, [load]);
+
+  function openForm(s?: StaffRow) {
+    if (s) {
+      setEditing(s);
+      setForm({ staff_code: s.staff_code, full_name: s.full_name, email: s.email || "", phone: s.phone || "", job_title: s.job_title || "", staff_type: s.staff_type, department_id: s.department_id || "", date_joined: s.date_joined || "", status: s.status });
+    } else {
+      setEditing(null);
+      setForm({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active" });
+    }
+    setShowForm(true);
+  }
+
+  async function saveStaff() {
+    setSaving(true);
+    const payload = {
+      staff_code: form.staff_code.trim(),
+      full_name: form.full_name.trim(),
+      email: form.email.trim() || null,
+      phone: form.phone.trim() || null,
+      job_title: form.job_title.trim() || null,
+      staff_type: form.staff_type,
+      department_id: form.department_id || null,
+      date_joined: form.date_joined || null,
+      status: form.status,
+      organization_id: orgId,
+      updated_at: new Date().toISOString(),
+    };
+    if (editing) {
+      await supabase.from("staff_members").update(payload).eq("id", editing.id);
+    } else {
+      await supabase.from("staff_members").insert(payload);
+    }
+    setSaving(false);
+    setShowForm(false);
+    setEditing(null);
+    load();
+  }
+
+  const filtered = staff.filter(s => {
+    const q = search.toLowerCase();
+    return !q || s.full_name.toLowerCase().includes(q) || s.staff_code.toLowerCase().includes(q) || (s.email || "").toLowerCase().includes(q) || (s.job_title || "").toLowerCase().includes(q);
+  });
+
+  if (loading) return <div className="p-6"><LoadingSpinner /></div>;
+
+  return (
+    <div className="p-6 space-y-5">
+      <PageHeader title="Staff Directory" subtitle="Manage teaching and non-teaching staff">
+        {canEdit && <Button variant="gold" onClick={() => openForm()}><Plus size={14} /> Add Staff</Button>}
+      </PageHeader>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white rounded-xl border p-4 text-center">
+          <div className="text-xl font-bold text-[#0F2A47]">{staff.length}</div>
+          <div className="text-xs text-gray-500">Total Staff</div>
+        </div>
+        <div className="bg-white rounded-xl border p-4 text-center">
+          <div className="text-xl font-bold text-green-700">{staff.filter(s => s.staff_type === "teaching").length}</div>
+          <div className="text-xs text-gray-500">Teaching</div>
+        </div>
+        <div className="bg-white rounded-xl border p-4 text-center">
+          <div className="text-xl font-bold text-blue-700">{staff.filter(s => s.staff_type === "non_teaching").length}</div>
+          <div className="text-xs text-gray-500">Non-Teaching</div>
+        </div>
+        <div className="bg-white rounded-xl border p-4 text-center">
+          <div className="text-xl font-bold text-gray-500">{staff.filter(s => s.status !== "active").length}</div>
+          <div className="text-xs text-gray-500">Inactive</div>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input type="text" placeholder="Search by name, code, email, title..." value={search} onChange={e => setSearch(e.target.value)}
+          className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]" />
+      </div>
+
+      {/* Table */}
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="bg-[#0F2A47] text-white">
+              <th className="text-left px-4 py-3 text-xs font-semibold">Code</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold">Name</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold">Title</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold">Department</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold">Type</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold">Phone</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold">Status</th>
+              <th className="px-4 py-3" />
+            </tr></thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={8}><EmptyState message="No staff found." icon={<Users size={32} />} /></td></tr>
+              ) : filtered.map(s => (
+                <tr key={s.id} className="border-b hover:bg-gray-50">
+                  <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{s.staff_code}</td>
+                  <td className="px-4 py-2.5 font-medium">{s.full_name}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{s.job_title || "—"}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{departments.find(d => d.id === s.department_id)?.name || "—"}</td>
+                  <td className="px-4 py-2.5"><span className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase", s.staff_type === "teaching" ? "bg-green-100 text-green-700" : s.staff_type === "admin" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700")}>{s.staff_type.replace("_", " ")}</span></td>
+                  <td className="px-4 py-2.5 text-gray-500">{s.phone || "—"}</td>
+                  <td className="px-4 py-2.5"><span className={cn("px-2 py-0.5 rounded text-[10px] font-bold", s.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>{s.status}</span></td>
+                  <td className="px-4 py-2.5 text-right">{canEdit && <button onClick={() => openForm(s)} className="text-xs text-[#0F2A47] hover:underline">Edit</button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* Add/Edit Modal */}
+      {showForm && (
+        <Modal open onClose={() => { setShowForm(false); setEditing(null); }} title={editing ? "Edit Staff" : "Add Staff"} size="lg">
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Staff Code" value={form.staff_code} onChange={e => setForm(f => ({ ...f, staff_code: e.target.value }))} placeholder="STF001" />
+              <Input label="Full Name" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Adewale Johnson" />
+              <Input label="Email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@school.com" />
+              <Input label="Phone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="0801..." />
+              <Input label="Job Title" value={form.job_title} onChange={e => setForm(f => ({ ...f, job_title: e.target.value }))} placeholder="Mathematics Teacher" />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Staff Type</label>
+                <select value={form.staff_type} onChange={e => setForm(f => ({ ...f, staff_type: e.target.value }))} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white">
+                  <option value="teaching">Teaching</option>
+                  <option value="non_teaching">Non-Teaching</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                <select value={form.department_id} onChange={e => setForm(f => ({ ...f, department_id: e.target.value }))} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white">
+                  <option value="">None</option>
+                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </div>
+              <Input label="Date Joined" type="date" value={form.date_joined} onChange={e => setForm(f => ({ ...f, date_joined: e.target.value }))} />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white">
+                  <option value="active">Active</option>
+                  <option value="on_leave">On Leave</option>
+                  <option value="resigned">Resigned</option>
+                  <option value="terminated">Terminated</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="secondary" onClick={() => { setShowForm(false); setEditing(null); }}>Cancel</Button>
+              <Button variant="gold" loading={saving} onClick={saveStaff} disabled={!form.full_name.trim() || !form.staff_code.trim()}>
+                <Save size={14} /> {editing ? "Update" : "Add Staff"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
