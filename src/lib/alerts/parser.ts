@@ -96,22 +96,65 @@ const PURPOSE_KEYWORDS =
   /\b(LOGISTICS|TRANSPORT|RENT|SALARY|SALARIES|WAGES|FOOD|SUPPLIES|MATERIALS|FUEL|DIESEL|PETROL|AIRTIME|DATA|ELECTRICITY|WATER|INSURANCE|MAINTENANCE|REPAIR|REPAIRS|STATIONERY|PRINTING|OFFICE|ADMIN|SCHOOL|FEES|PAYMENT|UPKEEP|ALLOWANCE|BONUS|LEVY)\b/i;
 
 /**
+ * Channel and transfer wording that precedes the actual counterparty.
+ *
+ * Banks stamp the originating channel onto the narration — Union Bank uses
+ * "MOBILEUNION Transfer to ...", others "COB TRF TO", "NIP", "USSD". None
+ * of it is part of the payee's name.
+ */
+const CHANNEL_TRANSFER_PREFIX =
+  /^(?:(?:MOBILE\w*|USSD\w*|IBANK\w*|CIB|IB|WEB|POS|ATM|NIP|COB|MBANK\w*|APP)[\s\-]+)*(?:TRF|TRFR|TRANSFER|PAYMENT|PMT|PURCHASE)?[\s\-]*(?:TO|FROM)?[\s\-]+/i;
+
+/**
+ * Split on the point where UPPERCASE words give way to lower-case ones.
+ *
+ * Nigerian bank narrations are typed with the beneficiary in caps and the
+ * reason in ordinary case — "OLUKOSI OYEDELE JIMOH burial gift". That case
+ * change is the only separator available when there's no "**1234" account
+ * reference to key off. Returns null unless there's at least one caps word
+ * followed by at least one lower-case word, so it never fires on a
+ * narration that is uniformly cased.
+ */
+function splitOnCaseTransition(desc: string): { payee: string; purpose: string } | null {
+  const tokens = desc.split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return null;
+
+  const isUpper = (t: string) => /[A-Z]/.test(t) && !/[a-z]/.test(t);
+
+  let i = 0;
+  while (i < tokens.length && isUpper(tokens[i])) i++;
+
+  if (i === 0 || i === tokens.length) return null;
+
+  return {
+    payee: tokens.slice(0, i).join(" "),
+    purpose: tokens.slice(i).join(" "),
+  };
+}
+
+/**
  * Split a debit description into payee name and purpose.
  *
  * Nigerian bank debit alerts follow "[PAYEE] **[acct digits] [PURPOSE]",
- * e.g. "IYEKOWA F  **8514 LOGISTICS". The account reference is the
- * reliable separator; when it's absent we fall back to the first purpose
- * keyword. Without this split the purpose gets glued onto the vendor
- * name ("Iyekowa F Logistics"), creating a bogus vendor per transaction.
+ * e.g. "IYEKOWA F  **8514 LOGISTICS". The account reference is the most
+ * reliable separator; failing that we look for a case change, then for a
+ * known purpose keyword. Without this split the purpose gets glued onto
+ * the vendor name ("Iyekowa F Logistics"), creating a bogus vendor for
+ * every transaction.
  */
 function splitPayeeAndPurpose(desc: string): { payee: string; purpose: string } {
   let payee = desc;
   let purpose = "";
 
   const acctSplit = desc.match(/^(.+?)\s*\*{2,}\d+\s*(.*?)$/);
+  const caseSplit = acctSplit ? null : splitOnCaseTransition(desc);
+
   if (acctSplit) {
     payee = acctSplit[1].trim();
     purpose = acctSplit[2].trim();
+  } else if (caseSplit) {
+    payee = caseSplit.payee;
+    purpose = caseSplit.purpose;
   } else {
     const kwMatch = payee.match(PURPOSE_KEYWORDS);
     if (kwMatch && kwMatch.index !== undefined && kwMatch.index > 3) {
@@ -188,22 +231,27 @@ export function detectDirection(text: string, subject = ""): AlertDirection {
   if (subjCredit && !subjDebit) return "credit";
 
   // 3. Explicit transaction-type field, common in HTML bank emails.
-  const typeField = text.match(/\b(?:transaction|txn|trans)\s*type\s*[:\-]\s*(\w+)/i);
+  //    Union Bank writes the value as "DebitAlert!" with no separator, so
+  //    this reads a prefix rather than expecting a clean word.
+  const typeField = text.match(
+    new RegExp(String.raw`\b(?:transaction|txn|trans)\s*type${FIELD_SEP}([A-Za-z]+)`, "i")
+  );
   if (typeField) {
     const t = typeField[1].toLowerCase();
     if (t.startsWith("deb") || t.startsWith("dr")) return "debit";
     if (t.startsWith("cre") || t.startsWith("cr")) return "credit";
   }
 
-  // 4. Fall back to weighing the wording of the body.
+  // 4. Fall back to weighing the wording of the body. No \b on the trailing
+  //    side, again because of run-together values like "DebitAlert".
   const body = maskBalances(text);
   const debitHits = countMatches(
     body,
-    /\b(debit(?:ed)?|withdraw(?:al|n)?|transfer\s+to|payment\s+to|outflow|purchase)\b/gi
+    /\b(debit(?:ed)?|withdraw(?:al|n)?|transfer\s+to|payment\s+to|outflow|purchase)/gi
   );
   const creditHits = countMatches(
     body,
-    /\b(credit(?:ed)?|deposit(?:ed)?|transfer\s+from|received\s+from|inflow|lodg(?:ed|ement))\b/gi
+    /\b(credit(?:ed)?|deposit(?:ed)?|transfer\s+from|received\s+from|inflow|lodg(?:ed|ement))/gi
   );
   if (debitHits > creditHits) return "debit";
   if (creditHits > debitHits) return "credit";
@@ -211,13 +259,50 @@ export function detectDirection(text: string, subject = ""): AlertDirection {
   return "unknown";
 }
 
-/** Field labels banks use for the transaction narration. */
-const NARRATION_LABEL =
-  /(?:Desc(?:ription)?|Narration|Remarks?|Particulars|Transaction\s+Details|Payment\s+Details|Details)\s*[:\-]\s*/i;
+/**
+ * What separates a field label from its value.
+ *
+ * Union Bank lays its alert out as a table, so the plain-text version
+ * separates label from value with a tab and no colon at all
+ * ("Transaction Description\tMOBILEUNION Transfer to ..."). Assuming a
+ * colon meant every label lookup failed on those emails, so a tab, a
+ * newline, or a run of spaces all count.
+ */
+const FIELD_SEP = String.raw`(?:[ \t]*[:\-][ \t]*|\t[ \t]*|[ \t]*\r?\n[ \t]*|[ ]{2,})`;
+
+/** Build a case-insensitive "label then separator" matcher. */
+function labelRegex(label: string): RegExp {
+  return new RegExp(String.raw`\b(?:${label})${FIELD_SEP}`, "i");
+}
+
+/**
+ * Narration labels in priority order, most specific first.
+ *
+ * Order matters because these labels nest. Union Bank's alert opens with a
+ * "Transaction Details" section header whose value is empty, and the real
+ * narration is further down under "Transaction Description". Matching the
+ * first label that merely *appears* would find the header, read an empty
+ * value, and give up — which is precisely what happened.
+ */
+const NARRATION_LABELS = [
+  String.raw`Transaction\s+Description`,
+  String.raw`Transaction\s+Narration`,
+  String.raw`Transaction\s+Remarks?`,
+  String.raw`Narration`,
+  String.raw`Description`,
+  String.raw`Desc`,
+  String.raw`Remarks?`,
+  String.raw`Particulars`,
+  String.raw`Payment\s+Details`,
+  String.raw`Transaction\s+Details`,
+  String.raw`Details`,
+];
 
 /** Labels that mark the start of the *next* field, ending the narration. */
-const NEXT_FIELD_LABEL =
-  /\s(?:DT|Date|Time|Bal(?:ance)?|Amount|Acct|Account|Ref(?:erence)?|Transaction\s+Type|Value\s+Date|Available)\s*[:\-]/i;
+const NEXT_FIELD_LABEL = new RegExp(
+  String.raw`(?:\t|\r?\n|[ ]{2,}|\s)(?:DT|Date|Time|Bal(?:ance)?|Amount|Acct|Account|Ref(?:erence)?|Transaction\s+(?:Type|Amount|Date|Location|Time)|Value\s+Date|Available)${FIELD_SEP}`,
+  "i"
+);
 
 /**
  * Pull the narration out of a labelled bank email.
@@ -227,18 +312,24 @@ const NEXT_FIELD_LABEL =
  * MRS") is the account holder, not the person who paid.
  */
 function extractNarration(text: string): string | null {
-  const labelMatch = text.match(NARRATION_LABEL);
-  if (!labelMatch || labelMatch.index === undefined) return null;
+  for (const label of NARRATION_LABELS) {
+    const re = new RegExp(String.raw`\b(?:${label})${FIELD_SEP}`, "gi");
+    let m: RegExpExecArray | null;
 
-  const after = text.slice(labelMatch.index + labelMatch[0].length);
-  const lineEnd = after.search(/\r?\n/);
-  const fieldEnd = after.search(NEXT_FIELD_LABEL);
+    // A label can occur more than once; take the first that yields a value.
+    while ((m = re.exec(text)) !== null) {
+      const after = text.slice(m.index + m[0].length);
+      const lineEnd = after.search(/\r?\n/);
+      const fieldEnd = after.search(NEXT_FIELD_LABEL);
 
-  const ends = [lineEnd, fieldEnd].filter(i => i > 0);
-  const end = ends.length > 0 ? Math.min(...ends) : after.length;
+      const ends = [lineEnd, fieldEnd].filter(i => i > 0);
+      const end = ends.length > 0 ? Math.min(...ends) : after.length;
 
-  const value = after.slice(0, end).trim();
-  return value.length >= 2 ? value : null;
+      const value = after.slice(0, end).trim();
+      if (value.length >= 3) return value;
+    }
+  }
+  return null;
 }
 
 /**
@@ -247,9 +338,14 @@ function extractNarration(text: string): string | null {
  * beats "largest number in the text".
  */
 function extractLabelledAmount(text: string): number | null {
+  const amountNumber = String.raw`([0-9,]+(?:\.[0-9]{1,2})?)`;
   const patterns = [
     /\b(?:CR|DR)\s*:\s*(?:NGN|N|₦)?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i,
-    /\bamount\s*(?:\((?:NGN|naira)\))?\s*[:\-]\s*(?:NGN|N|₦)?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i,
+    // "Transaction Amount\tNGN 30,000.00" — tab-separated, no colon.
+    new RegExp(
+      String.raw`\b(?:transaction\s+)?amount(?:\s*\((?:NGN|naira)\))?${FIELD_SEP}(?:NGN|N|₦)?[ ]*${amountNumber}`,
+      "i"
+    ),
     /\b(?:NGN|₦)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i,
     /\b([0-9,]+(?:\.[0-9]{1,2})?)\s*(?:NGN|naira)\b/i,
   ];
@@ -278,10 +374,7 @@ function stripSalutation(text: string): string {
  */
 function applyNarration(result: ParsedAlert, rawDesc: string): void {
   const desc = rawDesc
-    .replace(
-      /^(COB\s+TRF\s+(TO|FROM)|NIP\s*(CR|DR)?|TRF\s+(FROM|TO)|TRANSFER\s+(FROM|TO))\s*/i,
-      ""
-    )
+    .replace(CHANNEL_TRANSFER_PREFIX, "")
     .replace(/\s+NOTE\s+.*$/i, "")
     .trim();
 
@@ -295,17 +388,29 @@ function applyNarration(result: ParsedAlert, rawDesc: string): void {
 
   const cleaned = desc.replace(/\*{2,}\d+/g, "").trim();
   const codeAtStart = cleaned.match(/^(S[0-9]{3,4})\s+(.+)/i);
+
+  let nameRaw: string;
   if (codeAtStart) {
     result.studentNumber = codeAtStart[1].toUpperCase();
-    const nameRaw = codeAtStart[2].split(/[\/\\]/)[0].trim();
-    if (nameRaw.length >= 2) result.studentName = titleCase(nameRaw);
+    nameRaw = codeAtStart[2];
   } else {
     // A code can appear mid-narration too; remove it before reading a name
     // so it doesn't end up glued to the front of the name.
-    const withoutCode = cleaned.replace(/\b(S[0-9]{3,4})\b/i, "").trim();
-    const nameCandidate = withoutCode.split(/[\/\\]/)[0].trim();
-    if (nameCandidate.length >= 3) result.studentName = titleCase(nameCandidate);
+    nameRaw = cleaned.replace(/\b(S[0-9]{3,4})\b/i, "").trim();
   }
+
+  nameRaw = nameRaw.split(/[\/\\]/)[0].trim();
+
+  // A payer often appends a reason — "LOVETH OMOS school fees". The same
+  // upper-to-lower case change that separates payee from purpose on a debit
+  // separates name from reason here, so the stored name stays clean.
+  const nameSplit = splitOnCaseTransition(nameRaw);
+  if (nameSplit) {
+    nameRaw = nameSplit.payee;
+    result.purpose = nameSplit.purpose;
+  }
+
+  if (nameRaw.length >= 2) result.studentName = titleCase(nameRaw);
   if (!result.reference) result.reference = desc;
 }
 
@@ -380,7 +485,10 @@ export function parseAlert(rawText: string, subject: string | null = ""): Parsed
     result.amount = subjectAmount ?? bodyAmount ?? extractAmount(cleanBody);
 
     const dtMatch = text.match(
-      /\b(?:DT|(?:Value\s+|Transaction\s+)?Date(?:\s*(?:&|and)\s*Time)?)\s*[:\-]\s*([^\r\n]+?)(?:\s{2,}|\r?\n|$)/i
+      new RegExp(
+        String.raw`\b(?:DT|(?:Value\s+|Transaction\s+)?Date(?:[ ]*(?:&|and)[ ]*Time)?)${FIELD_SEP}([^\r\n\t]+)`,
+        "i"
+      )
     );
     if (dtMatch) result.transactionDate = dtMatch[1].trim();
 
@@ -493,26 +601,56 @@ export function detectExpenseCategory(...texts: (string | null)[]): string {
 }
 
 /**
- * Convert the bank's "05/MAY/26 08:24AM" into an ISO date (YYYY-MM-DD).
- * Returns null when the value can't be understood, so callers can fall
- * back to the time the alert was received.
+ * Convert a bank's date field into an ISO date (YYYY-MM-DD).
+ *
+ * Covers Fidelity's "05/MAY/26 08:24AM" and Union Bank's "20-Aug-2026
+ * 12:27" — same order, different separators and year width. Returns null
+ * when the value can't be understood, so callers fall back to the time the
+ * alert was received rather than inventing a date.
  */
 export function parseBankDate(raw: string | null): string | null {
   if (!raw) return null;
-  const m = raw.match(/(\d{1,2})\/([A-Za-z]{3,})\/(\d{2,4})/);
-  if (!m) return null;
-  const [, day, monthName, yearRaw] = m;
-  const year = yearRaw.length === 2 ? `20${yearRaw}` : yearRaw;
-  const parsed = new Date(`${monthName} ${day}, ${year}`);
-  if (isNaN(parsed.getTime())) return null;
-  return parsed.toISOString().substring(0, 10);
+
+  // Day, month name, year — the shape every Nigerian bank alert uses.
+  const named = raw.match(/(\d{1,2})[\/\-. ]([A-Za-z]{3,})[\/\-. ](\d{2,4})/);
+  if (named) {
+    const [, day, monthName, yearRaw] = named;
+    const year = yearRaw.length === 2 ? `20${yearRaw}` : yearRaw;
+    const parsed = new Date(`${monthName} ${day}, ${year}`);
+    if (!isNaN(parsed.getTime())) return parsed.toISOString().substring(0, 10);
+  }
+
+  // All-numeric day/month/year, e.g. "20/08/2026". Day first, which is the
+  // Nigerian convention — never month first.
+  const numeric = raw.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/);
+  if (numeric) {
+    const day = parseInt(numeric[1], 10);
+    const month = parseInt(numeric[2], 10);
+    const yearRaw = numeric[3];
+    const year = parseInt(yearRaw.length === 2 ? `20${yearRaw}` : yearRaw, 10);
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      const parsed = new Date(Date.UTC(year, month - 1, day));
+      if (!isNaN(parsed.getTime())) return parsed.toISOString().substring(0, 10);
+    }
+  }
+
+  return null;
 }
 
-/** Strip HTML down to readable text — bank emails are almost always HTML. */
+/**
+ * Strip HTML down to readable text — bank emails are almost always HTML.
+ *
+ * Bank alerts lay their fields out in a table, so cell and row boundaries
+ * are the only thing separating a label from its value. Collapsing them to
+ * plain spaces turns the whole alert into one unparseable line, so cells
+ * become tabs and rows become newlines. That lines the HTML output up with
+ * what Gmail's plain-text version already looks like.
+ */
 export function htmlToText(html: string): string {
   return html
     .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ")
     .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(td|th)\s*>/gi, "\t")
     .replace(/<\/(p|div|tr|li|h[1-6])>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
@@ -522,7 +660,11 @@ export function htmlToText(html: string): string {
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-    .replace(/[ \t]+/g, " ")
+    // Collapse runs of spaces but keep tabs — they're the label/value
+    // separator recovered from the table cells above.
+    .replace(/ {2,}/g, " ")
+    .replace(/\t[ \t]*/g, "\t")
+    .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
