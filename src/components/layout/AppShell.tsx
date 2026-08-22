@@ -38,6 +38,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/staff", label: "Staff", icon: <Users size={18} />, module: "hr" },
   { href: "/dashboard/inventory", label: "Inventory", icon: <Receipt size={18} />, module: "inventory" },
   { href: "/dashboard/announcements", label: "Announcements", icon: <MessageSquare size={18} />, module: "communication" },
+  { href: "/dashboard/automations", label: "Automations", icon: <Settings size={18} />, adminOnly: true },
   { href: "/dashboard/vendors", label: "Vendors", icon: <Building2 size={18} />, feature: "vendors", module: "finance" },
   { href: "/dashboard/reconciliation", label: "Reconcile", icon: <ArrowLeftRight size={18} />, feature: "reconciliation", module: "finance" },
   { href: "/dashboard/reports", label: "Reports", icon: <FileBarChart size={18} />, feature: "reports" },
