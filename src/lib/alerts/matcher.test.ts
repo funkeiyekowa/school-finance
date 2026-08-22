@@ -237,11 +237,14 @@ async function testStudents() {
     check("matchedName", r.matchedName, "Chukwudi Okafor");
   }
 
-  section("CONFLICT — code says S583 (Ayoade Johnson) but name says Ayoade Williams");
+  section("CODE/NAME DISCREPANCY — code S583 (Ayoade Johnson) but name says Ayoade Williams");
   {
     const r = await matchStudent(supabase, "S583", "Ayoade Williams");
-    // Code matches Ayoade Johnson, but name strongly matches Ayoade Williams
-    check("status is CONFLICT", r.status, "CONFLICT");
+    // Amendment: strong unique name overrides a mismatched code.
+    // S583 belongs to Ayoade Johnson, but the name uniquely identifies Ayoade Williams (S584).
+    check("status is AUTO_MATCHED (name wins)", r.status, "AUTO_MATCHED");
+    check("matched to name-identified student", r.matchedName, "Ayoade Williams");
+    check("audit records discrepancy", String((r.audit as Record<string, unknown>).warning ?? ""), "CODE_NAME_DISCREPANCY");
   }
 
   section("CODE + MATCHING NAME — S583 + Ayoade Johnson (no conflict)");
@@ -275,6 +278,63 @@ async function testStudents() {
   {
     const r = await matchStudent(supabase, null, null);
     check("status", r.status, "NO_MATCH");
+  }
+
+  // ==========================================================
+  // AMENDMENT REGRESSION TESTS
+  // ==========================================================
+
+  section("AMENDMENT A — Wrong code + 3 exact names → AUTO_MATCH with discrepancy");
+  {
+    // S583 = Ayoade Johnson, but alert says S999 + Chukwudi Okafor (S588)
+    // 3 exact names: only one student "Chukwudi Okafor"
+    const r = await matchStudent(supabase, "S999", "Chukwudi Okafor");
+    // S999 doesn't exist → code not found → name matching takes over
+    check("status", r.status, "AUTO_MATCHED");
+    check("matched by name", r.matchedName, "Chukwudi Okafor");
+    // Should record that the supplied code didn't match
+    const auditWarning = String((r.audit as Record<string, unknown>).warning ?? "");
+    check("audit records CODE_DISCREPANCY", auditWarning, "CODE_DISCREPANCY");
+  }
+
+  section("AMENDMENT B — No code + 2 exact names → AUTO_MATCH if unique");
+  {
+    // "Chukwudi Okafor" — only one student, 2 exact name components
+    const r = await matchStudent(supabase, null, "Chukwudi Okafor");
+    check("status", r.status, "AUTO_MATCHED");
+    check("matchedName", r.matchedName, "Chukwudi Okafor");
+  }
+
+  section("AMENDMENT C — Wrong code + 2 exact names (code belongs to another student)");
+  {
+    // S583 belongs to Ayoade Johnson, but name "Chukwudi Okafor" uniquely matches S588
+    const r = await matchStudent(supabase, "S583", "Chukwudi Okafor");
+    check("status AUTO_MATCHED (name wins over mismatched code)", r.status, "AUTO_MATCHED");
+    check("matched to name-identified student", r.matchedName, "Chukwudi Okafor");
+    const auditWarning = String((r.audit as Record<string, unknown>).warning ?? "");
+    check("audit records CODE_NAME_DISCREPANCY", auditWarning, "CODE_NAME_DISCREPANCY");
+  }
+
+  section("AMENDMENT D — Two candidates with same two names → AMBIGUOUS");
+  {
+    // Ayodele Johnson (S586) and Ayodeji Johnson (S587) — alert says "Johnson"
+    // Multiple students share "Johnson" as last name
+    const r = await matchStudent(supabase, null, "Johnson");
+    checkNot("status not AUTO_MATCHED", r.status, "AUTO_MATCHED");
+  }
+
+  section("AMENDMENT E — First-name-only collision → AMBIGUOUS");
+  {
+    // Ayoade appears as first name in S583, S584, S585
+    const r = await matchStudent(supabase, null, "Ayoade");
+    checkNot("status not AUTO_MATCHED", r.status, "AUTO_MATCHED");
+  }
+
+  section("AMENDMENT F — Strong exact name vs unrelated name → NO MATCH");
+  {
+    // "Ayoade James" — Ayoade matches several students but James matches nobody's last name
+    const r = await matchStudent(supabase, null, "Ayoade James");
+    checkNot("status not AUTO_MATCHED", r.status, "AUTO_MATCHED");
   }
 }
 

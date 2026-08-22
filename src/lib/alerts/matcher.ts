@@ -451,14 +451,49 @@ export async function matchStudent(
   const top = candidates[0];
   const runnerUp = candidates.length > 1 ? candidates[1] : null;
 
-  // ---------- STEP 4: Check for code/name conflict ----------
+  // ---------- STEP 4: Code/name reconciliation ----------
   if (codeMatchCandidate && parsedName) {
     // Code matched one student. Does the name evidence support it or conflict?
     const codeStudentNameScore = candidates.find(c => c.id === codeMatchCandidate!.id && c.method !== "EXACT_CODE");
     const nameTopCandidate = candidates.find(c => c.id !== codeMatchCandidate!.id && c.score >= AUTO_MATCH_THRESHOLD);
 
     if (nameTopCandidate && (!codeStudentNameScore || codeStudentNameScore.score < 50)) {
-      // The name strongly points to a DIFFERENT student than the code
+      // The name strongly points to a DIFFERENT student than the code.
+      // Per amendment: if the name evidence is strong AND unique, follow
+      // the name and record CODE_NAME_DISCREPANCY as a warning, not a blocker.
+      const nameRunnerUp = candidates.find(
+        c => c.id !== nameTopCandidate.id && c.id !== codeMatchCandidate!.id && c.score >= AUTO_MATCH_THRESHOLD
+      );
+      const nameIsUnique = !nameRunnerUp || (nameTopCandidate.score - nameRunnerUp.score) >= UNIQUENESS_GAP;
+
+      if (nameIsUnique && nameTopCandidate.score >= AUTO_MATCH_THRESHOLD) {
+        // Strong unique name independently identifies the student.
+        // Auto-match to the name-matched student with a discrepancy warning.
+        return {
+          status: "AUTO_MATCHED",
+          matchedId: nameTopCandidate.id,
+          matchedName: nameTopCandidate.name,
+          matchedCode: nameTopCandidate.code,
+          method: nameTopCandidate.method,
+          confidence: nameTopCandidate.score,
+          candidateCount: candidates.length,
+          candidates: candidates.slice(0, 10),
+          reason: `Name match: "${parsedName}" → "${nameTopCandidate.name}" (${nameTopCandidate.evidence}). Score ${nameTopCandidate.score}, unique. ⚠ CODE_DISCREPANCY: supplied code "${parsedCode}" belongs to "${codeMatchCandidate.name}" — name evidence independently identified a different student.`,
+          audit: {
+            parsedCode, parsedName,
+            matchMethod: nameTopCandidate.method,
+            warning: "CODE_NAME_DISCREPANCY",
+            suppliedCode: parsedCode,
+            codeOwner: codeMatchCandidate.name,
+            matchedByName: nameTopCandidate.name,
+            nameScore: nameTopCandidate.score,
+            candidateCount: candidates.length,
+            confidence: nameTopCandidate.score,
+          },
+        };
+      }
+
+      // Name evidence is not strong enough or not unique → CONFLICT
       return {
         status: "CONFLICT",
         matchedId: null,
@@ -468,13 +503,14 @@ export async function matchStudent(
         confidence: 0,
         candidateCount: candidates.length,
         candidates: candidates.slice(0, 10),
-        reason: `Code "${codeMatchCandidate.code}" belongs to "${codeMatchCandidate.name}" but the name "${parsedName}" strongly matches "${nameTopCandidate.name}" (score ${nameTopCandidate.score}). Conflicting evidence — manual review required.`,
+        reason: `Code "${codeMatchCandidate.code}" belongs to "${codeMatchCandidate.name}" but the name "${parsedName}" points to "${nameTopCandidate.name}" (score ${nameTopCandidate.score}). ${!nameIsUnique ? "Name evidence is ambiguous." : "Name evidence is not strong enough to override."} Manual review required.`,
         audit: {
           parsedCode, parsedName,
           conflictType: "CODE_MATCH_CONFLICTS_WITH_NAME",
           codeMatchStudent: codeMatchCandidate.name,
           nameMatchStudent: nameTopCandidate.name,
           nameMatchScore: nameTopCandidate.score,
+          nameIsUnique,
         },
       };
     }
@@ -559,15 +595,16 @@ export async function matchStudent(
       confidence: top.score,
       candidateCount: candidates.length,
       candidates: candidates.slice(0, 10),
-      reason: `Name match: "${parsedName}" → "${top.name}" (${top.evidence}). Score ${top.score}, unique.`,
+      reason: `Name match: "${parsedName}" → "${top.name}" (${top.evidence}). Score ${top.score}, unique.${parsedCode && !codeMatchCandidate ? ` ⚠ CODE_DISCREPANCY: supplied code "${parsedCode}" not found — matched by name only.` : ""}`,
       audit: {
-        parsedName,
+        parsedCode, parsedName,
         matchMethod: top.method,
         matchedFirstName: normalize(top.firstName),
         matchedLastName: normalize(top.lastName),
         confidence: top.score,
         candidateCount: candidates.length,
         runnerUpScore: runnerUp?.score ?? 0,
+        ...(parsedCode && !codeMatchCandidate ? { warning: "CODE_DISCREPANCY", suppliedCode: parsedCode } : {}),
       },
     };
   }
