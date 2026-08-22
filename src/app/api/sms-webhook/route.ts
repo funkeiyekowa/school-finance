@@ -110,17 +110,39 @@ function parseSMS(text: string): {
       desc = desc.replace(/\s+NOTE\s+.*$/i, "").trim(); // remove trailing notes
 
       if (result.isDebit) {
-        // ---------- DEBIT: extract payee name ----------
-        const nameParts = desc.split(/[\/\\]/);
-        const payeeRaw = nameParts[0].trim();
+        // ---------- DEBIT: extract payee name + purpose ----------
+        // Pattern: "[PAYEE NAME] **[acct digits] [PURPOSE/NOTE]"
+        // e.g. "IYEKOWA F  **8514 LOGISTICS" → payee="IYEKOWA F", purpose="LOGISTICS"
+        let payeeRaw = desc;
+        let purpose = "";
+
+        // Split on ** (account reference) — name is before, purpose is after
+        const acctSplit = desc.match(/^(.+?)\s*\*{2,}\d+\s*(.*?)$/);
+        if (acctSplit) {
+          payeeRaw = acctSplit[1].trim();
+          purpose = acctSplit[2].trim();
+        } else {
+          // No ** pattern — try splitting on common purpose keywords
+          const purposeKeywords = /\b(LOGISTICS|TRANSPORT|RENT|SALARY|FOOD|SUPPLIES|MATERIALS|FUEL|DIESEL|PETROL|AIRTIME|ELECTRICITY|WATER|INSURANCE|MAINTENANCE|REPAIR|STATIONERY|PRINTING|OFFICE|ADMIN|SCHOOL|FEES)\b/i;
+          const kwMatch = payeeRaw.match(purposeKeywords);
+          if (kwMatch && kwMatch.index && kwMatch.index > 3) {
+            purpose = payeeRaw.substring(kwMatch.index).trim();
+            payeeRaw = payeeRaw.substring(0, kwMatch.index).trim();
+          }
+        }
+
+        // Clean payee name: remove leftover ** refs, slashes
+        payeeRaw = payeeRaw.replace(/\*{2,}\d*/g, "").replace(/[\/\\]/g, " ").replace(/\s+/g, " ").trim();
+
         if (payeeRaw.length >= 2) {
           result.payeeName = payeeRaw
             .split(/\s+/)
             .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
             .join(" ");
         }
-        // Store full desc as reference for the expense
-        result.reference = desc;
+
+        // Store purpose as the reference/description for the expense
+        result.reference = purpose || desc;
       } else {
         // ---------- CREDIT: extract student code + name ----------
         const codeAtStart = desc.match(/^(S[0-9]{3,4})\s+(.+)/i);
