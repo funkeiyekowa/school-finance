@@ -20,6 +20,9 @@ export type Organization = Database["public"]["Tables"]["organizations"]["Row"];
 export type PlatformModule = Database["public"]["Tables"]["platform_modules"]["Row"];
 export type Subscription = Database["public"]["Tables"]["subscriptions"]["Row"];
 export type OrgMembership = Database["public"]["Tables"]["org_memberships"]["Row"];
+export type Subject = Database["public"]["Tables"]["subjects"]["Row"];
+export type AttendanceStatus = Database["public"]["Tables"]["attendance_statuses"]["Row"];
+export type AttendanceRecord = Database["public"]["Tables"]["attendance_records"]["Row"];
 
 export type PaymentStatus = "paid" | "partial" | "unpaid";
 

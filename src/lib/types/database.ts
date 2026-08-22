@@ -322,6 +322,57 @@ export type Database = {
         };
         Update: Record<string, unknown>;
       };
+      // --- Attendance & Subjects tables ---
+      subjects: {
+        Row: {
+          id: string; name: string; short_code: string;
+          department: string | null; class_id: string | null;
+          is_elective: boolean; active: boolean;
+          organization_id: string | null;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          name: string; short_code: string;
+          department?: string | null; class_id?: string | null;
+          is_elective?: boolean; active?: boolean;
+          organization_id?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
+      attendance_statuses: {
+        Row: {
+          id: string; code: string; label: string;
+          color: string; counts_as_present: boolean;
+          is_default: boolean; sort_order: number;
+          active: boolean; organization_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          code: string; label: string;
+          color?: string; counts_as_present?: boolean;
+          is_default?: boolean; sort_order?: number;
+          active?: boolean; organization_id?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
+      attendance_records: {
+        Row: {
+          id: string; student_id: string; class_id: string | null;
+          academic_year_id: string | null; subject_id: string | null;
+          date: string; status_code: string; session: string;
+          remarks: string | null; recorded_by: string | null;
+          organization_id: string | null;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          student_id: string; date: string;
+          class_id?: string | null; academic_year_id?: string | null;
+          subject_id?: string | null; status_code?: string;
+          session?: string; remarks?: string | null;
+          recorded_by?: string | null; organization_id?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
       // --- Multi-tenant tables ---
       organizations: {
         Row: {
