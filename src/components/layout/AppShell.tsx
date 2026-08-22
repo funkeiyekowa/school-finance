@@ -33,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/cbt", label: "CBT / Exams", icon: <BookOpen size={18} />, module: "cbt" },
   { href: "/dashboard/teaching", label: "My Teaching", icon: <Users size={18} />, module: "teacher_portal" },
   { href: "/dashboard/my-results", label: "My Results", icon: <FileBarChart size={18} />, module: "student_portal" },
+  { href: "/dashboard/my-exams", label: "My Exams", icon: <BookOpen size={18} />, module: "student_portal" },
   { href: "/dashboard/my-children", label: "My Children", icon: <Users size={18} />, module: "parent_portal" },
   { href: "/dashboard/staff", label: "Staff", icon: <Users size={18} />, module: "hr" },
   { href: "/dashboard/inventory", label: "Inventory", icon: <Receipt size={18} />, module: "inventory" },

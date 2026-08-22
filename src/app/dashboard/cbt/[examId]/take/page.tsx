@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { CheckCircle2, Clock, Flag, ChevronLeft, ChevronRight } from "lucide-react";
 
-interface ExamData { id: string; title: string; duration_minutes: number; total_marks: number; pass_mark: number; shuffle_questions: boolean; shuffle_options: boolean; show_results: boolean; show_answers: boolean; }
+interface ExamData { id: string; title: string; duration_minutes: number; total_marks: number; pass_mark: number; shuffle_questions: boolean; shuffle_options: boolean; show_results: boolean; show_answers: boolean; settings: Record<string, unknown>; }
 interface QuestionData { id: string; question_text: string; question_type: string; options: { id: string; text: string; is_correct: boolean }[]; marks: number; sort_order: number; }
 interface AttemptData { id: string; started_at: string; status: string; total_score: number | null; percentage: number | null; passed: boolean | null; }
 
@@ -40,6 +40,48 @@ export default function TakeExamPage() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [tabWarnings, setTabWarnings] = useState(0);
+  const [proctored, setProctored] = useState(false);
+  const MAX_TAB_WARNINGS = 3;
+
+  // Proctoring: tab-switch detection + copy-paste blocking
+  useEffect(() => {
+    if (!proctored || submitted) return;
+
+    function handleVisibility() {
+      if (document.hidden) {
+        setTabWarnings(prev => {
+          const next = prev + 1;
+          if (next >= MAX_TAB_WARNINGS) {
+            alert("You have switched tabs too many times. Your exam will be submitted.");
+            submitExam(true);
+          } else {
+            alert(`Warning ${next}/${MAX_TAB_WARNINGS}: Switching tabs during a proctored exam is not allowed. Your exam will be auto-submitted after ${MAX_TAB_WARNINGS} warnings.`);
+          }
+          return next;
+        });
+      }
+    }
+
+    function handleCopy(e: Event) { e.preventDefault(); }
+    function handlePaste(e: Event) { e.preventDefault(); }
+    function handleContextMenu(e: Event) { e.preventDefault(); }
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    document.addEventListener("copy", handleCopy);
+    document.addEventListener("paste", handlePaste);
+    document.addEventListener("contextmenu", handleContextMenu);
+
+    // Request fullscreen
+    try { document.documentElement.requestFullscreen?.(); } catch { /* ignore */ }
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      document.removeEventListener("copy", handleCopy);
+      document.removeEventListener("paste", handlePaste);
+      document.removeEventListener("contextmenu", handleContextMenu);
+    };
+  }, [proctored, submitted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load exam + questions + create/resume attempt
   const init = useCallback(async () => {
@@ -65,6 +107,7 @@ export default function TakeExamPage() {
     const { data: examData } = await supabase.from("exams").select("*").eq("id", examId).single();
     if (!examData || examData.status !== "published") { setLoading(false); return; }
     setExam(examData as unknown as ExamData);
+    setProctored((examData.settings as Record<string, unknown>)?.proctored === true);
 
     // Load questions via exam_questions join
     const { data: eqData } = await supabase
