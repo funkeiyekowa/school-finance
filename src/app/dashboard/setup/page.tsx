@@ -1688,12 +1688,14 @@ function AcademicSetupTab() {
   const [editingClass, setEditingClass] = useState<Record<string, unknown> | null>(null);
   const [classForm, setClassForm] = useState({ name: "", short_code: "", sequence: "0", stage: "", is_terminal: false, next_class_id: "" });
   const [savingClass, setSavingClass] = useState(false);
+  const [showClassForm, setShowClassForm] = useState(false);
 
   // --- Academic Years state ---
   const [years, setYears] = useState<Record<string, unknown>[]>([]);
   const [editingYear, setEditingYear] = useState<Record<string, unknown> | null>(null);
   const [yearForm, setYearForm] = useState({ name: "", start_date: "", end_date: "", status: "upcoming" });
   const [savingYear, setSavingYear] = useState(false);
+  const [showYearForm, setShowYearForm] = useState(false);
 
   const load = useCallback(async () => {
     const [classRes, yearRes] = await Promise.all([
@@ -1724,6 +1726,7 @@ function AcademicSetupTab() {
       const maxSeq = classes.reduce((m, c) => Math.max(m, Number(c.sequence ?? 0)), 0);
       setClassForm({ name: "", short_code: "", sequence: String(maxSeq + 1), stage: "", is_terminal: false, next_class_id: "" });
     }
+    setShowClassForm(true);
   }
 
   async function saveClass() {
@@ -1748,6 +1751,7 @@ function AcademicSetupTab() {
       details: payload.name,
     });
     setEditingClass(null);
+    setShowClassForm(false);
     setSavingClass(false);
     load();
   }
@@ -1772,6 +1776,7 @@ function AcademicSetupTab() {
       setEditingYear(null);
       setYearForm({ name: "", start_date: "", end_date: "", status: "upcoming" });
     }
+    setShowYearForm(true);
   }
 
   async function saveYear() {
@@ -1794,6 +1799,7 @@ function AcademicSetupTab() {
       details: `${payload.name} (${payload.status})`,
     });
     setEditingYear(null);
+    setShowYearForm(false);
     setSavingYear(false);
     load();
   }
@@ -1836,8 +1842,7 @@ function AcademicSetupTab() {
             </p>
 
             {/* Class form */}
-            {(editingClass !== undefined && classForm.name !== undefined && (editingClass || classForm.name === "")) ? null : null}
-            {(editingClass !== null || classForm.name !== "") && (
+            {showClassForm && (
               <div className="mb-4 p-4 border border-[#C9A227] bg-[#FBF6E8] rounded-xl space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <Input label="Class Name" value={classForm.name} onChange={e => setClassForm(f => ({ ...f, name: e.target.value }))} placeholder="JSS1" />
@@ -1868,7 +1873,7 @@ function AcademicSetupTab() {
                   <Button size="sm" variant="gold" loading={savingClass} onClick={saveClass} disabled={!classForm.name.trim()}>
                     <Save size={14} /> {editingClass ? "Update" : "Add"}
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={() => { setEditingClass(null); setClassForm({ name: "", short_code: "", sequence: "0", stage: "", is_terminal: false, next_class_id: "" }); }}>
+                  <Button size="sm" variant="secondary" onClick={() => { setEditingClass(null); setShowClassForm(false); setClassForm({ name: "", short_code: "", sequence: "0", stage: "", is_terminal: false, next_class_id: "" }); }}>
                     Cancel
                   </Button>
                 </div>
@@ -1934,7 +1939,7 @@ function AcademicSetupTab() {
             </p>
 
             {/* Year form */}
-            {(editingYear !== null || yearForm.name !== "") && (
+            {showYearForm && (
               <div className="mb-4 p-4 border border-[#C9A227] bg-[#FBF6E8] rounded-xl space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <Input label="Year Name" value={yearForm.name} onChange={e => setYearForm(f => ({ ...f, name: e.target.value }))} placeholder="2025/2026" />
@@ -1954,7 +1959,7 @@ function AcademicSetupTab() {
                   <Button size="sm" variant="gold" loading={savingYear} onClick={saveYear} disabled={!yearForm.name.trim()}>
                     <Save size={14} /> {editingYear ? "Update" : "Add"}
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={() => { setEditingYear(null); setYearForm({ name: "", start_date: "", end_date: "", status: "upcoming" }); }}>
+                  <Button size="sm" variant="secondary" onClick={() => { setEditingYear(null); setShowYearForm(false); setYearForm({ name: "", start_date: "", end_date: "", status: "upcoming" }); }}>
                     Cancel
                   </Button>
                 </div>
