@@ -515,7 +515,35 @@ export async function matchStudent(
       };
     }
 
-    // Code matched and name doesn't conflict — use the code match
+    // If name was parsed but provides ZERO support for the code-matched student,
+    // and the name generates candidates pointing elsewhere (even weakly), the
+    // code and name are contradictory → review. A valid code alone is not enough
+    // when the accompanying name clearly doesn't belong to that student.
+    if (!codeStudentNameScore || codeStudentNameScore.score === 0) {
+      const anyNameCandidate = candidates.find(c => c.id !== codeMatchCandidate!.id && c.score > 0 && c.method !== "EXACT_CODE");
+      if (anyNameCandidate) {
+        return {
+          status: "MANUAL_REVIEW",
+          matchedId: null,
+          matchedName: null,
+          matchedCode: codeMatchCandidate.code,
+          method: "EXACT_CODE",
+          confidence: 0,
+          candidateCount: candidates.length,
+          candidates: candidates.slice(0, 10),
+          reason: `Code "${codeMatchCandidate.code}" matches "${codeMatchCandidate.name}", but the supplied name "${parsedName}" does not support this match and points elsewhere. Manual review required.`,
+          audit: {
+            parsedCode, parsedName,
+            conflictType: "CODE_NAME_MISMATCH_WEAK",
+            codeMatchStudent: codeMatchCandidate.name,
+            namePointsTo: anyNameCandidate.name,
+            nameScore: anyNameCandidate.score,
+          },
+        };
+      }
+    }
+
+    // Code matched and name either supports it or has no candidates elsewhere
     return {
       status: "AUTO_MATCHED",
       matchedId: codeMatchCandidate.id,
