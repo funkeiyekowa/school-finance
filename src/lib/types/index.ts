@@ -25,6 +25,9 @@ export type AttendanceStatus = Database["public"]["Tables"]["attendance_statuses
 export type AttendanceRecord = Database["public"]["Tables"]["attendance_records"]["Row"];
 export type Period = Database["public"]["Tables"]["periods"]["Row"];
 export type TimetableEntry = Database["public"]["Tables"]["timetable_entries"]["Row"];
+export type AssessmentType = Database["public"]["Tables"]["assessment_types"]["Row"];
+export type GradingScale = Database["public"]["Tables"]["grading_scales"]["Row"];
+export type StudentScore = Database["public"]["Tables"]["student_scores"]["Row"];
 
 export type PaymentStatus = "paid" | "partial" | "unpaid";
 

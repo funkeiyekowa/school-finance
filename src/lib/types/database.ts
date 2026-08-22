@@ -406,6 +406,55 @@ export type Database = {
         };
         Update: Record<string, unknown>;
       };
+      assessment_types: {
+        Row: {
+          id: string; name: string; short_code: string;
+          weight: number; max_score: number;
+          term: string | null; sort_order: number; active: boolean;
+          organization_id: string | null;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          name: string; short_code: string;
+          weight: number; max_score: number;
+          term?: string | null; sort_order?: number; active?: boolean;
+          organization_id?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
+      grading_scales: {
+        Row: {
+          id: string; grade: string; label: string;
+          min_score: number; max_score: number;
+          grade_point: number; sort_order: number;
+          organization_id: string | null; created_at: string;
+        };
+        Insert: {
+          grade: string; label: string;
+          min_score: number; max_score: number;
+          grade_point?: number; sort_order?: number;
+          organization_id?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
+      student_scores: {
+        Row: {
+          id: string; student_id: string; subject_id: string;
+          assessment_type_id: string; class_id: string | null;
+          academic_year_id: string | null; term: string | null;
+          score: number | null; remarks: string | null;
+          recorded_by: string | null; organization_id: string | null;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          student_id: string; subject_id: string; assessment_type_id: string;
+          class_id?: string | null; academic_year_id?: string | null;
+          term?: string | null; score?: number | null;
+          remarks?: string | null; recorded_by?: string | null;
+          organization_id?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
       // --- Multi-tenant tables ---
       organizations: {
         Row: {
