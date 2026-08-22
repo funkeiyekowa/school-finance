@@ -150,6 +150,10 @@ export type Database = {
           review_notes?: string | null;
           reviewed_by?: string | null;
           reviewed_at?: string | null;
+          /** "sms" or "email" — which channel this alert arrived on. */
+          source_channel?: string;
+          /** Email subject line, when source_channel is "email". */
+          email_subject?: string | null;
           created_at: string; updated_at: string;
         };
         Insert: {
@@ -164,6 +168,8 @@ export type Database = {
           match_reason?: string | null; matched_student_id?: string | null;
           matched_fee_id?: string | null; confidence_score?: number | null;
           raw_payload?: Json | null;
+          source_channel?: string;
+          email_subject?: string | null;
         };
         Update: Record<string, unknown>;
       };

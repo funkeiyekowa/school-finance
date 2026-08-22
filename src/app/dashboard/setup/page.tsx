@@ -915,6 +915,7 @@ function EmailAlertsTab() {
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const [showScript, setShowScript] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     email_alerts_enabled: false,
@@ -966,7 +967,8 @@ function EmailAlertsTab() {
   const webhookUrl = `${appOrigin}/api/email-webhook`;
   const configUrl = `${appOrigin}/api/email-config`;
 
-  async function persist(extra: Record<string, unknown> = {}) {
+  /** Returns null on success, or the database error message on failure. */
+  async function persist(extra: Record<string, unknown> = {}): Promise<string | null> {
     const startDate = String(extra.email_start_date ?? form.email_start_date).trim();
     const payload: Record<string, unknown> = {
       ...form,
@@ -976,31 +978,52 @@ function EmailAlertsTab() {
       email_start_date: startDate || null,
       updated_at: new Date().toISOString(),
     };
+
+    // Previously unchecked: if a column referenced here doesn't exist yet
+    // (e.g. the fix migration hasn't run), Supabase's update fails and the
+    // form silently keeps showing the old value after every refresh, with
+    // no indication anything went wrong. Returning the error (rather than
+    // relying on state, which wouldn't be visible to the caller in the same
+    // tick) is what lets the caller decide whether to log activity or show
+    // the failure.
     if (settingsId) {
-      await supabase.from("school_settings").update(payload).eq("id", settingsId);
+      const { error } = await supabase.from("school_settings").update(payload).eq("id", settingsId);
+      if (error) return error.message;
     } else {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("school_settings")
         .insert({ ...payload, school_name: "My School" })
         .select("id")
         .single();
+      if (error) return error.message;
       if (data) setSettingsId(data.id);
     }
+
+    // Confirm what was actually written, rather than trusting the payload
+    // we sent — this is what makes the "resets after refresh" symptom
+    // visible immediately instead of only on the next page load.
+    await load();
+    return null;
   }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    await persist();
-    await supabase.from("activity_log").insert({
-      user_email: profile?.email,
-      user_name: profile?.full_name,
-      action: "Update Email Alert Settings",
-      details: `Email alerts: ${form.email_alerts_enabled ? "ON" : "OFF"}`,
-    });
+    setSaveError(null);
+    const err = await persist();
+    if (err) {
+      setSaveError(err);
+    } else {
+      await supabase.from("activity_log").insert({
+        user_email: profile?.email,
+        user_name: profile?.full_name,
+        action: "Update Email Alert Settings",
+        details: `Email alerts: ${form.email_alerts_enabled ? "ON" : "OFF"}, start date: ${form.email_start_date || "none"}`,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    }
     setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
   }
 
   async function toggleEnabled(checked: boolean) {
@@ -1016,7 +1039,8 @@ function EmailAlertsTab() {
       email_alerts_enabled: checked,
       email_start_date: needsCutoff ? today : f.email_start_date,
     }));
-    await persist(extra);
+    const err = await persist(extra);
+    setSaveError(err);
   }
 
   /** Rotate the shared secret. The Apps Script must be updated to match. */
@@ -1218,8 +1242,18 @@ function EmailAlertsTab() {
               <p className="text-xs text-blue-800">
                 Your <strong>{form.email_gmail_label || "BankAlerts"}</strong> label currently holds
                 thousands of past alerts. Keep the start date at today unless you genuinely want
-                older transactions posted to the ledger â€” and if you do, raise it a few days at a
+                older transactions posted to the ledger, and if you do, raise it a few days at a
                 time so you can check the results.
+              </p>
+            </div>
+            <div className="sm:col-span-2 flex items-start gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <CheckCircle2 size={16} className="text-green-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-green-800">
+                Ask parents and guardians to put the student&apos;s code (e.g. <strong>S234</strong>) at
+                the start of the transfer description or narration. A code is matched with
+                certainty; a name alone can still be misread if it&apos;s abbreviated, misspelled, or
+                the transfer states someone else&apos;s name (a relative paying on the student&apos;s
+                behalf). A code always wins when both are present.
               </p>
             </div>
             <div className="sm:col-span-2 flex items-center gap-3 pt-2">
@@ -1228,6 +1262,16 @@ function EmailAlertsTab() {
               </Button>
               {saved && <span className="text-green-600 text-sm font-medium">Saved</span>}
             </div>
+            {saveError && (
+              <div className="sm:col-span-2 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <AlertTriangle size={16} className="text-red-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-red-800">
+                  Save failed — {saveError}. If this mentions a missing column, the fix migration
+                  (<code className="bg-red-100 px-1 rounded">email_alerts_fix_migration.sql</code>)
+                  hasn't been run yet in Supabase.
+                </p>
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>

@@ -81,7 +81,7 @@ export default function SmsAlertsPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Payment Alerts" subtitle="Bank SMS alerts — income (CR) and expenses (DR) from your school account">
+      <PageHeader title="Payment Alerts" subtitle="Bank alerts from SMS and email — income (CR) and expenses (DR) from your school account">
         {process.env.NODE_ENV !== "production" && (
           <TestSMSButton onInserted={load} />
         )}
@@ -322,13 +322,13 @@ function AlertDetailModal({
             student_id: selectedStudentId,
             student_name: selectedStudent?.full_name,
             category: "School Fees",
-            description: `SMS Payment — Ref: ${alert.parsed_reference || "—"}`,
+            description: `${alert.source_channel === "email" ? "Email" : "SMS"} Payment — Ref: ${alert.parsed_reference || "—"}`,
             amount: parseFloat(editAmount),
             payment_method: "Bank Transfer",
             term: null,
             recorded_by: profile?.full_name || profile?.email,
             reconciled: false,
-            payment_source: "smsgate_sms",
+            payment_source: alert.source_channel === "email" ? "email_manual" : "smsgate_sms",
             sms_inbox_id: alert.id,
             notes: reviewNote || null,
           });
@@ -346,7 +346,7 @@ function AlertDetailModal({
 
           await supabase.from("activity_log").insert({
             user_email: profile?.email, user_name: profile?.full_name,
-            action: "Approve SMS Payment",
+            action: `Approve ${alert.source_channel === "email" ? "Email" : "SMS"} Payment`,
             details: `${receiptNo} — ${selectedStudent?.full_name} — ${fmtMoney(parseFloat(editAmount))}`,
           });
         }
@@ -358,9 +358,10 @@ function AlertDetailModal({
           review_notes: reviewNote, reviewed_by: profile?.id,
           reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
         }).eq("id", alert.id);
+        const channelLabel = alert.source_channel === "email" ? "Email" : "SMS";
         await supabase.from("activity_log").insert({
           user_email: profile?.email, user_name: profile?.full_name,
-          action: isExpense ? "Reject Expense Alert" : "Reject SMS Payment", details: `${alert.id} — ${reviewNote}`,
+          action: isExpense ? "Reject Expense Alert" : `Reject ${channelLabel} Payment`, details: `${alert.id} — ${reviewNote}`,
         });
 
       } else if (action === "duplicate") {
@@ -392,12 +393,17 @@ function AlertDetailModal({
           {isExpense ? "↑ Expense (Debit)" : "↓ Income (Credit)"}
         </div>
 
-        {/* SMS text */}
+        {/* Original alert text — the channel varies, SMS or email */}
         <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-          <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Original SMS</div>
-          <p className="text-sm text-gray-800 font-medium leading-relaxed">{alert.message_text}</p>
+          <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+            {alert.source_channel === "email" ? "Original Email" : "Original SMS"}
+          </div>
+          <p className="text-sm text-gray-800 font-medium leading-relaxed whitespace-pre-line">{alert.message_text}</p>
           <div className="flex items-center gap-4 mt-3 text-xs text-gray-400">
             <span>From: <strong>{alert.sender || "—"}</strong></span>
+            {alert.source_channel === "email" && alert.email_subject && (
+              <span>Subject: <strong>{alert.email_subject}</strong></span>
+            )}
             <span>{fmtDateTime(alert.received_at || alert.created_at)}</span>
           </div>
         </div>

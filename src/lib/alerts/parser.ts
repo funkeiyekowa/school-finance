@@ -99,11 +99,21 @@ const PURPOSE_KEYWORDS =
  * Channel and transfer wording that precedes the actual counterparty.
  *
  * Banks stamp the originating channel onto the narration — Union Bank uses
- * "MOBILEUNION Transfer to ...", others "COB TRF TO", "NIP", "USSD". None
- * of it is part of the payee's name.
+ * "UIP Trf from ..." and "MOBILEUNION Transfer to ...", others "COB TRF
+ * TO", "NIP", "USSD". None of it is part of the payee's name.
  */
 const CHANNEL_TRANSFER_PREFIX =
-  /^(?:(?:MOBILE\w*|USSD\w*|IBANK\w*|CIB|IB|WEB|POS|ATM|NIP|COB|MBANK\w*|APP)[\s\-]+)*(?:TRF|TRFR|TRANSFER|PAYMENT|PMT|PURCHASE)?[\s\-]*(?:TO|FROM)?[\s\-]+/i;
+  /^(?:(?:MOBILE\w*|USSD\w*|IBANK\w*|CIB|IB|WEB|POS|ATM|NIP|COB|UIP|MBANK\w*|APP)[\s\-]+)*(?:TRF|TRFR|TRANSFER|PAYMENT|PMT|PURCHASE)?[\s\-]*(?:TO|FROM)?[\s\-]+/i;
+
+/**
+ * A repeated "... - Transfer to/from NAME" or "... / Transfer to/from NAME"
+ * tail some banks append when the first name they gave was truncated —
+ * "UIP Trf from TAIWO SHAKIRAH OKEO - Transfer from TAIWO SHAKIRAH
+ * OKEOWO". The second occurrence is the complete name, so it replaces
+ * rather than appends to what came before it.
+ */
+const REPEATED_TRANSFER_TAIL =
+  /^(.*?)\s*[-\/]\s*(?:Transfer|Trf|TRF)\s+(?:to|from)\s+(.+)$/i;
 
 /**
  * Split on the point where UPPERCASE words give way to lower-case ones.
@@ -262,13 +272,16 @@ export function detectDirection(text: string, subject = ""): AlertDirection {
 /**
  * What separates a field label from its value.
  *
- * Union Bank lays its alert out as a table, so the plain-text version
- * separates label from value with a tab and no colon at all
- * ("Transaction Description\tMOBILEUNION Transfer to ..."). Assuming a
- * colon meant every label lookup failed on those emails, so a tab, a
- * newline, or a run of spaces all count.
+ * Union Bank lays its alert out as a table, and Gmail's plain-text
+ * rendering of that table pads columns to their own width — a long label
+ * like "Transaction Description" can end up with a single space before
+ * its value while "Balance" gets several. Requiring 2+ spaces missed the
+ * single-space case entirely and let the label match fall through to a
+ * broader one, which is exactly how "Transaction Type CreditAlert!" ended
+ * up stored as a student's name. A tab, a colon, a newline, or *any* run
+ * of spaces (including just one) now all count as the separator.
  */
-const FIELD_SEP = String.raw`(?:[ \t]*[:\-][ \t]*|\t[ \t]*|[ \t]*\r?\n[ \t]*|[ ]{2,})`;
+const FIELD_SEP = String.raw`(?:[ \t]*[:\-][ \t]*|\t[ \t]*|[ \t]*\r?\n[ \t]*|[ ]+)`;
 
 /** Build a case-insensitive "label then separator" matcher. */
 function labelRegex(label: string): RegExp {
@@ -300,7 +313,7 @@ const NARRATION_LABELS = [
 
 /** Labels that mark the start of the *next* field, ending the narration. */
 const NEXT_FIELD_LABEL = new RegExp(
-  String.raw`(?:\t|\r?\n|[ ]{2,}|\s)(?:DT|Date|Time|Bal(?:ance)?|Amount|Acct|Account|Ref(?:erence)?|Transaction\s+(?:Type|Amount|Date|Location|Time)|Value\s+Date|Available)${FIELD_SEP}`,
+  String.raw`\b(?:DT|Date|Time|Bal(?:ance)?|Amount|Acct|Account|Ref(?:erence)?|Transaction\s+(?:Type|Amount|Date|Location|Time)|Value\s+Date|Available)${FIELD_SEP}`,
   "i"
 );
 
@@ -373,7 +386,12 @@ function stripSalutation(text: string): string {
  * every format so the two never diverge.
  */
 function applyNarration(result: ParsedAlert, rawDesc: string): void {
-  const desc = rawDesc
+  // A truncated name followed by a full repeat of the same transfer wording
+  // — take the second, complete occurrence and discard the first.
+  const tailMatch = rawDesc.match(REPEATED_TRANSFER_TAIL);
+  const withoutRepeat = tailMatch ? tailMatch[2] : rawDesc;
+
+  const desc = withoutRepeat
     .replace(CHANNEL_TRANSFER_PREFIX, "")
     .replace(/\s+NOTE\s+.*$/i, "")
     .trim();
