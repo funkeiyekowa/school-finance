@@ -16,6 +16,13 @@ import {
   parseBankDate,
   type ParsedAlert,
 } from "./parser";
+import {
+  matchStudent,
+  matchVendor,
+  calculateMatchConfidence,
+  type MatchResult,
+  type VendorMatchResult,
+} from "./matcher";
 
 export type AlertChannel = "sms" | "email";
 
@@ -193,26 +200,10 @@ async function processDebit(
   const expenseCategory = detectExpenseCategory(parsed.payeeName, parsed.purpose, parsed.reference);
   const autoExpenseEnabled = settings.sms_auto_expense === true;
 
-  // Match the payee against known vendors, word by word so partial or
-  // abbreviated bank names still land on the right vendor.
-  let matchedVendorId: string | null = null;
-  let matchedVendorName: string | null = null;
-  if (parsed.payeeName) {
-    const words = parsed.payeeName.split(/\s+/).filter(w => w.length >= 3);
-    for (const word of words) {
-      const { data: vendor } = await supabase
-        .from("vendors")
-        .select("id, name")
-        .ilike("name", `%${word}%`)
-        .limit(1)
-        .maybeSingle();
-      if (vendor) {
-        matchedVendorId = vendor.id;
-        matchedVendorName = vendor.name;
-        break;
-      }
-    }
-  }
+  // --- New matching engine: evaluate ALL vendor candidates, score, decide ---
+  const vendorResult: VendorMatchResult = await matchVendor(supabase, parsed.payeeName);
+  const matchedVendorId = vendorResult.matchedId;
+  const matchedVendorName = vendorResult.matchedName;
 
   const isDuplicate = await findRecentDuplicate(supabase, {
     amount: parsed.amount,
@@ -229,15 +220,16 @@ async function processDebit(
 
   if (isDuplicate) {
     matchStatus = "duplicate";
-    matchReason = `Duplicate — a debit of ₦${amountLabel} to "${parsed.payeeName || "Unknown"}" was already recorded in the last ${DEDUPE_WINDOW_MINUTES} minutes. Expense NOT posted. Likely the same transaction arriving via both SMS and email.`;
+    matchReason = `Duplicate — a debit of ₦${amountLabel} to "${parsed.payeeName || "Unknown"}" was already recorded in the last ${DEDUPE_WINDOW_MINUTES} minutes. Expense NOT posted.`;
   } else if (willAutoPost) {
     matchStatus = "matched";
-    matchReason = `Auto-posted expense ✓ — ₦${amountLabel} debited to "${parsed.payeeName || "Unknown"}". Category: ${expenseCategory}.${matchedVendorName ? ` Matched vendor "${matchedVendorName}".` : " No matching vendor on file — recorded under the payee name."}${parsed.purpose ? ` Purpose: ${parsed.purpose}.` : ""} Source: ${channelLabel}.`;
+    matchReason = `Auto-posted expense ✓ — ₦${amountLabel} debited to "${parsed.payeeName || "Unknown"}". Category: ${expenseCategory}. Vendor: ${vendorResult.status === "AUTO_MATCHED" ? `"${matchedVendorName}" (${vendorResult.method}, confidence ${vendorResult.confidence})` : vendorResult.status === "AMBIGUOUS" ? `AMBIGUOUS — ${vendorResult.reason}` : "No matching vendor on file — recorded under the payee name."} ${parsed.purpose ? `Purpose: ${parsed.purpose}.` : ""} Source: ${channelLabel}.`;
   } else {
     matchStatus = "needs_review";
-    matchReason = `Review required (expense) — ₦${amountLabel} debited to "${parsed.payeeName || "Unknown"}". Auto-expense posting is disabled, so nothing has been recorded yet. Approve to post it.${matchedVendorName ? ` Suggested vendor: "${matchedVendorName}".` : ""}${parsed.purpose ? ` Purpose: ${parsed.purpose}.` : ""} Source: ${channelLabel}.`;
+    matchReason = `Review required (expense) — ₦${amountLabel} debited to "${parsed.payeeName || "Unknown"}". Auto-expense posting is disabled.${vendorResult.status === "AUTO_MATCHED" ? ` Suggested vendor: "${matchedVendorName}".` : vendorResult.candidateCount > 0 ? ` ${vendorResult.candidateCount} vendor candidate(s) found — ${vendorResult.reason}` : ""}${parsed.purpose ? ` Purpose: ${parsed.purpose}.` : ""} Source: ${channelLabel}.`;
   }
 
+  const confidence = calculateMatchConfidence(parsed.amount, null, parsed.payeeName, vendorResult);
   const expRef = generatePaymentRef(receivedAt, parsed.payeeName);
 
   const { data: inserted, error: insertError } = await supabase
@@ -251,16 +243,16 @@ async function processDebit(
       message_text: messageText,
       received_at: receivedAt,
       parsed_student_number: null,
-      parsed_student_name: parsed.payeeName, // payee reuses the name column
+      parsed_student_name: parsed.payeeName,
       parsed_amount: parsed.amount,
       parsed_currency: parsed.currency,
       parsed_reference: expRef,
-      parser_version: "v3-expense",
+      parser_version: "v4-expense",
       processing_status: willAutoPost ? "confirmed" : "received",
       match_status: matchStatus,
       match_reason: matchReason,
       matched_student_id: null,
-      confidence_score: matchedVendorId ? 0.8 : 0.5,
+      confidence_score: confidence / 100,
       source_channel: channel,
       email_subject: input.subject ?? null,
       raw_payload: input.rawPayload,
@@ -300,7 +292,7 @@ async function processDebit(
 
     await supabase.from("activity_log").insert({
       action: `Auto-Post Expense (${channelLabel} DR Alert)`,
-      details: `${voucherNo} — ${parsed.payeeName || "Unknown"} — ₦${parsed.amount.toLocaleString()} — ${expenseCategory}`,
+      details: `${voucherNo} — ${parsed.payeeName || "Unknown"} — ₦${parsed.amount.toLocaleString()} — ${expenseCategory} [${vendorResult.method}]`,
     });
 
     autoPosted = true;
@@ -319,6 +311,8 @@ async function processDebit(
       category: expenseCategory,
       reference: expRef,
       vendor_matched: matchedVendorName,
+      vendor_match_status: vendorResult.status,
+      vendor_match_method: vendorResult.method,
       match_status: matchStatus,
     },
   };
@@ -334,65 +328,16 @@ async function processCredit(
   settings: Record<string, unknown>
 ): Promise<AlertResult> {
   const { channel, sender, messageText, receivedAt, externalId, messageId } = input;
-  const confidence = calculateConfidence(parsed);
 
-  // ---------- Student matching ----------
-  let matchedStudentId: string | null = null;
-  let matchedStudentName: string | null = null;
-  let matchedBy = "";
+  // --- New matching engine: evaluate ALL student candidates, score, decide ---
+  const studentResult: MatchResult = await matchStudent(supabase, parsed.studentNumber, parsed.studentName);
 
-  if (parsed.studentNumber) {
-    const { data: student } = await supabase
-      .from("students")
-      .select("id, full_name, student_code")
-      .or(`student_code.ilike.%${parsed.studentNumber}%,full_name.ilike.%${parsed.studentNumber}%`)
-      .limit(1)
-      .maybeSingle();
-    if (student) {
-      matchedStudentId = student.id;
-      matchedStudentName = student.full_name;
-      matchedBy = "code";
-    }
-  }
-
-  if (!matchedStudentId && parsed.studentName) {
-    const { data: student } = await supabase
-      .from("students")
-      .select("id, full_name, student_code")
-      .ilike("full_name", `%${parsed.studentName}%`)
-      .limit(1)
-      .maybeSingle();
-    if (student) {
-      matchedStudentId = student.id;
-      matchedStudentName = student.full_name;
-      matchedBy = "name";
-    }
-
-    // Guardians rarely type the name exactly as enrolled, so fall back to
-    // matching any single word against the name columns.
-    if (!matchedStudentId) {
-      const words = parsed.studentName.split(/\s+/).filter(w => w.length >= 3);
-      for (const word of words) {
-        const { data: s } = await supabase
-          .from("students")
-          .select("id, full_name, student_code")
-          .or(`full_name.ilike.%${word}%,last_name.ilike.%${word}%,first_name.ilike.%${word}%`)
-          .limit(1)
-          .maybeSingle();
-        if (s) {
-          matchedStudentId = s.id;
-          matchedStudentName = s.full_name;
-          matchedBy = "name";
-          break;
-        }
-      }
-    }
-  }
-
-  if (matchedBy === "code" && parsed.studentName) matchedBy = "code+name";
+  const matchedStudentId = studentResult.matchedId;
+  const matchedStudentName = studentResult.matchedName;
+  const confidence = calculateMatchConfidence(parsed.amount, parsed.studentNumber, parsed.studentName, studentResult);
 
   const autoCreditEnabled = settings.sms_auto_credit === true;
-  const minConfidence = (settings.sms_auto_credit_min_confidence as number) || 0.8;
+  const minConfidence = Math.round(((settings.sms_auto_credit_min_confidence as number) || 0.8) * 100);
   const meetsThreshold = confidence >= minConfidence;
 
   const isDuplicate = await findRecentDuplicate(supabase, {
@@ -403,57 +348,60 @@ async function processCredit(
   });
 
   // An alert whose direction we couldn't establish must never post itself.
-  // Treating an unrecognised debit as income would silently overstate
-  // income and credit a student who never paid.
   const directionKnown = parsed.direction === "credit";
 
+  // Auto-credit requires: toggle ON, direction known, match engine returned
+  // AUTO_MATCHED, confidence meets threshold, not duplicate, has amount.
   const willAutoCredit =
     autoCreditEnabled &&
-    meetsThreshold &&
     directionKnown &&
+    studentResult.status === "AUTO_MATCHED" &&
+    meetsThreshold &&
     !isDuplicate &&
-    !!matchedStudentId &&
     !!parsed.amount;
 
   const channelLabel = channel === "email" ? "Email" : "SMS";
   const amountLabel = parsed.amount?.toLocaleString() ?? "—";
-  const howMatched =
-    matchedBy === "code+name"
-      ? `name "${matchedStudentName}" and student no "${parsed.studentNumber}" both match`
-      : matchedBy === "code"
-      ? `student no "${parsed.studentNumber}" matches "${matchedStudentName}"`
-      : `name "${parsed.studentName}" matches student "${matchedStudentName}"`;
 
   let matchStatus: string;
   let matchReason: string;
 
   if (isDuplicate) {
     matchStatus = "duplicate";
-    matchReason = `Duplicate — ₦${amountLabel} for ${parsed.studentNumber || matchedStudentName} was already recorded in the last ${DEDUPE_WINDOW_MINUTES} minutes. Payment NOT posted. Likely the same transaction arriving via both SMS and email.`;
+    matchReason = `Duplicate — ₦${amountLabel} for ${parsed.studentNumber || matchedStudentName || "unknown"} was already recorded in the last ${DEDUPE_WINDOW_MINUTES} minutes. Payment NOT posted.`;
   } else if (!directionKnown) {
     matchStatus = "needs_review";
-    matchReason = `Review required — could not tell whether this alert is a credit or a debit, so nothing has been posted. Amount read: ₦${amountLabel}${parsed.studentName || parsed.studentNumber ? `, identifier "${parsed.studentNumber || parsed.studentName}"` : ""}. This usually means the bank's wording isn't recognised yet — check the alert text and confirm the direction manually. Source: ${channelLabel} (format: ${parsed.format}).`;
+    matchReason = `Review required — could not determine if this is a credit or debit. Amount: ₦${amountLabel}. Source: ${channelLabel} (format: ${parsed.format}).`;
+  } else if (studentResult.status === "CONFLICT") {
+    matchStatus = "needs_review";
+    matchReason = `CONFLICT — ${studentResult.reason} Source: ${channelLabel}.`;
+  } else if (studentResult.status === "AMBIGUOUS") {
+    matchStatus = "needs_review";
+    matchReason = `AMBIGUOUS — ${studentResult.reason} Source: ${channelLabel}.`;
   } else if (willAutoCredit) {
     matchStatus = "matched";
-    matchReason = `Auto-credited ✓ — ${howMatched}. ₦${amountLabel} posted to ${matchedStudentName}'s account automatically (confidence ${Math.round(confidence * 100)}% ≥ threshold ${Math.round(minConfidence * 100)}%). Source: ${channelLabel}.`;
-  } else if (matchedStudentId && parsed.amount) {
+    matchReason = `Auto-credited ✓ — ${studentResult.reason} ₦${amountLabel} posted (confidence ${confidence}% ≥ threshold ${minConfidence}%). Source: ${channelLabel}.`;
+  } else if (studentResult.status === "AUTO_MATCHED" && parsed.amount) {
     matchStatus = "needs_review";
     if (!autoCreditEnabled) {
-      matchReason = `Review required — ${howMatched}. Amount: ₦${amountLabel}. Auto-credit is DISABLED in settings, so nothing has been posted. An admin must approve to credit the student. Source: ${channelLabel}.`;
+      matchReason = `Review required — ${studentResult.reason} Amount: ₦${amountLabel}. Auto-credit is DISABLED. Source: ${channelLabel}.`;
     } else if (!meetsThreshold) {
-      matchReason = `Review required — ${howMatched}. Amount: ₦${amountLabel}. Confidence (${Math.round(confidence * 100)}%) is below the auto-credit threshold (${Math.round(minConfidence * 100)}%). Source: ${channelLabel}.`;
+      matchReason = `Review required — ${studentResult.reason} Amount: ₦${amountLabel}. Confidence (${confidence}%) below threshold (${minConfidence}%). Source: ${channelLabel}.`;
     } else {
-      matchReason = `Review required — ${howMatched}. Amount: ₦${amountLabel}. Approve to post the payment. Source: ${channelLabel}.`;
+      matchReason = `Review required — ${studentResult.reason} Amount: ₦${amountLabel}. Source: ${channelLabel}.`;
     }
+  } else if (studentResult.status === "MANUAL_REVIEW") {
+    matchStatus = "needs_review";
+    matchReason = `Review required — ${studentResult.reason} Amount: ₦${amountLabel}. Source: ${channelLabel}.`;
   } else if (parsed.amount && (parsed.studentNumber || parsed.studentName)) {
     matchStatus = "needs_review";
-    matchReason = `Review required — ₦${amountLabel} received with identifier "${parsed.studentNumber || parsed.studentName}", but NO matching student was found. Assign a student manually before approving. Source: ${channelLabel}.`;
+    matchReason = `Review required — ₦${amountLabel} received with identifier "${parsed.studentNumber || parsed.studentName}", but NO matching student found. ${studentResult.reason} Source: ${channelLabel}.`;
   } else if (parsed.amount) {
     matchStatus = "unmatched";
-    matchReason = `Unmatched — ₦${amountLabel} received but no student name or number was found in the alert. Cannot determine who to credit. Source: ${channelLabel}.`;
+    matchReason = `Unmatched — ₦${amountLabel} received but no student name or number found in the alert. Source: ${channelLabel}.`;
   } else {
     matchStatus = "unmatched";
-    matchReason = `Unmatched — could not read a valid amount or student identifier from this alert. Source: ${channelLabel}.`;
+    matchReason = `Unmatched — could not read a valid amount or student identifier. Source: ${channelLabel}.`;
   }
 
   const { data: inserted, error: insertError } = await supabase
@@ -471,12 +419,12 @@ async function processCredit(
       parsed_amount: parsed.amount,
       parsed_currency: parsed.currency,
       parsed_reference: parsed.reference || generatePaymentRef(receivedAt, matchedStudentName),
-      parser_version: "v3",
+      parser_version: "v4",
       processing_status: willAutoCredit ? "confirmed" : "received",
       match_status: matchStatus,
       match_reason: matchReason,
       matched_student_id: matchedStudentId,
-      confidence_score: confidence,
+      confidence_score: confidence / 100,
       source_channel: channel,
       email_subject: input.subject ?? null,
       raw_payload: input.rawPayload,
@@ -501,7 +449,7 @@ async function processCredit(
       student_id: matchedStudentId,
       student_name: matchedStudentName || parsed.studentName,
       category: "School Fees",
-      description: `Bank CR Alert (${channelLabel}) — ${parsed.reference || "auto-credited"}`,
+      description: `Bank CR Alert (${channelLabel}) — ${parsed.reference || "auto-credited"} [${studentResult.method}]`,
       amount: parsed.amount,
       payment_method: "Bank Transfer",
       recorded_by: `System (Auto-Credit · ${channelLabel})`,
@@ -512,7 +460,7 @@ async function processCredit(
 
     await supabase.from("activity_log").insert({
       action: `Auto-Credit Payment (${channelLabel} CR Alert)`,
-      details: `${receiptNo} — ${matchedStudentName} — ₦${parsed.amount.toLocaleString()} (confidence ${Math.round(confidence * 100)}%)`,
+      details: `${receiptNo} — ${matchedStudentName} — ₦${parsed.amount.toLocaleString()} (confidence ${confidence}%, method ${studentResult.method})`,
     });
 
     autoPosted = true;
@@ -531,7 +479,10 @@ async function processCredit(
       reference: parsed.reference,
       confidence,
       match_status: matchStatus,
+      match_method: studentResult.method,
+      student_match_result: studentResult.status,
       matched_student_id: matchedStudentId,
+      candidate_count: studentResult.candidateCount,
     },
   };
 }

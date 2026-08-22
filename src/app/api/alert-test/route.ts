@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
 import {
   parseAlert,
-  calculateConfidence,
-  generatePaymentRef,
   detectExpenseCategory,
   parseBankDate,
+  generatePaymentRef,
   htmlToText,
-  type ParsedAlert,
 } from "@/lib/alerts/parser";
+import {
+  matchStudent,
+  matchVendor,
+  calculateMatchConfidence,
+} from "@/lib/alerts/matcher";
 import { createServiceClient } from "@/lib/alerts/service";
 
 /**
@@ -16,9 +19,6 @@ import { createServiceClient } from "@/lib/alerts/service";
  * Returns everything the real pipeline would compute — direction, amount,
  * counterparty, matched student/vendor, confidence, match reason — but
  * never writes anything to the database.
- *
- * Used by Setup → Matching Tester so the admin can verify rules before
- * relying on them with live alerts.
  */
 export async function POST(request: Request) {
   const supabase = createServiceClient();
@@ -40,7 +40,6 @@ export async function POST(request: Request) {
 
   const messageText = isHtml ? htmlToText(rawText) : rawText;
   const parsed = parseAlert(messageText, subject || null);
-  const confidence = calculateConfidence(parsed);
 
   // ---------- Settings ----------
   const { data: settingsRow } = await supabase
@@ -52,150 +51,83 @@ export async function POST(request: Request) {
 
   const autoCreditEnabled = settings.sms_auto_credit === true;
   const autoExpenseEnabled = settings.sms_auto_expense === true;
-  const minConfidence = (settings.sms_auto_credit_min_confidence as number) || 0.8;
+  const minConfidence = Math.round(((settings.sms_auto_credit_min_confidence as number) || 0.8) * 100);
 
-  // ---------- Student matching (read-only) ----------
-  let matchedStudentId: string | null = null;
-  let matchedStudentName: string | null = null;
-  let matchedStudentCode: string | null = null;
-  let matchedBy = "";
-  const studentCandidates: { id: string; full_name: string; student_code: string; matchedBy: string }[] = [];
+  // ---------- Run the new matching engine (read-only) ----------
+  const studentResult = await matchStudent(supabase, parsed.studentNumber, parsed.studentName);
+  const vendorResult = await matchVendor(supabase, parsed.payeeName);
 
-  if (parsed.studentNumber) {
-    const { data: students } = await supabase
-      .from("students")
-      .select("id, full_name, student_code")
-      .or(`student_code.ilike.%${parsed.studentNumber}%,full_name.ilike.%${parsed.studentNumber}%`)
-      .limit(5);
-    if (students && students.length > 0) {
-      matchedStudentId = students[0].id;
-      matchedStudentName = students[0].full_name;
-      matchedStudentCode = students[0].student_code;
-      matchedBy = "code";
-      students.forEach(s => studentCandidates.push({ ...s, matchedBy: "code" }));
-    }
-  }
+  const isDebit = parsed.direction === "debit";
+  const isCredit = parsed.direction === "credit";
 
-  if (!matchedStudentId && parsed.studentName) {
-    const { data: students } = await supabase
-      .from("students")
-      .select("id, full_name, student_code")
-      .ilike("full_name", `%${parsed.studentName}%`)
-      .limit(5);
-    if (students && students.length > 0) {
-      matchedStudentId = students[0].id;
-      matchedStudentName = students[0].full_name;
-      matchedStudentCode = students[0].student_code;
-      matchedBy = "name-full";
-      students.forEach(s => studentCandidates.push({ ...s, matchedBy: "name-full" }));
-    }
+  const activeMatchResult = isDebit ? vendorResult : studentResult;
+  const confidence = isDebit
+    ? calculateMatchConfidence(parsed.amount, null, parsed.payeeName, vendorResult)
+    : calculateMatchConfidence(parsed.amount, parsed.studentNumber, parsed.studentName, studentResult);
 
-    if (!matchedStudentId) {
-      const words = parsed.studentName.split(/\s+/).filter(w => w.length >= 3);
-      for (const word of words) {
-        const { data: s } = await supabase
-          .from("students")
-          .select("id, full_name, student_code")
-          .or(`full_name.ilike.%${word}%,last_name.ilike.%${word}%,first_name.ilike.%${word}%`)
-          .limit(5);
-        if (s && s.length > 0) {
-          matchedStudentId = s[0].id;
-          matchedStudentName = s[0].full_name;
-          matchedStudentCode = s[0].student_code;
-          matchedBy = `word "${word}"`;
-          s.forEach(st => studentCandidates.push({ ...st, matchedBy: `word "${word}"` }));
-          break;
-        }
-      }
-    }
-  }
-
-  if (matchedBy === "code" && parsed.studentName) matchedBy = "code+name";
-
-  // ---------- Vendor matching (read-only) ----------
-  let matchedVendorId: string | null = null;
-  let matchedVendorName: string | null = null;
-  const vendorCandidates: { id: string; name: string; matchedBy: string }[] = [];
-
-  if (parsed.payeeName) {
-    const words = parsed.payeeName.split(/\s+/).filter(w => w.length >= 3);
-    for (const word of words) {
-      const { data: vendor } = await supabase
-        .from("vendors")
-        .select("id, name")
-        .ilike("name", `%${word}%`)
-        .limit(5);
-      if (vendor && vendor.length > 0) {
-        matchedVendorId = vendor[0].id;
-        matchedVendorName = vendor[0].name;
-        vendor.forEach(v => vendorCandidates.push({ ...v, matchedBy: `word "${word}"` }));
-        break;
-      }
-    }
-  }
-
-  // ---------- Simulate match reason ----------
-  const channelLabel = "Test";
-  const amountLabel = parsed.amount?.toLocaleString() ?? "—";
   const meetsThreshold = confidence >= minConfidence;
   const expenseCategory = detectExpenseCategory(parsed.payeeName, parsed.purpose, parsed.reference);
   const transactionDate = parseBankDate(parsed.transactionDate);
-  const reference = parsed.reference || generatePaymentRef(new Date().toISOString(), matchedStudentName || parsed.payeeName);
+  const reference = parsed.reference || generatePaymentRef(new Date().toISOString(), studentResult.matchedName || parsed.payeeName);
 
+  // ---------- Simulate outcome ----------
   let simulatedOutcome: string;
   let simulatedReason: string;
 
-  if (parsed.direction === "debit" || parsed.isDebit) {
-    // Expense simulation
+  if (isDebit) {
     if (autoExpenseEnabled && parsed.amount) {
       simulatedOutcome = "Would auto-post expense";
-      simulatedReason = `Auto-posted expense ✓ — ₦${amountLabel} debited to "${parsed.payeeName || "Unknown"}". Category: ${expenseCategory}.${matchedVendorName ? ` Matched vendor "${matchedVendorName}".` : " No matching vendor on file — would record under the payee name."}${parsed.purpose ? ` Purpose: ${parsed.purpose}.` : ""} Source: ${channelLabel}.`;
+      simulatedReason = `Auto-post expense ✓ — ₦${parsed.amount?.toLocaleString() ?? "—"} to "${parsed.payeeName || "Unknown"}". Category: ${expenseCategory}. Vendor match: ${vendorResult.status} — ${vendorResult.reason}`;
     } else if (!autoExpenseEnabled) {
       simulatedOutcome = "Would need manual review (auto-expense OFF)";
-      simulatedReason = `Review required (expense) — ₦${amountLabel} debited to "${parsed.payeeName || "Unknown"}". Auto-expense posting is disabled, so nothing would be recorded automatically.${matchedVendorName ? ` Suggested vendor: "${matchedVendorName}".` : ""}${parsed.purpose ? ` Purpose: ${parsed.purpose}.` : ""} Source: ${channelLabel}.`;
+      simulatedReason = `Review required. ${vendorResult.reason}`;
     } else {
-      simulatedOutcome = "Would need manual review (no amount parsed)";
-      simulatedReason = `Review required — could not read a valid amount from this alert. Source: ${channelLabel}.`;
+      simulatedOutcome = "Would need manual review (no amount)";
+      simulatedReason = `No amount parsed. ${vendorResult.reason}`;
     }
-  } else if (parsed.direction === "credit") {
-    // Income simulation
+  } else if (isCredit) {
     const directionKnown = true;
-    const wouldAutoCredit = autoCreditEnabled && meetsThreshold && directionKnown && !!matchedStudentId && !!parsed.amount;
+    const wouldAutoCredit =
+      autoCreditEnabled &&
+      directionKnown &&
+      studentResult.status === "AUTO_MATCHED" &&
+      meetsThreshold &&
+      !!parsed.amount;
 
-    const howMatched =
-      matchedBy === "code+name"
-        ? `name "${matchedStudentName}" and student no "${parsed.studentNumber}" both match`
-        : matchedBy === "code"
-        ? `student no "${parsed.studentNumber}" matches "${matchedStudentName}"`
-        : matchedBy.startsWith("name") || matchedBy.startsWith("word")
-        ? `name "${parsed.studentName}" matches student "${matchedStudentName}" (via ${matchedBy})`
-        : "no match";
-
-    if (wouldAutoCredit) {
+    if (studentResult.status === "CONFLICT") {
+      simulatedOutcome = "CONFLICT — would need manual review";
+      simulatedReason = studentResult.reason;
+    } else if (studentResult.status === "AMBIGUOUS") {
+      simulatedOutcome = "AMBIGUOUS — would need manual review";
+      simulatedReason = studentResult.reason;
+    } else if (wouldAutoCredit) {
       simulatedOutcome = "Would auto-credit student";
-      simulatedReason = `Auto-credited ✓ — ${howMatched}. ₦${amountLabel} would post to ${matchedStudentName}'s account automatically (confidence ${Math.round(confidence * 100)}% ≥ threshold ${Math.round(minConfidence * 100)}%). Source: ${channelLabel}.`;
-    } else if (matchedStudentId && parsed.amount) {
-      simulatedOutcome = "Would need manual review";
+      simulatedReason = `Auto-credit ✓ — ${studentResult.reason} Confidence ${confidence}% ≥ threshold ${minConfidence}%.`;
+    } else if (studentResult.status === "AUTO_MATCHED" && parsed.amount) {
       if (!autoCreditEnabled) {
-        simulatedReason = `Review required — ${howMatched}. Amount: ₦${amountLabel}. Auto-credit is DISABLED in settings, so nothing would be posted. Source: ${channelLabel}.`;
+        simulatedOutcome = "Would need manual review (auto-credit OFF)";
       } else if (!meetsThreshold) {
-        simulatedReason = `Review required — ${howMatched}. Amount: ₦${amountLabel}. Confidence (${Math.round(confidence * 100)}%) is below the auto-credit threshold (${Math.round(minConfidence * 100)}%). Source: ${channelLabel}.`;
+        simulatedOutcome = `Would need manual review (confidence ${confidence}% < ${minConfidence}%)`;
       } else {
-        simulatedReason = `Review required — ${howMatched}. Amount: ₦${amountLabel}. Source: ${channelLabel}.`;
+        simulatedOutcome = "Would need manual review";
       }
+      simulatedReason = studentResult.reason;
+    } else if (studentResult.status === "MANUAL_REVIEW") {
+      simulatedOutcome = "Would need manual review (low confidence match)";
+      simulatedReason = studentResult.reason;
     } else if (parsed.amount && (parsed.studentNumber || parsed.studentName)) {
       simulatedOutcome = "Would need manual review (no student match)";
-      simulatedReason = `Review required — ₦${amountLabel} received with identifier "${parsed.studentNumber || parsed.studentName}", but NO matching student found in the database. Source: ${channelLabel}.`;
+      simulatedReason = studentResult.reason;
     } else if (parsed.amount) {
       simulatedOutcome = "Would be unmatched";
-      simulatedReason = `Unmatched — ₦${amountLabel} received but no student name or number found in the alert. Cannot determine who to credit. Source: ${channelLabel}.`;
+      simulatedReason = "No student name or number found in the alert.";
     } else {
       simulatedOutcome = "Would be unmatched (no amount)";
-      simulatedReason = `Unmatched — could not read a valid amount or student identifier from this alert. Source: ${channelLabel}.`;
+      simulatedReason = "Could not read an amount or student identifier.";
     }
   } else {
     simulatedOutcome = "Would need manual review (unknown direction)";
-    simulatedReason = `Review required — could not tell whether this is a credit or a debit, so nothing would be posted. Amount read: ₦${amountLabel}${parsed.studentName || parsed.studentNumber ? `, identifier "${parsed.studentNumber || parsed.studentName}"` : ""}. Format: ${parsed.format}.`;
+    simulatedReason = `Could not determine credit vs debit. Format: ${parsed.format}.`;
   }
 
   return NextResponse.json({
@@ -208,26 +140,45 @@ export async function POST(request: Request) {
     transactionDateISO: transactionDate,
     reference,
 
-    // Counterparty — credit side
+    // Student matching (credit side)
     studentNumber: parsed.studentNumber,
     studentName: parsed.studentName,
-    matchedStudent: matchedStudentId
-      ? { id: matchedStudentId, name: matchedStudentName, code: matchedStudentCode, matchedBy }
+    matchedStudent: studentResult.matchedId
+      ? { id: studentResult.matchedId, name: studentResult.matchedName, code: studentResult.matchedCode, matchedBy: studentResult.method }
       : null,
-    studentCandidates,
+    studentMatchStatus: studentResult.status,
+    studentMatchMethod: studentResult.method,
+    studentMatchReason: studentResult.reason,
+    studentCandidates: studentResult.candidates.map(c => ({
+      id: c.id,
+      full_name: c.name,
+      student_code: c.code,
+      score: c.score,
+      method: c.method,
+      evidence: c.evidence,
+    })),
 
-    // Counterparty — debit side
+    // Vendor matching (debit side)
     payeeName: parsed.payeeName,
     purpose: parsed.purpose,
     expenseCategory,
-    matchedVendor: matchedVendorId
-      ? { id: matchedVendorId, name: matchedVendorName }
+    matchedVendor: vendorResult.matchedId
+      ? { id: vendorResult.matchedId, name: vendorResult.matchedName }
       : null,
-    vendorCandidates,
+    vendorMatchStatus: vendorResult.status,
+    vendorMatchMethod: vendorResult.method,
+    vendorMatchReason: vendorResult.reason,
+    vendorCandidates: vendorResult.candidates.map(c => ({
+      id: c.id,
+      name: c.name,
+      score: c.score,
+      method: c.method,
+      evidence: c.evidence,
+    })),
 
     // Confidence and outcome
     confidence,
-    confidencePercent: Math.round(confidence * 100),
+    confidencePercent: confidence,
     simulatedOutcome,
     simulatedReason,
 
@@ -235,8 +186,11 @@ export async function POST(request: Request) {
     settings: {
       autoCreditEnabled,
       autoExpenseEnabled,
-      minConfidencePercent: Math.round(minConfidence * 100),
+      minConfidencePercent: minConfidence,
     },
+
+    // Audit trail
+    audit: activeMatchResult.audit,
 
     // Raw text used (after HTML strip if applicable)
     processedText: messageText.substring(0, 1000),
