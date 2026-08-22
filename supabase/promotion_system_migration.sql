@@ -137,28 +137,58 @@ CREATE INDEX IF NOT EXISTS idx_promotion_events_action ON promotion_events(actio
 
 -- Classes: anyone authenticated can read, admin can write
 ALTER TABLE classes ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "classes_read" ON classes FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "classes_write" ON classes FOR ALL USING (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='classes' AND policyname='classes_read') THEN
+    CREATE POLICY "classes_read" ON classes FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='classes' AND policyname='classes_write') THEN
+    CREATE POLICY "classes_write" ON classes FOR ALL USING (true);
+  END IF;
+END $$;
 
 -- Academic years: anyone can read, admin can write
 ALTER TABLE academic_years ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "academic_years_read" ON academic_years FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "academic_years_write" ON academic_years FOR ALL USING (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='academic_years' AND policyname='academic_years_read') THEN
+    CREATE POLICY "academic_years_read" ON academic_years FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='academic_years' AND policyname='academic_years_write') THEN
+    CREATE POLICY "academic_years_write" ON academic_years FOR ALL USING (true);
+  END IF;
+END $$;
 
 -- Student enrollments: anyone can read, admin can write
 ALTER TABLE student_enrollments ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "enrollments_read" ON student_enrollments FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "enrollments_write" ON student_enrollments FOR ALL USING (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='student_enrollments' AND policyname='enrollments_read') THEN
+    CREATE POLICY "enrollments_read" ON student_enrollments FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='student_enrollments' AND policyname='enrollments_write') THEN
+    CREATE POLICY "enrollments_write" ON student_enrollments FOR ALL USING (true);
+  END IF;
+END $$;
 
 -- Promotion batches: anyone can read, admin can write
 ALTER TABLE promotion_batches ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "batches_read" ON promotion_batches FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "batches_write" ON promotion_batches FOR ALL USING (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='promotion_batches' AND policyname='batches_read') THEN
+    CREATE POLICY "batches_read" ON promotion_batches FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='promotion_batches' AND policyname='batches_write') THEN
+    CREATE POLICY "batches_write" ON promotion_batches FOR ALL USING (true);
+  END IF;
+END $$;
 
 -- Promotion events: anyone can read, admin can write
 ALTER TABLE promotion_events ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "events_read" ON promotion_events FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "events_write" ON promotion_events FOR ALL USING (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='promotion_events' AND policyname='events_read') THEN
+    CREATE POLICY "events_read" ON promotion_events FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='promotion_events' AND policyname='events_write') THEN
+    CREATE POLICY "events_write" ON promotion_events FOR ALL USING (true);
+  END IF;
+END $$;
 
 -- ==========================================================
 -- SEED: Migrate existing grade values into the classes table
