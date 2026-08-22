@@ -11,6 +11,11 @@ export type SmsInbox = Database["public"]["Tables"]["sms_inbox"]["Row"];
 export type ActivityLog = Database["public"]["Tables"]["activity_log"]["Row"];
 export type SchoolSettings = Database["public"]["Tables"]["school_settings"]["Row"];
 export type Role = Database["public"]["Tables"]["roles"]["Row"];
+export type SchoolClass = Database["public"]["Tables"]["classes"]["Row"];
+export type AcademicYear = Database["public"]["Tables"]["academic_years"]["Row"];
+export type StudentEnrollment = Database["public"]["Tables"]["student_enrollments"]["Row"];
+export type PromotionBatch = Database["public"]["Tables"]["promotion_batches"]["Row"];
+export type PromotionEvent = Database["public"]["Tables"]["promotion_events"]["Row"];
 
 export type PaymentStatus = "paid" | "partial" | "unpaid";
 

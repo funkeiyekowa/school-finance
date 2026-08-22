@@ -238,6 +238,88 @@ export type Database = {
         };
         Update: Record<string, unknown>;
       };
+      classes: {
+        Row: {
+          id: string; name: string; short_code: string;
+          sequence: number; stage: string | null;
+          next_class_id: string | null; is_terminal: boolean;
+          active: boolean; created_at: string; updated_at: string;
+        };
+        Insert: {
+          name: string; short_code: string; sequence?: number;
+          stage?: string | null; next_class_id?: string | null;
+          is_terminal?: boolean; active?: boolean;
+        };
+        Update: Record<string, unknown>;
+      };
+      academic_years: {
+        Row: {
+          id: string; name: string; start_date: string | null;
+          end_date: string | null; status: string;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          name: string; start_date?: string | null;
+          end_date?: string | null; status?: string;
+        };
+        Update: Record<string, unknown>;
+      };
+      student_enrollments: {
+        Row: {
+          id: string; student_id: string; class_id: string;
+          academic_year_id: string; status: string;
+          enrolled_at: string; promoted_from_id: string | null;
+          notes: string | null; created_at: string; updated_at: string;
+        };
+        Insert: {
+          student_id: string; class_id: string; academic_year_id: string;
+          status?: string; enrolled_at?: string;
+          promoted_from_id?: string | null; notes?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
+      promotion_batches: {
+        Row: {
+          id: string; batch_code: string;
+          from_year_id: string; to_year_id: string;
+          status: string; total_students: number;
+          promoted: number; repeated: number;
+          graduated: number; excluded: number; failed: number;
+          created_by_email: string | null; created_by_name: string | null;
+          reversed_at: string | null; reversed_by: string | null;
+          reversal_reason: string | null; notes: string | null;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          batch_code: string; from_year_id: string; to_year_id: string;
+          status?: string; total_students?: number;
+          promoted?: number; repeated?: number;
+          graduated?: number; excluded?: number; failed?: number;
+          created_by_email?: string | null; created_by_name?: string | null;
+          notes?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
+      promotion_events: {
+        Row: {
+          id: string; batch_id: string | null; student_id: string;
+          from_enrollment_id: string | null; to_enrollment_id: string | null;
+          from_class_id: string | null; to_class_id: string | null;
+          from_year_id: string | null; to_year_id: string | null;
+          action: string; reason: string | null; status: string;
+          created_by_email: string | null; created_by_name: string | null;
+          created_at: string;
+        };
+        Insert: {
+          batch_id?: string | null; student_id: string;
+          from_enrollment_id?: string | null; to_enrollment_id?: string | null;
+          from_class_id?: string | null; to_class_id?: string | null;
+          from_year_id?: string | null; to_year_id?: string | null;
+          action: string; reason?: string | null; status?: string;
+          created_by_email?: string | null; created_by_name?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
     };
   };
 };

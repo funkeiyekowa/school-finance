@@ -10,11 +10,11 @@ import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare, Pencil, Mail, RefreshCw, CheckCircle2, AlertTriangle, FlaskConical } from "lucide-react";
+import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare, Pencil, Mail, RefreshCw, CheckCircle2, AlertTriangle, FlaskConical, GraduationCap } from "lucide-react";
 import type { FeeSchedule, SchoolSettings } from "@/lib/types";
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES } from "@/lib/types";
 
-type Tab = "school" | "fees" | "categories" | "sms" | "email" | "policy" | "tester";
+type Tab = "school" | "fees" | "categories" | "sms" | "email" | "policy" | "academic" | "tester";
 
 export default function SetupPage() {
   const [tab, setTab] = useState<Tab>("school");
@@ -36,6 +36,7 @@ export default function SetupPage() {
           { id: "sms", label: "SMS Gateway", icon: <MessageSquare size={14} /> },
           { id: "email", label: "Email Alerts", icon: <Mail size={14} /> },
           { id: "policy", label: "Auto-Credit Policy", icon: <CheckCircle2 size={14} /> },
+          { id: "academic", label: "Academic Setup", icon: <GraduationCap size={14} /> },
           { id: "tester", label: "Matching Tester", icon: <FlaskConical size={14} /> },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id as Tab)}
@@ -54,6 +55,7 @@ export default function SetupPage() {
       {tab === "sms" && <SmsGatewayTab />}
       {tab === "email" && <EmailAlertsTab />}
       {tab === "policy" && <AutoCreditPolicyTab />}
+      {tab === "academic" && <AcademicSetupTab />}
       {tab === "tester" && <MatchingTesterTab />}
     </div>
   );
@@ -1670,6 +1672,337 @@ function resetForwardedMemory() {
   Logger.log('Forwarded-message memory cleared. The next run will re-check the current window.');
 }
 `;
+}
+
+/**
+ * Academic Setup — Class/Grade Structure and Academic Years configuration.
+ */
+function AcademicSetupTab() {
+  const supabase = createClient();
+  const { profile } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [subTab, setSubTab] = useState<"classes" | "years">("classes");
+
+  // --- Classes state ---
+  const [classes, setClasses] = useState<Record<string, unknown>[]>([]);
+  const [editingClass, setEditingClass] = useState<Record<string, unknown> | null>(null);
+  const [classForm, setClassForm] = useState({ name: "", short_code: "", sequence: "0", stage: "", is_terminal: false, next_class_id: "" });
+  const [savingClass, setSavingClass] = useState(false);
+
+  // --- Academic Years state ---
+  const [years, setYears] = useState<Record<string, unknown>[]>([]);
+  const [editingYear, setEditingYear] = useState<Record<string, unknown> | null>(null);
+  const [yearForm, setYearForm] = useState({ name: "", start_date: "", end_date: "", status: "upcoming" });
+  const [savingYear, setSavingYear] = useState(false);
+
+  const load = useCallback(async () => {
+    const [classRes, yearRes] = await Promise.all([
+      supabase.from("classes").select("*").order("sequence"),
+      supabase.from("academic_years").select("*").order("name", { ascending: false }),
+    ]);
+    setClasses(classRes.data ?? []);
+    setYears(yearRes.data ?? []);
+    setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // --- Class CRUD ---
+  function openClassForm(cls?: Record<string, unknown>) {
+    if (cls) {
+      setEditingClass(cls);
+      setClassForm({
+        name: String(cls.name || ""),
+        short_code: String(cls.short_code || ""),
+        sequence: String(cls.sequence ?? 0),
+        stage: String(cls.stage || ""),
+        is_terminal: cls.is_terminal === true,
+        next_class_id: String(cls.next_class_id || ""),
+      });
+    } else {
+      setEditingClass(null);
+      const maxSeq = classes.reduce((m, c) => Math.max(m, Number(c.sequence ?? 0)), 0);
+      setClassForm({ name: "", short_code: "", sequence: String(maxSeq + 1), stage: "", is_terminal: false, next_class_id: "" });
+    }
+  }
+
+  async function saveClass() {
+    setSavingClass(true);
+    const payload = {
+      name: classForm.name.trim(),
+      short_code: classForm.short_code.trim() || classForm.name.trim(),
+      sequence: parseInt(classForm.sequence) || 0,
+      stage: classForm.stage.trim() || null,
+      is_terminal: classForm.is_terminal,
+      next_class_id: classForm.next_class_id || null,
+      updated_at: new Date().toISOString(),
+    };
+    if (editingClass) {
+      await supabase.from("classes").update(payload).eq("id", editingClass.id);
+    } else {
+      await supabase.from("classes").insert(payload);
+    }
+    await supabase.from("activity_log").insert({
+      user_email: profile?.email, user_name: profile?.full_name,
+      action: editingClass ? "Update Class" : "Create Class",
+      details: payload.name,
+    });
+    setEditingClass(null);
+    setSavingClass(false);
+    load();
+  }
+
+  async function deleteClass(id: string) {
+    if (!confirm("Deactivate this class? It will no longer appear in promotion options.")) return;
+    await supabase.from("classes").update({ active: false, updated_at: new Date().toISOString() }).eq("id", id);
+    load();
+  }
+
+  // --- Year CRUD ---
+  function openYearForm(yr?: Record<string, unknown>) {
+    if (yr) {
+      setEditingYear(yr);
+      setYearForm({
+        name: String(yr.name || ""),
+        start_date: String(yr.start_date || ""),
+        end_date: String(yr.end_date || ""),
+        status: String(yr.status || "upcoming"),
+      });
+    } else {
+      setEditingYear(null);
+      setYearForm({ name: "", start_date: "", end_date: "", status: "upcoming" });
+    }
+  }
+
+  async function saveYear() {
+    setSavingYear(true);
+    const payload = {
+      name: yearForm.name.trim(),
+      start_date: yearForm.start_date || null,
+      end_date: yearForm.end_date || null,
+      status: yearForm.status,
+      updated_at: new Date().toISOString(),
+    };
+    if (editingYear) {
+      await supabase.from("academic_years").update(payload).eq("id", editingYear.id);
+    } else {
+      await supabase.from("academic_years").insert(payload);
+    }
+    await supabase.from("activity_log").insert({
+      user_email: profile?.email, user_name: profile?.full_name,
+      action: editingYear ? "Update Academic Year" : "Create Academic Year",
+      details: `${payload.name} (${payload.status})`,
+    });
+    setEditingYear(null);
+    setSavingYear(false);
+    load();
+  }
+
+  async function deleteYear(id: string) {
+    if (!confirm("Delete this academic year? This cannot be undone if enrollments reference it.")) return;
+    const { error } = await supabase.from("academic_years").delete().eq("id", id);
+    if (error) alert("Cannot delete: " + error.message);
+    else load();
+  }
+
+  if (loading) return <LoadingSpinner />;
+
+  return (
+    <div className="space-y-5">
+      {/* Sub-tabs */}
+      <div className="flex gap-2">
+        <button onClick={() => setSubTab("classes")} className={cn("px-4 py-2 text-sm font-medium rounded-lg", subTab === "classes" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
+          Class / Grade Structure
+        </button>
+        <button onClick={() => setSubTab("years")} className={cn("px-4 py-2 text-sm font-medium rounded-lg", subTab === "years" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
+          Academic Years
+        </button>
+      </div>
+
+      {subTab === "classes" && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Class / Grade Structure</CardTitle>
+              <Button size="sm" variant="gold" onClick={() => openClassForm()}>
+                <Plus size={14} /> Add Class
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-gray-500 mb-4">
+              Define your school&apos;s class progression. The sequence determines promotion order.
+              Set &ldquo;Next Class&rdquo; to define explicit promotion paths, or leave blank to use sequence order.
+            </p>
+
+            {/* Class form */}
+            {(editingClass !== undefined && classForm.name !== undefined && (editingClass || classForm.name === "")) ? null : null}
+            {(editingClass !== null || classForm.name !== "") && (
+              <div className="mb-4 p-4 border border-[#C9A227] bg-[#FBF6E8] rounded-xl space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <Input label="Class Name" value={classForm.name} onChange={e => setClassForm(f => ({ ...f, name: e.target.value }))} placeholder="JSS1" />
+                  <Input label="Short Code" value={classForm.short_code} onChange={e => setClassForm(f => ({ ...f, short_code: e.target.value }))} placeholder="JSS1" />
+                  <Input label="Sequence" type="number" value={classForm.sequence} onChange={e => setClassForm(f => ({ ...f, sequence: e.target.value }))} />
+                  <Input label="Stage (optional)" value={classForm.stage} onChange={e => setClassForm(f => ({ ...f, stage: e.target.value }))} placeholder="Junior Secondary" />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Next Class</label>
+                    <select value={classForm.next_class_id} onChange={e => setClassForm(f => ({ ...f, next_class_id: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white">
+                      <option value="">— Auto (by sequence) —</option>
+                      {classes.filter(c => c.id !== editingClass?.id && c.active !== false).map(c => (
+                        <option key={String(c.id)} value={String(c.id)}>{String(c.name)}</option>
+                      ))}
+                      <option value="__terminal__">— Terminal / Graduation —</option>
+                    </select>
+                  </div>
+                  <div className="flex items-end pb-1">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input type="checkbox" checked={classForm.is_terminal || classForm.next_class_id === "__terminal__"}
+                        onChange={e => setClassForm(f => ({ ...f, is_terminal: e.target.checked, next_class_id: e.target.checked ? "" : f.next_class_id }))}
+                        className="w-4 h-4 rounded border-gray-300 text-[#C9A227] focus:ring-[#C9A227]" />
+                      Terminal (graduation)
+                    </label>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="gold" loading={savingClass} onClick={saveClass} disabled={!classForm.name.trim()}>
+                    <Save size={14} /> {editingClass ? "Update" : "Add"}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => { setEditingClass(null); setClassForm({ name: "", short_code: "", sequence: "0", stage: "", is_terminal: false, next_class_id: "" }); }}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Class table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b">
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Seq</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Class Name</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Code</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Stage</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Next</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Terminal</th>
+                    <th className="px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {classes.filter(c => c.active !== false).map(c => {
+                    const nextCls = classes.find(x => x.id === c.next_class_id);
+                    return (
+                      <tr key={String(c.id)} className="border-b hover:bg-gray-50">
+                        <td className="px-3 py-2 text-gray-500">{String(c.sequence)}</td>
+                        <td className="px-3 py-2 font-medium">{String(c.name)}</td>
+                        <td className="px-3 py-2 text-gray-500 font-mono text-xs">{String(c.short_code)}</td>
+                        <td className="px-3 py-2 text-gray-500">{String(c.stage || "—")}</td>
+                        <td className="px-3 py-2 text-gray-500">{nextCls ? String(nextCls.name) : c.is_terminal ? "Graduation" : "—"}</td>
+                        <td className="px-3 py-2">{c.is_terminal ? <span className="text-xs font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded">Yes</span> : ""}</td>
+                        <td className="px-3 py-2 text-right">
+                          <button onClick={() => openClassForm(c)} className="text-xs text-[#0F2A47] hover:underline mr-2">Edit</button>
+                          <button onClick={() => deleteClass(String(c.id))} className="text-xs text-red-500 hover:underline">Deactivate</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {classes.filter(c => c.active !== false).length === 0 && (
+                    <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">No classes configured. Click &ldquo;Add Class&rdquo; to define your school&apos;s grade structure.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {subTab === "years" && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Academic Years</CardTitle>
+              <Button size="sm" variant="gold" onClick={() => openYearForm()}>
+                <Plus size={14} /> Add Year
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-gray-500 mb-4">
+              Define academic years. Only one year can be &ldquo;Current&rdquo; at a time.
+              Promotion moves students from the current year to the upcoming year.
+            </p>
+
+            {/* Year form */}
+            {(editingYear !== null || yearForm.name !== "") && (
+              <div className="mb-4 p-4 border border-[#C9A227] bg-[#FBF6E8] rounded-xl space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <Input label="Year Name" value={yearForm.name} onChange={e => setYearForm(f => ({ ...f, name: e.target.value }))} placeholder="2025/2026" />
+                  <Input label="Start Date" type="date" value={yearForm.start_date} onChange={e => setYearForm(f => ({ ...f, start_date: e.target.value }))} />
+                  <Input label="End Date" type="date" value={yearForm.end_date} onChange={e => setYearForm(f => ({ ...f, end_date: e.target.value }))} />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                    <select value={yearForm.status} onChange={e => setYearForm(f => ({ ...f, status: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white">
+                      <option value="upcoming">Upcoming</option>
+                      <option value="current">Current</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="gold" loading={savingYear} onClick={saveYear} disabled={!yearForm.name.trim()}>
+                    <Save size={14} /> {editingYear ? "Update" : "Add"}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => { setEditingYear(null); setYearForm({ name: "", start_date: "", end_date: "", status: "upcoming" }); }}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Year table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b">
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Year</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Start</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">End</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Status</th>
+                    <th className="px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {years.map(y => (
+                    <tr key={String(y.id)} className="border-b hover:bg-gray-50">
+                      <td className="px-3 py-2 font-medium">{String(y.name)}</td>
+                      <td className="px-3 py-2 text-gray-500">{y.start_date ? String(y.start_date) : "—"}</td>
+                      <td className="px-3 py-2 text-gray-500">{y.end_date ? String(y.end_date) : "—"}</td>
+                      <td className="px-3 py-2">
+                        <span className={cn("px-2 py-0.5 rounded text-xs font-bold",
+                          y.status === "current" ? "bg-green-100 text-green-700" :
+                          y.status === "closed" ? "bg-gray-100 text-gray-600" :
+                          "bg-blue-100 text-blue-700"
+                        )}>{String(y.status)}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <button onClick={() => openYearForm(y)} className="text-xs text-[#0F2A47] hover:underline mr-2">Edit</button>
+                        <button onClick={() => deleteYear(String(y.id))} className="text-xs text-red-500 hover:underline">Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {years.length === 0 && (
+                    <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400">No academic years configured. Click &ldquo;Add Year&rdquo; to create one.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
 }
 
 /**
