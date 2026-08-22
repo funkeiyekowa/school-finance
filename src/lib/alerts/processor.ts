@@ -23,6 +23,12 @@ import {
   type MatchResult,
   type VendorMatchResult,
 } from "./matcher";
+import {
+  detectDuplicate,
+  extractDedupSettings,
+  type DuplicateResult,
+  type IncomingAlert as DedupInput,
+} from "./dedup";
 
 export type AlertChannel = "sms" | "email";
 
@@ -57,8 +63,7 @@ export interface AlertResult {
   error?: string;
 }
 
-/** Window in which an identical transaction is treated as a repeat notification. */
-const DEDUPE_WINDOW_MINUTES = 30;
+/** Legacy constant kept for the old findRecentDuplicate (now unused by main pipeline). */
 
 /**
  * Run an incoming bank alert through the full pipeline.
@@ -127,48 +132,79 @@ export async function processAlert(
   // don't use CR:/DR: tokens, so it has to reach the parser.
   const parsed = parseAlert(messageText, input.subject ?? "");
 
+  // ---------- DUPLICATE DETECTION (runs BEFORE matching) ----------
+  // If this alert represents a transaction we've already received (e.g. SMS
+  // followed by email), archive it immediately and skip matching/posting.
+  const dedupSettings = extractDedupSettings(settings);
+  const dedupInput: DedupInput = {
+    transactionRef: parsed.reference,
+    amount: parsed.amount,
+    isDebit: parsed.isDebit,
+    studentCode: parsed.studentNumber,
+    counterpartyName: parsed.isDebit ? parsed.payeeName : parsed.studentName,
+    narration: messageText.substring(0, 500),
+    channel,
+    receivedAt,
+  };
+
+  const dupResult: DuplicateResult = await detectDuplicate(supabase, dedupInput, dedupSettings);
+
+  if (dupResult.status === "PLATFORM_DUPLICATE") {
+    // Confirmed duplicate — insert the record as archived, skip matching/posting.
+    const { data: inserted } = await supabase
+      .from("sms_inbox")
+      .insert({
+        event_id: externalId,
+        message_id: messageId,
+        device_id: input.deviceId ?? null,
+        sender,
+        sim_number: input.simNumber ?? null,
+        message_text: messageText,
+        received_at: receivedAt,
+        parsed_student_number: parsed.studentNumber,
+        parsed_student_name: parsed.isDebit ? parsed.payeeName : parsed.studentName,
+        parsed_amount: parsed.amount,
+        parsed_currency: parsed.currency,
+        parsed_reference: parsed.reference,
+        parser_version: parsed.isDebit ? "v4-expense" : "v4",
+        processing_status: "archived",
+        match_status: "duplicate",
+        match_reason: dupResult.reason,
+        matched_student_id: null,
+        confidence_score: dupResult.confidence / 100,
+        source_channel: channel,
+        email_subject: input.subject ?? null,
+        raw_payload: input.rawPayload,
+        archive_status: "PLATFORM_DUPLICATE",
+        primary_alert_id: dupResult.primaryAlertId,
+        archived_at: new Date().toISOString(),
+        archive_reason: dupResult.reason,
+        duplicate_confidence: dupResult.confidence,
+        duplicate_evidence: dupResult.evidence,
+      })
+      .select("id")
+      .single();
+
+    return {
+      success: true,
+      skipped: true,
+      id: inserted?.id,
+      reason: dupResult.reason,
+      parsed: {
+        channel,
+        amount: parsed.amount,
+        duplicate_status: "PLATFORM_DUPLICATE",
+        primary_alert_id: dupResult.primaryAlertId,
+        confidence: dupResult.confidence,
+      },
+    };
+  }
+
+  // Pass the duplicate result into the credit/debit processors so they can
+  // flag POSSIBLE_DUPLICATE records without auto-posting.
   return parsed.direction === "debit"
-    ? processDebit(supabase, input, parsed, settings)
-    : processCredit(supabase, input, parsed, settings);
-}
-
-/**
- * Detect a repeat of the same transaction, regardless of which channel
- * delivered it. When SMS and email are both enabled the same payment
- * arrives twice, so matching on amount + counterparty within a short
- * window is what stops the ledger being double-posted.
- */
-async function findRecentDuplicate(
-  supabase: SupabaseClient,
-  opts: {
-    amount: number | null;
-    studentNumber?: string | null;
-    matchedStudentId?: string | null;
-    payeeName?: string | null;
-    isDebit: boolean;
-  }
-): Promise<boolean> {
-  if (!opts.amount) return false;
-
-  const since = new Date(Date.now() - DEDUPE_WINDOW_MINUTES * 60 * 1000).toISOString();
-  let query = supabase
-    .from("sms_inbox")
-    .select("id")
-    .eq("parsed_amount", opts.amount)
-    .gte("created_at", since);
-
-  if (opts.isDebit) {
-    query = query.eq("parser_version", "v3-expense");
-    if (opts.payeeName) query = query.eq("parsed_student_name", opts.payeeName);
-  } else {
-    query = query.neq("parser_version", "v3-expense");
-    if (opts.studentNumber) query = query.eq("parsed_student_number", opts.studentNumber);
-    else if (opts.matchedStudentId) query = query.eq("matched_student_id", opts.matchedStudentId);
-    else return false; // no counterparty to compare — don't guess
-  }
-
-  const { data } = await query.limit(1);
-  return !!(data && data.length > 0);
+    ? processDebit(supabase, input, parsed, settings, dupResult)
+    : processCredit(supabase, input, parsed, settings, dupResult);
 }
 
 /** Next sequence number for a prefixed document series (RCT-0007, VCH-0012). */
@@ -193,7 +229,8 @@ async function processDebit(
   supabase: SupabaseClient,
   input: AlertInput,
   parsed: ParsedAlert,
-  settings: Record<string, unknown>
+  settings: Record<string, unknown>,
+  dupResult: DuplicateResult
 ): Promise<AlertResult> {
   const { channel, sender, messageText, receivedAt, externalId, messageId } = input;
 
@@ -205,22 +242,21 @@ async function processDebit(
   const matchedVendorId = vendorResult.matchedId;
   const matchedVendorName = vendorResult.matchedName;
 
-  const isDuplicate = await findRecentDuplicate(supabase, {
-    amount: parsed.amount,
-    payeeName: parsed.payeeName,
-    isDebit: true,
-  });
+  // Duplicate status from the new dedup service (already ran before matching).
+  const isPossibleDuplicate = dupResult.status === "POSSIBLE_DUPLICATE";
 
-  const willAutoPost = autoExpenseEnabled && !isDuplicate && !!parsed.amount;
+  const willAutoPost = autoExpenseEnabled && !isPossibleDuplicate && !!parsed.amount;
   const channelLabel = channel === "email" ? "Email" : "SMS";
   const amountLabel = parsed.amount?.toLocaleString() ?? "—";
 
   let matchStatus: string;
   let matchReason: string;
+  let archiveStatus = "ACTIVE";
 
-  if (isDuplicate) {
-    matchStatus = "duplicate";
-    matchReason = `Duplicate — a debit of ₦${amountLabel} to "${parsed.payeeName || "Unknown"}" was already recorded in the last ${DEDUPE_WINDOW_MINUTES} minutes. Expense NOT posted.`;
+  if (isPossibleDuplicate) {
+    matchStatus = "needs_review";
+    matchReason = `POSSIBLE DUPLICATE — ${dupResult.reason} Expense NOT auto-posted. Confirm whether this is a separate payment or a duplicate.`;
+    archiveStatus = "POSSIBLE_DUPLICATE";
   } else if (willAutoPost) {
     matchStatus = "matched";
     matchReason = `Auto-posted expense ✓ — ₦${amountLabel} debited to "${parsed.payeeName || "Unknown"}". Category: ${expenseCategory}. Vendor: ${vendorResult.status === "AUTO_MATCHED" ? `"${matchedVendorName}" (${vendorResult.method}, confidence ${vendorResult.confidence})` : vendorResult.status === "AMBIGUOUS" ? `AMBIGUOUS — ${vendorResult.reason}` : "No matching vendor on file — recorded under the payee name."} ${parsed.purpose ? `Purpose: ${parsed.purpose}.` : ""} Source: ${channelLabel}.`;
@@ -256,6 +292,10 @@ async function processDebit(
       source_channel: channel,
       email_subject: input.subject ?? null,
       raw_payload: input.rawPayload,
+      archive_status: archiveStatus,
+      primary_alert_id: dupResult.primaryAlertId,
+      duplicate_confidence: isPossibleDuplicate ? dupResult.confidence : null,
+      duplicate_evidence: isPossibleDuplicate ? dupResult.evidence : null,
     })
     .select("id")
     .single();
@@ -325,7 +365,8 @@ async function processCredit(
   supabase: SupabaseClient,
   input: AlertInput,
   parsed: ParsedAlert,
-  settings: Record<string, unknown>
+  settings: Record<string, unknown>,
+  dupResult: DuplicateResult
 ): Promise<AlertResult> {
   const { channel, sender, messageText, receivedAt, externalId, messageId } = input;
 
@@ -340,24 +381,20 @@ async function processCredit(
   const minConfidence = Math.round(((settings.sms_auto_credit_min_confidence as number) || 0.8) * 100);
   const meetsThreshold = confidence >= minConfidence;
 
-  const isDuplicate = await findRecentDuplicate(supabase, {
-    amount: parsed.amount,
-    studentNumber: parsed.studentNumber,
-    matchedStudentId,
-    isDebit: false,
-  });
+  // Duplicate status from the new dedup service (already ran before matching).
+  const isPossibleDuplicate = dupResult.status === "POSSIBLE_DUPLICATE";
 
   // An alert whose direction we couldn't establish must never post itself.
   const directionKnown = parsed.direction === "credit";
 
   // Auto-credit requires: toggle ON, direction known, match engine returned
-  // AUTO_MATCHED, confidence meets threshold, not duplicate, has amount.
+  // AUTO_MATCHED, confidence meets threshold, NOT a possible duplicate, has amount.
   const willAutoCredit =
     autoCreditEnabled &&
     directionKnown &&
     studentResult.status === "AUTO_MATCHED" &&
     meetsThreshold &&
-    !isDuplicate &&
+    !isPossibleDuplicate &&
     !!parsed.amount;
 
   const channelLabel = channel === "email" ? "Email" : "SMS";
@@ -365,10 +402,12 @@ async function processCredit(
 
   let matchStatus: string;
   let matchReason: string;
+  let archiveStatus = "ACTIVE";
 
-  if (isDuplicate) {
-    matchStatus = "duplicate";
-    matchReason = `Duplicate — ₦${amountLabel} for ${parsed.studentNumber || matchedStudentName || "unknown"} was already recorded in the last ${DEDUPE_WINDOW_MINUTES} minutes. Payment NOT posted.`;
+  if (isPossibleDuplicate) {
+    matchStatus = "needs_review";
+    matchReason = `POSSIBLE DUPLICATE — ${dupResult.reason} Payment NOT auto-credited. Confirm whether this is a separate payment or a duplicate.`;
+    archiveStatus = "POSSIBLE_DUPLICATE";
   } else if (!directionKnown) {
     matchStatus = "needs_review";
     matchReason = `Review required — could not determine if this is a credit or debit. Amount: ₦${amountLabel}. Source: ${channelLabel} (format: ${parsed.format}).`;
@@ -428,6 +467,10 @@ async function processCredit(
       source_channel: channel,
       email_subject: input.subject ?? null,
       raw_payload: input.rawPayload,
+      archive_status: archiveStatus,
+      primary_alert_id: dupResult.primaryAlertId,
+      duplicate_confidence: isPossibleDuplicate ? dupResult.confidence : null,
+      duplicate_evidence: isPossibleDuplicate ? dupResult.evidence : null,
     })
     .select("id")
     .single();

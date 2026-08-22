@@ -154,6 +154,20 @@ export type Database = {
           source_channel?: string;
           /** Email subject line, when source_channel is "email". */
           email_subject?: string | null;
+          /** Archive lifecycle: ACTIVE, PLATFORM_DUPLICATE, POSSIBLE_DUPLICATE, MANUALLY_ARCHIVED */
+          archive_status?: string;
+          /** FK to the primary alert when this is a duplicate. */
+          primary_alert_id?: string | null;
+          /** When the record was archived. */
+          archived_at?: string | null;
+          /** Who archived it (null = system). */
+          archived_by?: string | null;
+          /** Human-readable archive reason. */
+          archive_reason?: string | null;
+          /** Duplicate detection confidence score (0-100). */
+          duplicate_confidence?: number | null;
+          /** Structured evidence JSON. */
+          duplicate_evidence?: unknown;
           created_at: string; updated_at: string;
         };
         Insert: {
@@ -170,6 +184,13 @@ export type Database = {
           raw_payload?: Json | null;
           source_channel?: string;
           email_subject?: string | null;
+          archive_status?: string;
+          primary_alert_id?: string | null;
+          archived_at?: string | null;
+          archived_by?: string | null;
+          archive_reason?: string | null;
+          duplicate_confidence?: number | null;
+          duplicate_evidence?: unknown;
         };
         Update: Record<string, unknown>;
       };

@@ -17,7 +17,7 @@ import type { SmsInbox, Student, FeeSchedule } from "@/lib/types";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { generateCode } from "@/lib/utils";
 
-type AlertStatus = "all" | "needs_review" | "matched" | "unmatched" | "duplicate" | "rejected";
+type AlertStatus = "all" | "needs_review" | "matched" | "unmatched" | "duplicate" | "rejected" | "archive";
 
 export default function SmsAlertsPage() {
   const { profile, canEdit, isDeveloper } = useAuth();
@@ -46,23 +46,38 @@ export default function SmsAlertsPage() {
   useEffect(() => { load(); }, [load]);
 
   const filtered = alerts.filter(a => {
-    const matchStatus = filterStatus === "all" || a.match_status === filterStatus;
+    const archiveStatus = (a as unknown as { archive_status?: string }).archive_status || "ACTIVE";
+    const isArchived = archiveStatus !== "ACTIVE";
+
+    // The "archive" tab shows ONLY archived records; all other tabs show only active.
+    if (filterStatus === "archive") {
+      if (!isArchived) return false;
+    } else {
+      if (isArchived) return false;
+      const matchStatus = filterStatus === "all" || a.match_status === filterStatus;
+      if (!matchStatus) return false;
+    }
+
     const q = search.toLowerCase();
     const matchQ = !q ||
       (a.parsed_student_number || "").toLowerCase().includes(q) ||
       (a.parsed_student_name || "").toLowerCase().includes(q) ||
       (a.sender || "").toLowerCase().includes(q) ||
       a.message_text.toLowerCase().includes(q);
-    return matchStatus && matchQ;
+    return matchQ;
   });
 
+  const activeAlerts = alerts.filter(a => ((a as unknown as { archive_status?: string }).archive_status || "ACTIVE") === "ACTIVE");
+  const archivedAlerts = alerts.filter(a => ((a as unknown as { archive_status?: string }).archive_status || "ACTIVE") !== "ACTIVE");
+
   const counts = {
-    total: alerts.length,
-    needs_review: alerts.filter(a => a.match_status === "needs_review").length,
-    matched: alerts.filter(a => a.match_status === "matched").length,
-    unmatched: alerts.filter(a => a.match_status === "unmatched").length,
-    duplicate: alerts.filter(a => a.match_status === "duplicate").length,
-    rejected: alerts.filter(a => a.match_status === "rejected").length,
+    total: activeAlerts.length,
+    needs_review: activeAlerts.filter(a => a.match_status === "needs_review").length,
+    matched: activeAlerts.filter(a => a.match_status === "matched").length,
+    unmatched: activeAlerts.filter(a => a.match_status === "unmatched").length,
+    duplicate: activeAlerts.filter(a => a.match_status === "duplicate").length,
+    rejected: activeAlerts.filter(a => a.match_status === "rejected").length,
+    archived: archivedAlerts.length,
   };
 
   // Bulk delete (developer only)
@@ -70,13 +85,72 @@ export default function SmsAlertsPage() {
 
   async function bulkDeleteSelected(ids: string[]) {
     for (const id of ids) { await supabase.from("sms_inbox").delete().eq("id", id); }
-    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete SMS Alerts", details: `${ids.length} alerts deleted` });
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete Payment Alerts", details: `${ids.length} alerts deleted` });
     load();
   }
   async function bulkDeleteAll() {
     await supabase.from("sms_inbox").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Purge All SMS Alerts", details: "All SMS alerts deleted" });
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Purge All Payment Alerts", details: "All alerts deleted" });
     load();
+  }
+
+  async function bulkArchiveSelected(ids: string[]) {
+    for (const id of ids) {
+      await supabase.from("sms_inbox").update({
+        archive_status: "MANUALLY_ARCHIVED",
+        archived_at: new Date().toISOString(),
+        archived_by: profile?.id,
+        archive_reason: "Manually archived by admin",
+      }).eq("id", id);
+    }
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Archive Payment Alerts", details: `${ids.length} alerts archived` });
+    clearSelection();
+    load();
+  }
+
+  async function bulkRestoreSelected(ids: string[]) {
+    for (const id of ids) {
+      await supabase.from("sms_inbox").update({
+        archive_status: "ACTIVE",
+        archived_at: null,
+        archived_by: null,
+        archive_reason: null,
+        primary_alert_id: null,
+        duplicate_confidence: null,
+        duplicate_evidence: null,
+      }).eq("id", id);
+    }
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Restore Payment Alerts", details: `${ids.length} alerts restored` });
+    clearSelection();
+    load();
+  }
+
+  async function restoreAlert(id: string) {
+    await supabase.from("sms_inbox").update({
+      archive_status: "ACTIVE",
+      archived_at: null,
+      archived_by: null,
+      archive_reason: null,
+      primary_alert_id: null,
+      duplicate_confidence: null,
+      duplicate_evidence: null,
+      match_status: "needs_review",
+    }).eq("id", id);
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Restore Payment Alert", details: id });
+    load();
+    setSelected(null);
+  }
+
+  async function archiveAlert(id: string, reason: string) {
+    await supabase.from("sms_inbox").update({
+      archive_status: "MANUALLY_ARCHIVED",
+      archived_at: new Date().toISOString(),
+      archived_by: profile?.id,
+      archive_reason: reason || "Manually archived",
+    }).eq("id", id);
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Archive Payment Alert", details: `${id} — ${reason}` });
+    load();
+    setSelected(null);
   }
 
   return (
@@ -88,14 +162,15 @@ export default function SmsAlertsPage() {
       </PageHeader>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
         {[
-          { label: "Total", value: counts.total, status: "all" as AlertStatus, color: "text-[#0F2A47]" },
+          { label: "Active", value: counts.total, status: "all" as AlertStatus, color: "text-[#0F2A47]" },
           { label: "Needs Review", value: counts.needs_review, status: "needs_review" as AlertStatus, color: "text-amber-700" },
           { label: "Matched", value: counts.matched, status: "matched" as AlertStatus, color: "text-green-700" },
           { label: "Unmatched", value: counts.unmatched, status: "unmatched" as AlertStatus, color: "text-gray-600" },
-          { label: "Duplicate", value: counts.duplicate, status: "duplicate" as AlertStatus, color: "text-purple-700" },
+          { label: "Possible Dup", value: counts.duplicate, status: "duplicate" as AlertStatus, color: "text-purple-700" },
           { label: "Rejected", value: counts.rejected, status: "rejected" as AlertStatus, color: "text-red-700" },
+          { label: "Archive", value: counts.archived, status: "archive" as AlertStatus, color: "text-gray-500" },
         ].map(item => (
           <button key={item.status}
             onClick={() => setFilterStatus(item.status)}
@@ -119,9 +194,26 @@ export default function SmsAlertsPage() {
 
       {loading ? <LoadingSpinner /> : (
         <>
-          <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="SMS alerts"
+          <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="payment alerts"
             onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
             onSelectAll={selectAll} onClearSelection={clearSelection} isDeveloper={isDeveloper} />
+          {/* Archive/Restore bulk actions */}
+          {selectedIds.size > 0 && canEdit && filterStatus !== "archive" && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-purple-50 border border-purple-200 rounded-lg">
+              <Button size="sm" variant="secondary" onClick={() => bulkArchiveSelected(Array.from(selectedIds))}>
+                Archive {selectedIds.size} selected
+              </Button>
+              <span className="text-xs text-purple-700">Move to archive without deleting</span>
+            </div>
+          )}
+          {selectedIds.size > 0 && canEdit && filterStatus === "archive" && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-lg">
+              <Button size="sm" variant="secondary" onClick={() => bulkRestoreSelected(Array.from(selectedIds))}>
+                Restore {selectedIds.size} selected
+              </Button>
+              <span className="text-xs text-green-700">Return to active payment workflow</span>
+            </div>
+          )}
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -211,6 +303,8 @@ export default function SmsAlertsPage() {
           students={students}
           fees={fees}
           onClose={() => { setSelected(null); load(); }}
+          onArchive={archiveAlert}
+          onRestore={restoreAlert}
         />
       )}
     </div>
@@ -218,8 +312,8 @@ export default function SmsAlertsPage() {
 }
 
 function AlertDetailModal({
-  alert, students, fees, onClose,
-}: { alert: SmsInbox; students: Student[]; fees: FeeSchedule[]; onClose: () => void }) {
+  alert, students, fees, onClose, onArchive, onRestore,
+}: { alert: SmsInbox; students: Student[]; fees: FeeSchedule[]; onClose: () => void; onArchive: (id: string, reason: string) => Promise<void>; onRestore: (id: string) => Promise<void> }) {
   const supabase = createClient();
   const { profile } = useAuth();
   const [action, setAction] = useState<"view" | "approve" | "reject" | "duplicate">("view");
@@ -389,8 +483,20 @@ function AlertDetailModal({
         {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
 
         {/* Type badge */}
-        <div className={cn("inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold", isExpense ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
-          {isExpense ? "↑ Expense (Debit)" : "↓ Income (Credit)"}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className={cn("inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold", isExpense ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
+            {isExpense ? "↑ Expense (Debit)" : "↓ Income (Credit)"}
+          </div>
+          {(alert as unknown as { archive_status?: string }).archive_status && (alert as unknown as { archive_status?: string }).archive_status !== "ACTIVE" && (
+            <div className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
+              {((alert as unknown as { archive_status?: string }).archive_status || "").replace(/_/g, " ")}
+            </div>
+          )}
+          {alert.source_channel && (
+            <div className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold bg-gray-100 text-gray-600 uppercase">
+              {alert.source_channel}
+            </div>
+          )}
         </div>
 
         {/* Original alert text — the channel varies, SMS or email */}
@@ -531,7 +637,15 @@ function AlertDetailModal({
                   <Button variant="secondary" size="sm" onClick={() => setAction("duplicate")}>
                     Mark Duplicate
                   </Button>
+                  <Button variant="secondary" size="sm" onClick={() => onArchive(alert.id, "Manually archived")}>
+                    Archive
+                  </Button>
                 </>
+              )}
+              {(alert as unknown as { archive_status?: string }).archive_status && (alert as unknown as { archive_status?: string }).archive_status !== "ACTIVE" && (
+                <Button variant="gold" size="sm" onClick={() => onRestore(alert.id)}>
+                  Restore to Active
+                </Button>
               )}
               <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
             </>
