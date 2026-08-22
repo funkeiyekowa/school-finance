@@ -3,18 +3,18 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
-import { fmtMoney } from "@/lib/utils";
+import { fmtMoney, fmtDateTime } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare, Pencil } from "lucide-react";
+import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare, Pencil, Mail, RefreshCw, CheckCircle2, AlertTriangle } from "lucide-react";
 import type { FeeSchedule, SchoolSettings } from "@/lib/types";
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES } from "@/lib/types";
 
-type Tab = "school" | "fees" | "categories" | "sms";
+type Tab = "school" | "fees" | "categories" | "sms" | "email";
 
 export default function SetupPage() {
   const [tab, setTab] = useState<Tab>("school");
@@ -34,6 +34,7 @@ export default function SetupPage() {
           { id: "fees", label: "Fee Schedule", icon: <DollarSign size={14} /> },
           { id: "categories", label: "Categories", icon: <Tags size={14} /> },
           { id: "sms", label: "SMS Gateway", icon: <MessageSquare size={14} /> },
+          { id: "email", label: "Email Alerts", icon: <Mail size={14} /> },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id as Tab)}
             className={cn(
@@ -49,6 +50,7 @@ export default function SetupPage() {
       {tab === "fees" && <FeeScheduleTab />}
       {tab === "categories" && <CategoriesTab />}
       {tab === "sms" && <SmsGatewayTab />}
+      {tab === "email" && <EmailAlertsTab />}
     </div>
   );
 }
@@ -892,3 +894,602 @@ function SmsGatewayTab() {
 }
 
 
+
+/**
+ * Email Alerts — configuration for the Gmail → webhook pipeline.
+ *
+ * Every value here is read by the Apps Script at runtime via
+ * /api/email-config, so the script itself never needs editing once it's
+ * installed. That keeps all operational settings in the app.
+ */
+function EmailAlertsTab() {
+  const supabase = createClient();
+  const { profile } = useAuth();
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [settingsId, setSettingsId] = useState<string | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [showScript, setShowScript] = useState(false);
+
+  const [form, setForm] = useState({
+    email_alerts_enabled: false,
+    email_allowed_senders: "",
+    email_subject_keywords: "",
+    email_gmail_label: "BankAlerts",
+    email_processed_label: "BankAlerts/Processed",
+    email_webhook_secret: "",
+    email_max_per_run: "25",
+  });
+
+  const [health, setHealth] = useState({
+    lastReceivedAt: null as string | null,
+    lastSyncAt: null as string | null,
+    totalReceived: 0,
+  });
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("school_settings").select("*").limit(1).single();
+    if (data) {
+      const d = data as Record<string, any>;
+      setSettingsId(d.id);
+      setForm({
+        email_alerts_enabled: d.email_alerts_enabled ?? false,
+        email_allowed_senders: d.email_allowed_senders ?? "",
+        email_subject_keywords: d.email_subject_keywords ?? "",
+        email_gmail_label: d.email_gmail_label ?? "BankAlerts",
+        email_processed_label: d.email_processed_label ?? "BankAlerts/Processed",
+        email_webhook_secret: d.email_webhook_secret ?? "",
+        email_max_per_run: String(d.email_max_per_run ?? 25),
+      });
+      setHealth({
+        lastReceivedAt: d.email_last_received_at ?? null,
+        lastSyncAt: d.email_last_sync_at ?? null,
+        totalReceived: Number(d.email_total_received ?? 0),
+      });
+    }
+    setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
+  const webhookUrl = `${appOrigin}/api/email-webhook`;
+  const configUrl = `${appOrigin}/api/email-config`;
+
+  async function persist(extra: Record<string, unknown> = {}) {
+    const payload: Record<string, unknown> = {
+      ...form,
+      ...extra,
+      email_max_per_run: parseInt(String(extra.email_max_per_run ?? form.email_max_per_run), 10) || 25,
+      updated_at: new Date().toISOString(),
+    };
+    if (settingsId) {
+      await supabase.from("school_settings").update(payload).eq("id", settingsId);
+    } else {
+      const { data } = await supabase
+        .from("school_settings")
+        .insert({ ...payload, school_name: "My School" })
+        .select("id")
+        .single();
+      if (data) setSettingsId(data.id);
+    }
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    await persist();
+    await supabase.from("activity_log").insert({
+      user_email: profile?.email,
+      user_name: profile?.full_name,
+      action: "Update Email Alert Settings",
+      details: `Email alerts: ${form.email_alerts_enabled ? "ON" : "OFF"}`,
+    });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  }
+
+  async function toggleEnabled(checked: boolean) {
+    setForm(f => ({ ...f, email_alerts_enabled: checked }));
+    await persist({ email_alerts_enabled: checked });
+  }
+
+  /** Rotate the shared secret. The Apps Script must be updated to match. */
+  async function regenerateSecret() {
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    const secret = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+    setForm(f => ({ ...f, email_webhook_secret: secret }));
+    await persist({ email_webhook_secret: secret });
+    setShowSecret(true);
+    await supabase.from("activity_log").insert({
+      user_email: profile?.email,
+      user_name: profile?.full_name,
+      action: "Rotate Email Webhook Secret",
+      details: "A new secret was generated — the Apps Script must be updated.",
+    });
+  }
+
+  function copy(label: string, value: string) {
+    navigator.clipboard.writeText(value);
+    setCopied(label);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  /** Send a sample bank email through the real webhook, end to end. */
+  async function sendTest() {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/email-webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-webhook-secret": form.email_webhook_secret },
+        body: JSON.stringify({
+          from: form.email_allowed_senders.split(",")[0]?.trim() || "alerts@bank.test",
+          subject: "Transaction Alert",
+          body: "Acct:**3387 CR:N1,500.00 Desc:S999 Email Pipeline Test DT:05/MAY/26 08:24AM Bal:N1,000,000.00CR",
+          messageId: `setup-test-${Date.now()}`,
+          receivedAt: new Date().toISOString(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success && !data.skipped) {
+        setTestResult({
+          ok: true,
+          msg: `Webhook is live. Parsed ₦${Number(data.parsed?.amount ?? 0).toLocaleString()} as ${data.type}, status "${data.parsed?.match_status}". Check Payment Alerts for the test entry.`,
+        });
+      } else if (data.skipped) {
+        setTestResult({ ok: false, msg: `Skipped — ${data.reason}` });
+      } else {
+        setTestResult({ ok: false, msg: data.error || "Unknown error." });
+      }
+      load();
+    } catch (err: unknown) {
+      setTestResult({ ok: false, msg: err instanceof Error ? err.message : "Request failed." });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  if (loading) return <LoadingSpinner />;
+
+  const isConnected = !!health.lastSyncAt;
+  const appsScript = buildAppsScript(configUrl, form.email_webhook_secret || "PASTE_YOUR_SECRET");
+
+  return (
+    <div className="space-y-6">
+      {/* Status */}
+      <div className={cn(
+        "flex flex-wrap items-center gap-4 p-4 rounded-xl border",
+        form.email_alerts_enabled && isConnected
+          ? "bg-green-50 border-green-200"
+          : form.email_alerts_enabled
+          ? "bg-amber-50 border-amber-200"
+          : "bg-gray-50 border-gray-200"
+      )}>
+        <span className={cn(
+          "w-2.5 h-2.5 rounded-full shrink-0",
+          form.email_alerts_enabled && isConnected ? "bg-green-500" : form.email_alerts_enabled ? "bg-amber-500" : "bg-gray-400"
+        )} />
+        <div className="flex-1 min-w-[240px]">
+          <div className={cn(
+            "text-sm font-semibold",
+            form.email_alerts_enabled && isConnected ? "text-green-800" : form.email_alerts_enabled ? "text-amber-800" : "text-gray-600"
+          )}>
+            {!form.email_alerts_enabled
+              ? "Email alerts are off"
+              : isConnected
+              ? "Connected — the Gmail script is checking in"
+              : "Enabled, but the Gmail script hasn't checked in yet"}
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            {health.lastSyncAt
+              ? `Script last checked in ${fmtDateTime(health.lastSyncAt)}`
+              : "Install the Apps Script below to start the sync."}
+            {health.lastReceivedAt && ` · Last email processed ${fmtDateTime(health.lastReceivedAt)}`}
+            {` · ${health.totalReceived} email${health.totalReceived === 1 ? "" : "s"} processed in total`}
+          </div>
+        </div>
+        <Button size="sm" variant="secondary" onClick={load}>
+          <RefreshCw size={13} /> Refresh
+        </Button>
+      </div>
+
+      {/* Master switch */}
+      <Card>
+        <CardHeader><CardTitle>Email Alert Processing</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex items-start gap-4 p-4 rounded-xl border border-gray-200 bg-gray-50">
+            <label className="relative inline-flex items-center cursor-pointer mt-0.5">
+              <input
+                type="checkbox"
+                checked={form.email_alerts_enabled}
+                onChange={e => toggleEnabled(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-300 peer-focus:ring-2 peer-focus:ring-[#C9A227] rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-[#0F2A47] after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
+            </label>
+            <div>
+              <div className="font-semibold text-sm text-gray-900">
+                {form.email_alerts_enabled ? "Email alerts are ON" : "Email alerts are OFF"}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {form.email_alerts_enabled
+                  ? "Bank alert emails forwarded by the Gmail script are parsed and posted using the same rules as SMS. Auto-credit and auto-expense toggles on the SMS Gateway tab apply to both channels."
+                  : "Forwarded emails will be rejected. Turn this on once the Apps Script is installed."}
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 flex items-start gap-2 text-xs text-gray-500">
+            <CheckCircle2 size={14} className="text-green-600 shrink-0 mt-0.5" />
+            <p>
+              Running SMS and email together is safe — if the same transaction arrives on both
+              channels within 30 minutes, the second one is flagged as a duplicate and nothing is
+              posted twice.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Filters */}
+      <Card>
+        <CardHeader><CardTitle>Which Emails to Process</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-500 mb-4">
+            The Gmail script reads these rules on every run, so you can change them here at any
+            time without touching the script.
+          </p>
+          <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+            <div className="sm:col-span-2">
+              <Input
+                label="Allowed Sender Addresses"
+                value={form.email_allowed_senders}
+                onChange={set("email_allowed_senders")}
+                placeholder="alerts@fidelitybank.com, no-reply@gtbank.com"
+                helpText="Comma-separated. Partial matches count, so 'fidelity' matches any Fidelity address. Leave blank to accept every sender in the label."
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Input
+                label="Subject Keywords"
+                value={form.email_subject_keywords}
+                onChange={set("email_subject_keywords")}
+                placeholder="Transaction Alert, Credit Alert, Debit Alert"
+                helpText="Comma-separated; an email passes if any keyword appears. Leave blank to accept any subject."
+              />
+            </div>
+            <Input
+              label="Gmail Label to Watch"
+              value={form.email_gmail_label}
+              onChange={set("email_gmail_label")}
+              placeholder="BankAlerts"
+              helpText="The label your Gmail filter applies to bank alerts."
+            />
+            <Input
+              label="Processed Label"
+              value={form.email_processed_label}
+              onChange={set("email_processed_label")}
+              placeholder="BankAlerts/Processed"
+              helpText="Applied after forwarding so the same email is never sent twice."
+            />
+            <Input
+              label="Max Emails Per Run"
+              type="number"
+              min="1"
+              max="100"
+              value={form.email_max_per_run}
+              onChange={set("email_max_per_run")}
+              helpText="Keeps each 5-minute run inside Apps Script's execution limit."
+            />
+            <div className="sm:col-span-2 flex items-center gap-3 pt-2">
+              <Button type="submit" variant="gold" loading={saving}>
+                <Save size={14} /> Save Filters
+              </Button>
+              {saved && <span className="text-green-600 text-sm font-medium">Saved</span>}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Credentials */}
+      <Card>
+        <CardHeader><CardTitle>Connection Details</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Config URL</label>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-gray-100 border border-gray-200 rounded-lg px-3 py-2.5 text-xs font-mono text-[#0F2A47] break-all">
+                {configUrl}
+              </code>
+              <Button size="sm" variant="secondary" onClick={() => copy("config", configUrl)}>
+                {copied === "config" ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Webhook URL</label>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-gray-100 border border-gray-200 rounded-lg px-3 py-2.5 text-xs font-mono text-[#0F2A47] break-all">
+                {webhookUrl}
+              </code>
+              <Button size="sm" variant="secondary" onClick={() => copy("webhook", webhookUrl)}>
+                {copied === "webhook" ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Shared Secret</label>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-gray-100 border border-gray-200 rounded-lg px-3 py-2.5 text-xs font-mono text-[#0F2A47] break-all">
+                {form.email_webhook_secret
+                  ? showSecret
+                    ? form.email_webhook_secret
+                    : "•".repeat(24)
+                  : "Not generated yet"}
+              </code>
+              <Button size="sm" variant="secondary" onClick={() => setShowSecret(s => !s)}>
+                {showSecret ? "Hide" : "Show"}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => copy("secret", form.email_webhook_secret)}
+                disabled={!form.email_webhook_secret}
+              >
+                {copied === "secret" ? "Copied" : "Copy"}
+              </Button>
+            </div>
+            <div className="flex items-start gap-2 mt-2">
+              <Button size="sm" variant="ghost" onClick={regenerateSecret} className="text-red-600 hover:bg-red-50">
+                {form.email_webhook_secret ? "Rotate secret" : "Generate secret"}
+              </Button>
+              <p className="text-xs text-gray-400 pt-1.5">
+                Only requests carrying this secret are accepted. Rotating it means updating the
+                Apps Script too.
+              </p>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center gap-3">
+            <Button
+              variant="gold"
+              size="sm"
+              loading={testing}
+              onClick={sendTest}
+              disabled={!form.email_webhook_secret}
+            >
+              Send Test Email
+            </Button>
+            {testResult && (
+              <span className={cn("text-sm font-medium", testResult.ok ? "text-green-700" : "text-red-700")}>
+                {testResult.msg}
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Apps Script */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Gmail Apps Script</CardTitle>
+            <Button size="sm" variant="secondary" onClick={() => setShowScript(s => !s)}>
+              {showScript ? "Hide script" : "Show script"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ol className="space-y-3 text-sm text-gray-600">
+            {[
+              <>In Gmail, create a filter for your bank's alert address and apply the label <strong>{form.email_gmail_label || "BankAlerts"}</strong>. Tick &ldquo;Also apply to matching conversations&rdquo;.</>,
+              <>Go to <a href="https://script.google.com" target="_blank" rel="noreferrer" className="text-[#0F2A47] underline font-medium">script.google.com</a> and create a new project.</>,
+              <>Paste the script below. The secret is already filled in — nothing else to edit.</>,
+              <>Click the clock icon (Triggers) → Add Trigger → function <code className="bg-gray-100 px-1 rounded">processBankEmails</code>, time-driven, minutes timer, every 5 minutes.</>,
+              <>Run <code className="bg-gray-100 px-1 rounded">processBankEmails</code> once manually and approve the Gmail permission prompt.</>,
+              <>Turn on the switch at the top of this page. Alerts will appear under <strong>Payment Alerts</strong>.</>,
+            ].map((step, i) => (
+              <li key={i} className="flex items-start gap-3">
+                <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">
+                  {i + 1}
+                </span>
+                <p>{step}</p>
+              </li>
+            ))}
+          </ol>
+
+          {!form.email_webhook_secret && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">
+                Generate a shared secret above before copying the script, otherwise it will be
+                pasted with a placeholder.
+              </p>
+            </div>
+          )}
+
+          {showScript && (
+            <div className="space-y-2">
+              <div className="flex justify-end">
+                <Button size="sm" variant="secondary" onClick={() => copy("script", appsScript)}>
+                  {copied === "script" ? "Copied" : "Copy script"}
+                </Button>
+              </div>
+              <pre className="bg-[#0F2A47] text-[#E8EEF5] rounded-xl p-4 text-xs overflow-x-auto leading-relaxed max-h-96 overflow-y-auto">
+                {appsScript}
+              </pre>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+/**
+ * Build the Apps Script source with this school's config URL and secret
+ * baked in, so the admin can paste it without editing anything.
+ */
+function buildAppsScript(configUrl: string, secret: string): string {
+  return `/**
+ * School Finance Suite — bank alert email forwarder.
+ *
+ * Reads bank alert emails from a Gmail label and forwards them to the app,
+ * which parses them and posts income or expense entries.
+ *
+ * All filtering rules live in the app (Setup > Email Alerts) and are
+ * fetched on every run, so this script should not need editing again.
+ *
+ * Setup: add a time-driven trigger for processBankEmails, every 5 minutes.
+ */
+
+var CONFIG_URL = ${JSON.stringify(configUrl)};
+var SECRET = ${JSON.stringify(secret)};
+
+function processBankEmails() {
+  var config = fetchConfig_();
+  if (!config) return;
+
+  if (!config.enabled) {
+    Logger.log('Email alerts are disabled in the app. Nothing to do.');
+    return;
+  }
+
+  var sourceLabel = GmailApp.getUserLabelByName(config.gmailLabel);
+  if (!sourceLabel) {
+    Logger.log('Gmail label "' + config.gmailLabel + '" not found. Create it or update Setup.');
+    return;
+  }
+
+  var processedLabel = getOrCreateLabel_(config.processedLabel);
+  var threads = sourceLabel.getThreads(0, config.maxPerRun || 25);
+  var sent = 0;
+  var skipped = 0;
+
+  for (var t = 0; t < threads.length; t++) {
+    var thread = threads[t];
+    if (hasLabel_(thread, config.processedLabel)) continue;
+
+    var messages = thread.getMessages();
+    for (var m = 0; m < messages.length; m++) {
+      var message = messages[m];
+
+      if (!senderAllowed_(message.getFrom(), config.allowedSenders)) { skipped++; continue; }
+      if (!subjectAllowed_(message.getSubject(), config.subjectKeywords)) { skipped++; continue; }
+
+      if (postMessage_(config.webhookUrl, message)) sent++;
+      else skipped++;
+    }
+
+    // Label the thread so its messages are never forwarded again.
+    thread.addLabel(processedLabel);
+    thread.removeLabel(sourceLabel);
+  }
+
+  Logger.log('Forwarded ' + sent + ' email(s), skipped ' + skipped + '.');
+}
+
+/** Fetch filtering rules from the app. */
+function fetchConfig_() {
+  try {
+    var response = UrlFetchApp.fetch(CONFIG_URL, {
+      method: 'get',
+      headers: { 'x-webhook-secret': SECRET },
+      muteHttpExceptions: true
+    });
+    if (response.getResponseCode() !== 200) {
+      Logger.log('Config fetch failed (' + response.getResponseCode() + '): ' + response.getContentText());
+      return null;
+    }
+    return JSON.parse(response.getContentText());
+  } catch (err) {
+    Logger.log('Config fetch error: ' + err);
+    return null;
+  }
+}
+
+/** POST a single message to the app's webhook. */
+function postMessage_(webhookUrl, message) {
+  var payload = {
+    from: message.getFrom(),
+    subject: message.getSubject(),
+    body: message.getPlainBody(),
+    html: message.getBody(),
+    messageId: message.getId(),
+    receivedAt: message.getDate().toISOString()
+  };
+
+  try {
+    var response = UrlFetchApp.fetch(webhookUrl, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'x-webhook-secret': SECRET },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+
+    var code = response.getResponseCode();
+    if (code >= 200 && code < 300) return true;
+
+    Logger.log('Webhook rejected message ' + message.getId() + ' (' + code + '): ' + response.getContentText());
+    return false;
+  } catch (err) {
+    Logger.log('Webhook error for message ' + message.getId() + ': ' + err);
+    return false;
+  }
+}
+
+/** Case-insensitive partial match against the allowed sender list. */
+function senderAllowed_(from, allowedSenders) {
+  if (!allowedSenders || allowedSenders.length === 0) return true;
+  var haystack = String(from).toLowerCase();
+  for (var i = 0; i < allowedSenders.length; i++) {
+    if (haystack.indexOf(String(allowedSenders[i]).toLowerCase()) !== -1) return true;
+  }
+  return false;
+}
+
+/** An email passes if any configured keyword appears in the subject. */
+function subjectAllowed_(subject, keywords) {
+  if (!keywords || keywords.length === 0) return true;
+  var haystack = String(subject).toLowerCase();
+  for (var i = 0; i < keywords.length; i++) {
+    if (haystack.indexOf(String(keywords[i]).toLowerCase()) !== -1) return true;
+  }
+  return false;
+}
+
+function getOrCreateLabel_(name) {
+  return GmailApp.getUserLabelByName(name) || GmailApp.createLabel(name);
+}
+
+function hasLabel_(thread, name) {
+  var labels = thread.getLabels();
+  for (var i = 0; i < labels.length; i++) {
+    if (labels[i].getName() === name) return true;
+  }
+  return false;
+}
+
+/** Run manually to confirm the app is reachable and the secret is correct. */
+function testConnection() {
+  var config = fetchConfig_();
+  if (!config) {
+    Logger.log('Could not reach the app. Check CONFIG_URL and SECRET.');
+    return;
+  }
+  Logger.log('Connected. Enabled: ' + config.enabled + ', label: ' + config.gmailLabel);
+}
+`;
+}
