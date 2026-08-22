@@ -16,34 +16,39 @@ interface NavItem {
   label: string;
   icon: React.ReactNode;
   feature?: string;
+  module?: string;       // Required module subscription
   adminOnly?: boolean;
+  superAdminOnly?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
-  { href: "/dashboard/income", label: "Income", icon: <TrendingUp size={18} />, feature: "income" },
-  { href: "/dashboard/expenses", label: "Expenses", icon: <TrendingDown size={18} />, feature: "expenses" },
-  { href: "/dashboard/students", label: "Students", icon: <GraduationCap size={18} />, feature: "students" },
-  { href: "/dashboard/vendors", label: "Vendors", icon: <Building2 size={18} />, feature: "vendors" },
-  { href: "/dashboard/reconciliation", label: "Reconcile", icon: <ArrowLeftRight size={18} />, feature: "reconciliation" },
+  { href: "/dashboard/income", label: "Income", icon: <TrendingUp size={18} />, feature: "income", module: "finance" },
+  { href: "/dashboard/expenses", label: "Expenses", icon: <TrendingDown size={18} />, feature: "expenses", module: "finance" },
+  { href: "/dashboard/students", label: "Students", icon: <GraduationCap size={18} />, feature: "students", module: "students" },
+  { href: "/dashboard/vendors", label: "Vendors", icon: <Building2 size={18} />, feature: "vendors", module: "finance" },
+  { href: "/dashboard/reconciliation", label: "Reconcile", icon: <ArrowLeftRight size={18} />, feature: "reconciliation", module: "finance" },
   { href: "/dashboard/reports", label: "Reports", icon: <FileBarChart size={18} />, feature: "reports" },
-  { href: "/dashboard/receipts", label: "Receipts", icon: <Receipt size={18} />, feature: "receipts" },
-  { href: "/dashboard/sms-alerts", label: "Payment Alerts", icon: <MessageSquare size={18} />, feature: "sms_alerts" },
+  { href: "/dashboard/receipts", label: "Receipts", icon: <Receipt size={18} />, feature: "receipts", module: "finance" },
+  { href: "/dashboard/sms-alerts", label: "Payment Alerts", icon: <MessageSquare size={18} />, feature: "sms_alerts", module: "finance" },
   { href: "/dashboard/setup", label: "Setup", icon: <Settings size={18} />, feature: "setup" },
   { href: "/dashboard/roles", label: "Roles", icon: <Shield size={18} />, feature: "roles", adminOnly: true },
   { href: "/dashboard/team", label: "Team", icon: <Users size={18} />, feature: "team", adminOnly: true },
   { href: "/dashboard/activity", label: "Activity", icon: <Activity size={18} />, feature: "activity", adminOnly: true },
+  { href: "/dashboard/platform", label: "Platform Admin", icon: <Shield size={18} />, superAdminOnly: true },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, signOut, hasFeature, isAdmin } = useAuth();
+  const { profile, signOut, hasFeature, hasModule, isAdmin, isSuperAdmin, org } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const visibleItems = NAV_ITEMS.filter(item => {
+    if (item.superAdminOnly && !isSuperAdmin) return false;
     if (item.adminOnly && !isAdmin) return false;
     if (item.feature && !isAdmin && !hasFeature(item.feature)) return false;
+    if (item.module && !hasModule(item.module)) return false;
     return true;
   });
 
@@ -69,8 +74,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </svg>
           </div>
           <div>
-            <div className="text-white font-bold text-sm leading-tight">School Finance</div>
-            <div className="text-[#C9A227] text-xs">Premium bursary console</div>
+            <div className="text-white font-bold text-sm leading-tight">{org?.name || "School Finance"}</div>
+            <div className="text-[#C9A227] text-xs">{org ? org.plan : "Premium bursary console"}</div>
           </div>
         </div>
 

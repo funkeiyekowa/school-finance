@@ -13,12 +13,13 @@ export type Database = {
           full_name: string | null;
           role: string;
           active: boolean;
+          organization_id: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id: string; email: string; full_name?: string | null;
-          role?: string; active?: boolean;
+          role?: string; active?: boolean; organization_id?: string | null;
         };
         Update: Record<string, unknown>;
       };
@@ -30,6 +31,7 @@ export type Database = {
           admission_date: string | null; address: string | null;
           guardian_name: string | null; guardian_phone: string | null;
           guardian_email: string | null; status: string; notes: string | null;
+          organization_id: string | null;
           created_at: string; updated_at: string;
         };
         Insert: {
@@ -38,7 +40,7 @@ export type Database = {
           date_of_birth?: string | null; admission_date?: string | null;
           address?: string | null; guardian_name?: string | null;
           guardian_phone?: string | null; guardian_email?: string | null;
-          status?: string; notes?: string | null;
+          status?: string; notes?: string | null; organization_id?: string | null;
         };
         Update: Record<string, unknown>;
       };
@@ -317,6 +319,66 @@ export type Database = {
           from_year_id?: string | null; to_year_id?: string | null;
           action: string; reason?: string | null; status?: string;
           created_by_email?: string | null; created_by_name?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
+      // --- Multi-tenant tables ---
+      organizations: {
+        Row: {
+          id: string; name: string; slug: string;
+          logo_url: string | null; email: string | null;
+          phone: string | null; address: string | null;
+          country: string | null; timezone: string;
+          currency_code: string; currency_symbol: string;
+          status: string; plan: string;
+          settings: Json; created_at: string; updated_at: string;
+        };
+        Insert: {
+          name: string; slug: string;
+          logo_url?: string | null; email?: string | null;
+          phone?: string | null; address?: string | null;
+          country?: string | null; timezone?: string;
+          currency_code?: string; currency_symbol?: string;
+          status?: string; plan?: string; settings?: Json;
+        };
+        Update: Record<string, unknown>;
+      };
+      platform_modules: {
+        Row: {
+          id: string; key: string; name: string;
+          description: string | null; category: string | null;
+          is_core: boolean; sort_order: number; created_at: string;
+        };
+        Insert: {
+          key: string; name: string;
+          description?: string | null; category?: string | null;
+          is_core?: boolean; sort_order?: number;
+        };
+        Update: Record<string, unknown>;
+      };
+      subscriptions: {
+        Row: {
+          id: string; organization_id: string; module_key: string;
+          status: string; starts_at: string;
+          expires_at: string | null; limits: Json;
+          created_at: string;
+        };
+        Insert: {
+          organization_id: string; module_key: string;
+          status?: string; starts_at?: string;
+          expires_at?: string | null; limits?: Json;
+        };
+        Update: Record<string, unknown>;
+      };
+      org_memberships: {
+        Row: {
+          id: string; user_id: string; organization_id: string;
+          role: string; is_default: boolean; active: boolean;
+          joined_at: string;
+        };
+        Insert: {
+          user_id: string; organization_id: string;
+          role?: string; is_default?: boolean; active?: boolean;
         };
         Update: Record<string, unknown>;
       };

@@ -16,6 +16,10 @@ export type AcademicYear = Database["public"]["Tables"]["academic_years"]["Row"]
 export type StudentEnrollment = Database["public"]["Tables"]["student_enrollments"]["Row"];
 export type PromotionBatch = Database["public"]["Tables"]["promotion_batches"]["Row"];
 export type PromotionEvent = Database["public"]["Tables"]["promotion_events"]["Row"];
+export type Organization = Database["public"]["Tables"]["organizations"]["Row"];
+export type PlatformModule = Database["public"]["Tables"]["platform_modules"]["Row"];
+export type Subscription = Database["public"]["Tables"]["subscriptions"]["Row"];
+export type OrgMembership = Database["public"]["Tables"]["org_memberships"]["Row"];
 
 export type PaymentStatus = "paid" | "partial" | "unpaid";
 
