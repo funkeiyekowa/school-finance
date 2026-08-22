@@ -1681,7 +1681,7 @@ function AcademicSetupTab() {
   const supabase = createClient();
   const { profile, orgId } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [subTab, setSubTab] = useState<"classes" | "years" | "subjects" | "periods">("classes");
+  const [subTab, setSubTab] = useState<"classes" | "years" | "subjects" | "periods" | "assessments" | "grades">("classes");
 
   // --- Classes state ---
   const [classes, setClasses] = useState<Record<string, unknown>[]>([]);
@@ -1711,17 +1711,35 @@ function AcademicSetupTab() {
   const [periodForm, setPeriodForm] = useState({ name: "", short_code: "", start_time: "08:00", end_time: "08:45", is_break: false, sort_order: "0" });
   const [savingPeriod, setSavingPeriod] = useState(false);
 
+  // --- Assessment Types state ---
+  const [assessmentTypes, setAssessmentTypes] = useState<Record<string, unknown>[]>([]);
+  const [showAtForm, setShowAtForm] = useState(false);
+  const [editingAt, setEditingAt] = useState<Record<string, unknown> | null>(null);
+  const [atForm, setAtForm] = useState({ name: "", short_code: "", weight: "10", max_score: "10", sort_order: "0" });
+  const [savingAt, setSavingAt] = useState(false);
+
+  // --- Grading Scale state ---
+  const [gradingScales, setGradingScales] = useState<Record<string, unknown>[]>([]);
+  const [showGsForm, setShowGsForm] = useState(false);
+  const [editingGs, setEditingGs] = useState<Record<string, unknown> | null>(null);
+  const [gsForm, setGsForm] = useState({ grade: "", label: "", min_score: "0", max_score: "100", grade_point: "0", sort_order: "0" });
+  const [savingGs, setSavingGs] = useState(false);
+
   const load = useCallback(async () => {
-    const [classRes, yearRes, subRes, perRes] = await Promise.all([
+    const [classRes, yearRes, subRes, perRes, atRes, gsRes] = await Promise.all([
       supabase.from("classes").select("*").order("sequence"),
       supabase.from("academic_years").select("*").order("name", { ascending: false }),
       supabase.from("subjects").select("*").eq("active", true).order("name"),
       supabase.from("periods").select("*").eq("active", true).order("sort_order"),
+      supabase.from("assessment_types").select("*").eq("active", true).order("sort_order"),
+      supabase.from("grading_scales").select("*").order("sort_order"),
     ]);
     setClasses(classRes.data ?? []);
     setYears(yearRes.data ?? []);
     setSubjects(subRes.data ?? []);
     setPeriods(perRes.data ?? []);
+    setAssessmentTypes(atRes.data ?? []);
+    setGradingScales(gsRes.data ?? []);
     setLoading(false);
   }, [supabase]);
 
@@ -1868,6 +1886,56 @@ function AcademicSetupTab() {
     setEditingPeriod(null); setShowPeriodForm(false); setSavingPeriod(false); load();
   }
 
+  // --- Assessment Type CRUD ---
+  function openAtForm(at?: Record<string, unknown>) {
+    if (at) {
+      setEditingAt(at);
+      setAtForm({ name: String(at.name || ""), short_code: String(at.short_code || ""), weight: String(at.weight ?? 10), max_score: String(at.max_score ?? 10), sort_order: String(at.sort_order ?? 0) });
+    } else {
+      setEditingAt(null);
+      const maxOrd = assessmentTypes.reduce((m, a) => Math.max(m, Number(a.sort_order ?? 0)), 0);
+      setAtForm({ name: "", short_code: "", weight: "10", max_score: "10", sort_order: String(maxOrd + 1) });
+    }
+    setShowAtForm(true);
+  }
+  async function saveAt() {
+    setSavingAt(true);
+    const payload = { name: atForm.name.trim(), short_code: atForm.short_code.trim() || atForm.name.trim().substring(0, 4).toUpperCase(), weight: parseFloat(atForm.weight) || 0, max_score: parseFloat(atForm.max_score) || 10, sort_order: parseInt(atForm.sort_order) || 0, updated_at: new Date().toISOString(), organization_id: orgId };
+    if (editingAt) { await supabase.from("assessment_types").update(payload).eq("id", editingAt.id); }
+    else { await supabase.from("assessment_types").insert(payload); }
+    setEditingAt(null); setShowAtForm(false); setSavingAt(false); load();
+  }
+  async function deleteAt(id: string) {
+    if (!confirm("Deactivate this assessment type?")) return;
+    await supabase.from("assessment_types").update({ active: false }).eq("id", id);
+    load();
+  }
+
+  // --- Grading Scale CRUD ---
+  function openGsForm(gs?: Record<string, unknown>) {
+    if (gs) {
+      setEditingGs(gs);
+      setGsForm({ grade: String(gs.grade || ""), label: String(gs.label || ""), min_score: String(gs.min_score ?? 0), max_score: String(gs.max_score ?? 100), grade_point: String(gs.grade_point ?? 0), sort_order: String(gs.sort_order ?? 0) });
+    } else {
+      setEditingGs(null);
+      const maxOrd = gradingScales.reduce((m, g) => Math.max(m, Number(g.sort_order ?? 0)), 0);
+      setGsForm({ grade: "", label: "", min_score: "0", max_score: "100", grade_point: "0", sort_order: String(maxOrd + 1) });
+    }
+    setShowGsForm(true);
+  }
+  async function saveGs() {
+    setSavingGs(true);
+    const payload = { grade: gsForm.grade.trim(), label: gsForm.label.trim(), min_score: parseFloat(gsForm.min_score) || 0, max_score: parseFloat(gsForm.max_score) || 100, grade_point: parseFloat(gsForm.grade_point) || 0, sort_order: parseInt(gsForm.sort_order) || 0, organization_id: orgId };
+    if (editingGs) { await supabase.from("grading_scales").update(payload).eq("id", editingGs.id); }
+    else { await supabase.from("grading_scales").insert(payload); }
+    setEditingGs(null); setShowGsForm(false); setSavingGs(false); load();
+  }
+  async function deleteGs(id: string) {
+    if (!confirm("Delete this grade?")) return;
+    await supabase.from("grading_scales").delete().eq("id", id);
+    load();
+  }
+
   if (loading) return <LoadingSpinner />;
 
   return (
@@ -1885,6 +1953,12 @@ function AcademicSetupTab() {
         </button>
         <button onClick={() => setSubTab("periods")} className={cn("px-4 py-2 text-sm font-medium rounded-lg", subTab === "periods" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
           Periods
+        </button>
+        <button onClick={() => setSubTab("assessments")} className={cn("px-4 py-2 text-sm font-medium rounded-lg", subTab === "assessments" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
+          Assessment Types
+        </button>
+        <button onClick={() => setSubTab("grades")} className={cn("px-4 py-2 text-sm font-medium rounded-lg", subTab === "grades" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
+          Grading Scale
         </button>
       </div>
 
@@ -2193,6 +2267,127 @@ function AcademicSetupTab() {
                     </tr>
                   ))}
                   {periods.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">No periods configured.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {subTab === "assessments" && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Assessment Types</CardTitle>
+              <Button size="sm" variant="gold" onClick={() => openAtForm()}><Plus size={14} /> Add Type</Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-gray-500 mb-3">Define the assessment components (CA, Exam, Test, etc.) and their weights. The total weight determines the overall maximum score.</p>
+            {showAtForm && (
+              <div className="mb-4 p-4 border border-[#C9A227] bg-[#FBF6E8] rounded-xl space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  <Input label="Name" value={atForm.name} onChange={e => setAtForm(f => ({ ...f, name: e.target.value }))} placeholder="First CA" />
+                  <Input label="Code" value={atForm.short_code} onChange={e => setAtForm(f => ({ ...f, short_code: e.target.value }))} placeholder="CA1" />
+                  <Input label="Weight (%)" type="number" value={atForm.weight} onChange={e => setAtForm(f => ({ ...f, weight: e.target.value }))} />
+                  <Input label="Max Score" type="number" value={atForm.max_score} onChange={e => setAtForm(f => ({ ...f, max_score: e.target.value }))} />
+                  <Input label="Order" type="number" value={atForm.sort_order} onChange={e => setAtForm(f => ({ ...f, sort_order: e.target.value }))} />
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="gold" loading={savingAt} onClick={saveAt} disabled={!atForm.name.trim()}><Save size={14} /> {editingAt ? "Update" : "Add"}</Button>
+                  <Button size="sm" variant="secondary" onClick={() => { setShowAtForm(false); setEditingAt(null); }}>Cancel</Button>
+                </div>
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-gray-50 border-b">
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Order</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Name</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Code</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Weight (%)</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Max Score</th>
+                  <th className="px-3 py-2" />
+                </tr></thead>
+                <tbody>
+                  {assessmentTypes.map(at => (
+                    <tr key={String(at.id)} className="border-b hover:bg-gray-50">
+                      <td className="px-3 py-2 text-gray-400">{String(at.sort_order)}</td>
+                      <td className="px-3 py-2 font-medium">{String(at.name)}</td>
+                      <td className="px-3 py-2 text-gray-500 font-mono text-xs">{String(at.short_code)}</td>
+                      <td className="px-3 py-2 text-right">{String(at.weight)}%</td>
+                      <td className="px-3 py-2 text-right">{String(at.max_score)}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button onClick={() => openAtForm(at)} className="text-xs text-[#0F2A47] hover:underline mr-2">Edit</button>
+                        <button onClick={() => deleteAt(String(at.id))} className="text-xs text-red-500 hover:underline">Remove</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {assessmentTypes.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">No assessment types configured.</td></tr>}
+                </tbody>
+                <tfoot><tr className="bg-gray-50 border-t font-semibold">
+                  <td colSpan={3} className="px-3 py-2 text-gray-600">Total</td>
+                  <td className="px-3 py-2 text-right text-gray-600">{assessmentTypes.reduce((s, a) => s + Number(a.weight ?? 0), 0)}%</td>
+                  <td className="px-3 py-2 text-right text-gray-600">{assessmentTypes.reduce((s, a) => s + Number(a.max_score ?? 0), 0)}</td>
+                  <td />
+                </tr></tfoot>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {subTab === "grades" && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Grading Scale</CardTitle>
+              <Button size="sm" variant="gold" onClick={() => openGsForm()}><Plus size={14} /> Add Grade</Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-gray-500 mb-3">Define letter grades and their score boundaries. The Assessments page uses this to convert totals into grades automatically.</p>
+            {showGsForm && (
+              <div className="mb-4 p-4 border border-[#C9A227] bg-[#FBF6E8] rounded-xl space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+                  <Input label="Grade" value={gsForm.grade} onChange={e => setGsForm(f => ({ ...f, grade: e.target.value }))} placeholder="A" />
+                  <Input label="Label" value={gsForm.label} onChange={e => setGsForm(f => ({ ...f, label: e.target.value }))} placeholder="Excellent" />
+                  <Input label="Min %" type="number" value={gsForm.min_score} onChange={e => setGsForm(f => ({ ...f, min_score: e.target.value }))} />
+                  <Input label="Max %" type="number" value={gsForm.max_score} onChange={e => setGsForm(f => ({ ...f, max_score: e.target.value }))} />
+                  <Input label="GPA Point" type="number" step="0.1" value={gsForm.grade_point} onChange={e => setGsForm(f => ({ ...f, grade_point: e.target.value }))} />
+                  <Input label="Order" type="number" value={gsForm.sort_order} onChange={e => setGsForm(f => ({ ...f, sort_order: e.target.value }))} />
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="gold" loading={savingGs} onClick={saveGs} disabled={!gsForm.grade.trim()}><Save size={14} /> {editingGs ? "Update" : "Add"}</Button>
+                  <Button size="sm" variant="secondary" onClick={() => { setShowGsForm(false); setEditingGs(null); }}>Cancel</Button>
+                </div>
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-gray-50 border-b">
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Grade</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Label</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Min %</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">Max %</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600">GPA</th>
+                  <th className="px-3 py-2" />
+                </tr></thead>
+                <tbody>
+                  {gradingScales.map(gs => (
+                    <tr key={String(gs.id)} className="border-b hover:bg-gray-50">
+                      <td className="px-3 py-2 font-bold text-[#0F2A47]">{String(gs.grade)}</td>
+                      <td className="px-3 py-2 text-gray-600">{String(gs.label)}</td>
+                      <td className="px-3 py-2 text-right">{String(gs.min_score)}</td>
+                      <td className="px-3 py-2 text-right">{String(gs.max_score)}</td>
+                      <td className="px-3 py-2 text-right">{String(gs.grade_point)}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button onClick={() => openGsForm(gs)} className="text-xs text-[#0F2A47] hover:underline mr-2">Edit</button>
+                        <button onClick={() => deleteGs(String(gs.id))} className="text-xs text-red-500 hover:underline">Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {gradingScales.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">No grading scale configured.</td></tr>}
                 </tbody>
               </table>
             </div>

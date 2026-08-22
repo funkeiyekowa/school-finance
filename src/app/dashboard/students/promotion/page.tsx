@@ -95,7 +95,7 @@ export default function PromotionPage() {
       const nextClass = currentClass?.next_class_id
         ? classes.find(c => c.id === currentClass.next_class_id) || null
         : currentClass
-          ? classes.find(c => c.sequence === currentClass.sequence + 1) || null
+          ? classes.filter(c => c.sequence > currentClass.sequence).sort((a, b) => a.sequence - b.sequence)[0] || null
           : null;
 
       let status: StudentEligibility["status"] = "ready";
