@@ -373,6 +373,39 @@ export type Database = {
         };
         Update: Record<string, unknown>;
       };
+      periods: {
+        Row: {
+          id: string; name: string; short_code: string;
+          start_time: string; end_time: string;
+          is_break: boolean; sort_order: number; active: boolean;
+          organization_id: string | null;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          name: string; short_code: string;
+          start_time: string; end_time: string;
+          is_break?: boolean; sort_order?: number; active?: boolean;
+          organization_id?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
+      timetable_entries: {
+        Row: {
+          id: string; class_id: string; subject_id: string;
+          period_id: string; teacher_name: string | null;
+          day_of_week: number; room: string | null;
+          academic_year_id: string | null; notes: string | null;
+          organization_id: string | null;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          class_id: string; subject_id: string; period_id: string;
+          day_of_week: number; teacher_name?: string | null;
+          room?: string | null; academic_year_id?: string | null;
+          notes?: string | null; organization_id?: string | null;
+        };
+        Update: Record<string, unknown>;
+      };
       // --- Multi-tenant tables ---
       organizations: {
         Row: {

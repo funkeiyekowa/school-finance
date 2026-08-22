@@ -1679,9 +1679,9 @@ function resetForwardedMemory() {
  */
 function AcademicSetupTab() {
   const supabase = createClient();
-  const { profile } = useAuth();
+  const { profile, orgId } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [subTab, setSubTab] = useState<"classes" | "years">("classes");
+  const [subTab, setSubTab] = useState<"classes" | "years" | "subjects" | "periods">("classes");
 
   // --- Classes state ---
   const [classes, setClasses] = useState<Record<string, unknown>[]>([]);
@@ -1697,13 +1697,31 @@ function AcademicSetupTab() {
   const [savingYear, setSavingYear] = useState(false);
   const [showYearForm, setShowYearForm] = useState(false);
 
+  // --- Subjects state ---
+  const [subjects, setSubjects] = useState<Record<string, unknown>[]>([]);
+  const [showSubjectForm, setShowSubjectForm] = useState(false);
+  const [editingSubject, setEditingSubject] = useState<Record<string, unknown> | null>(null);
+  const [subjectForm, setSubjectForm] = useState({ name: "", short_code: "", department: "", class_id: "", is_elective: false });
+  const [savingSubject, setSavingSubject] = useState(false);
+
+  // --- Periods state ---
+  const [periods, setPeriods] = useState<Record<string, unknown>[]>([]);
+  const [showPeriodForm, setShowPeriodForm] = useState(false);
+  const [editingPeriod, setEditingPeriod] = useState<Record<string, unknown> | null>(null);
+  const [periodForm, setPeriodForm] = useState({ name: "", short_code: "", start_time: "08:00", end_time: "08:45", is_break: false, sort_order: "0" });
+  const [savingPeriod, setSavingPeriod] = useState(false);
+
   const load = useCallback(async () => {
-    const [classRes, yearRes] = await Promise.all([
+    const [classRes, yearRes, subRes, perRes] = await Promise.all([
       supabase.from("classes").select("*").order("sequence"),
       supabase.from("academic_years").select("*").order("name", { ascending: false }),
+      supabase.from("subjects").select("*").eq("active", true).order("name"),
+      supabase.from("periods").select("*").eq("active", true).order("sort_order"),
     ]);
     setClasses(classRes.data ?? []);
     setYears(yearRes.data ?? []);
+    setSubjects(subRes.data ?? []);
+    setPeriods(perRes.data ?? []);
     setLoading(false);
   }, [supabase]);
 
@@ -1811,17 +1829,62 @@ function AcademicSetupTab() {
     else load();
   }
 
+  // --- Subject CRUD ---
+  function openSubjectForm(sub?: Record<string, unknown>) {
+    if (sub) {
+      setEditingSubject(sub);
+      setSubjectForm({ name: String(sub.name || ""), short_code: String(sub.short_code || ""), department: String(sub.department || ""), class_id: String(sub.class_id || ""), is_elective: sub.is_elective === true });
+    } else {
+      setEditingSubject(null);
+      setSubjectForm({ name: "", short_code: "", department: "", class_id: "", is_elective: false });
+    }
+    setShowSubjectForm(true);
+  }
+  async function saveSubject() {
+    setSavingSubject(true);
+    const payload = { name: subjectForm.name.trim(), short_code: subjectForm.short_code.trim() || subjectForm.name.trim().substring(0, 4).toUpperCase(), department: subjectForm.department.trim() || null, class_id: subjectForm.class_id || null, is_elective: subjectForm.is_elective, updated_at: new Date().toISOString(), organization_id: orgId };
+    if (editingSubject) { await supabase.from("subjects").update(payload).eq("id", editingSubject.id); }
+    else { await supabase.from("subjects").insert(payload); }
+    setEditingSubject(null); setShowSubjectForm(false); setSavingSubject(false); load();
+  }
+
+  // --- Period CRUD ---
+  function openPeriodForm(per?: Record<string, unknown>) {
+    if (per) {
+      setEditingPeriod(per);
+      setPeriodForm({ name: String(per.name || ""), short_code: String(per.short_code || ""), start_time: String(per.start_time || "08:00"), end_time: String(per.end_time || "08:45"), is_break: per.is_break === true, sort_order: String(per.sort_order ?? 0) });
+    } else {
+      setEditingPeriod(null);
+      const maxOrd = periods.reduce((m, p) => Math.max(m, Number(p.sort_order ?? 0)), 0);
+      setPeriodForm({ name: "", short_code: "", start_time: "08:00", end_time: "08:45", is_break: false, sort_order: String(maxOrd + 1) });
+    }
+    setShowPeriodForm(true);
+  }
+  async function savePeriod() {
+    setSavingPeriod(true);
+    const payload = { name: periodForm.name.trim(), short_code: periodForm.short_code.trim() || periodForm.name.trim().substring(0, 3).toUpperCase(), start_time: periodForm.start_time, end_time: periodForm.end_time, is_break: periodForm.is_break, sort_order: parseInt(periodForm.sort_order) || 0, updated_at: new Date().toISOString(), organization_id: orgId };
+    if (editingPeriod) { await supabase.from("periods").update(payload).eq("id", editingPeriod.id); }
+    else { await supabase.from("periods").insert(payload); }
+    setEditingPeriod(null); setShowPeriodForm(false); setSavingPeriod(false); load();
+  }
+
   if (loading) return <LoadingSpinner />;
 
   return (
     <div className="space-y-5">
       {/* Sub-tabs */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <button onClick={() => setSubTab("classes")} className={cn("px-4 py-2 text-sm font-medium rounded-lg", subTab === "classes" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
           Class / Grade Structure
         </button>
         <button onClick={() => setSubTab("years")} className={cn("px-4 py-2 text-sm font-medium rounded-lg", subTab === "years" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
           Academic Years
+        </button>
+        <button onClick={() => setSubTab("subjects")} className={cn("px-4 py-2 text-sm font-medium rounded-lg", subTab === "subjects" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
+          Subjects
+        </button>
+        <button onClick={() => setSubTab("periods")} className={cn("px-4 py-2 text-sm font-medium rounded-lg", subTab === "periods" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
+          Periods
         </button>
       </div>
 
@@ -2000,6 +2063,136 @@ function AcademicSetupTab() {
                   {years.length === 0 && (
                     <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400">No academic years configured. Click &ldquo;Add Year&rdquo; to create one.</td></tr>
                   )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {subTab === "subjects" && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Subjects ({subjects.length})</CardTitle>
+              <Button size="sm" variant="gold" onClick={() => openSubjectForm()}>
+                <Plus size={14} /> Add Subject
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {showSubjectForm && (
+              <div className="mb-4 p-4 border border-[#C9A227] bg-[#FBF6E8] rounded-xl space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <Input label="Subject Name" value={subjectForm.name} onChange={e => setSubjectForm(f => ({ ...f, name: e.target.value }))} placeholder="Mathematics" />
+                  <Input label="Short Code" value={subjectForm.short_code} onChange={e => setSubjectForm(f => ({ ...f, short_code: e.target.value }))} placeholder="MATH" />
+                  <Input label="Department" value={subjectForm.department} onChange={e => setSubjectForm(f => ({ ...f, department: e.target.value }))} placeholder="Sciences" />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Class (optional)</label>
+                    <select value={subjectForm.class_id} onChange={e => setSubjectForm(f => ({ ...f, class_id: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white">
+                      <option value="">All classes</option>
+                      {classes.filter(c => c.active !== false).map(c => <option key={String(c.id)} value={String(c.id)}>{String(c.name)}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex items-end pb-1">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input type="checkbox" checked={subjectForm.is_elective} onChange={e => setSubjectForm(f => ({ ...f, is_elective: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-[#C9A227] focus:ring-[#C9A227]" />
+                      Elective
+                    </label>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="gold" loading={savingSubject} onClick={saveSubject} disabled={!subjectForm.name.trim()}><Save size={14} /> {editingSubject ? "Update" : "Add"}</Button>
+                  <Button size="sm" variant="secondary" onClick={() => { setShowSubjectForm(false); setEditingSubject(null); }}>Cancel</Button>
+                </div>
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-gray-50 border-b">
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Subject</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Code</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Department</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Class</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Elective</th>
+                  <th className="px-3 py-2" />
+                </tr></thead>
+                <tbody>
+                  {subjects.map(s => (
+                    <tr key={String(s.id)} className="border-b hover:bg-gray-50">
+                      <td className="px-3 py-2 font-medium">{String(s.name)}</td>
+                      <td className="px-3 py-2 text-gray-500 font-mono text-xs">{String(s.short_code)}</td>
+                      <td className="px-3 py-2 text-gray-500">{String(s.department || "—")}</td>
+                      <td className="px-3 py-2 text-gray-500">{s.class_id ? String(classes.find(c => c.id === s.class_id)?.name || "—") : "All"}</td>
+                      <td className="px-3 py-2">{s.is_elective ? <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">Yes</span> : ""}</td>
+                      <td className="px-3 py-2 text-right"><button onClick={() => openSubjectForm(s)} className="text-xs text-[#0F2A47] hover:underline">Edit</button></td>
+                    </tr>
+                  ))}
+                  {subjects.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">No subjects configured.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {subTab === "periods" && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Periods / Time Slots ({periods.length})</CardTitle>
+              <Button size="sm" variant="gold" onClick={() => openPeriodForm()}>
+                <Plus size={14} /> Add Period
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {showPeriodForm && (
+              <div className="mb-4 p-4 border border-[#C9A227] bg-[#FBF6E8] rounded-xl space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <Input label="Period Name" value={periodForm.name} onChange={e => setPeriodForm(f => ({ ...f, name: e.target.value }))} placeholder="Period 1" />
+                  <Input label="Short Code" value={periodForm.short_code} onChange={e => setPeriodForm(f => ({ ...f, short_code: e.target.value }))} placeholder="P1" />
+                  <Input label="Start Time" type="time" value={periodForm.start_time} onChange={e => setPeriodForm(f => ({ ...f, start_time: e.target.value }))} />
+                  <Input label="End Time" type="time" value={periodForm.end_time} onChange={e => setPeriodForm(f => ({ ...f, end_time: e.target.value }))} />
+                  <Input label="Order" type="number" value={periodForm.sort_order} onChange={e => setPeriodForm(f => ({ ...f, sort_order: e.target.value }))} />
+                  <div className="flex items-end pb-1">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input type="checkbox" checked={periodForm.is_break} onChange={e => setPeriodForm(f => ({ ...f, is_break: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-[#C9A227] focus:ring-[#C9A227]" />
+                      Break / Non-teaching
+                    </label>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="gold" loading={savingPeriod} onClick={savePeriod} disabled={!periodForm.name.trim()}><Save size={14} /> {editingPeriod ? "Update" : "Add"}</Button>
+                  <Button size="sm" variant="secondary" onClick={() => { setShowPeriodForm(false); setEditingPeriod(null); }}>Cancel</Button>
+                </div>
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-gray-50 border-b">
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Order</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Period</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Code</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Start</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">End</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">Type</th>
+                  <th className="px-3 py-2" />
+                </tr></thead>
+                <tbody>
+                  {periods.map(p => (
+                    <tr key={String(p.id)} className={cn("border-b hover:bg-gray-50", p.is_break && "bg-amber-50")}>
+                      <td className="px-3 py-2 text-gray-400">{String(p.sort_order)}</td>
+                      <td className="px-3 py-2 font-medium">{String(p.name)}</td>
+                      <td className="px-3 py-2 text-gray-500 font-mono text-xs">{String(p.short_code)}</td>
+                      <td className="px-3 py-2 text-gray-600">{String(p.start_time || "").substring(0, 5)}</td>
+                      <td className="px-3 py-2 text-gray-600">{String(p.end_time || "").substring(0, 5)}</td>
+                      <td className="px-3 py-2">{p.is_break ? <span className="text-xs font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Break</span> : <span className="text-xs text-gray-500">Teaching</span>}</td>
+                      <td className="px-3 py-2 text-right"><button onClick={() => openPeriodForm(p)} className="text-xs text-[#0F2A47] hover:underline">Edit</button></td>
+                    </tr>
+                  ))}
+                  {periods.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">No periods configured.</td></tr>}
                 </tbody>
               </table>
             </div>

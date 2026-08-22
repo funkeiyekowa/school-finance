@@ -23,6 +23,8 @@ export type OrgMembership = Database["public"]["Tables"]["org_memberships"]["Row
 export type Subject = Database["public"]["Tables"]["subjects"]["Row"];
 export type AttendanceStatus = Database["public"]["Tables"]["attendance_statuses"]["Row"];
 export type AttendanceRecord = Database["public"]["Tables"]["attendance_records"]["Row"];
+export type Period = Database["public"]["Tables"]["periods"]["Row"];
+export type TimetableEntry = Database["public"]["Tables"]["timetable_entries"]["Row"];
 
 export type PaymentStatus = "paid" | "partial" | "unpaid";
 
