@@ -26,6 +26,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/income", label: "Income", icon: <TrendingUp size={18} />, feature: "income", module: "finance" },
   { href: "/dashboard/expenses", label: "Expenses", icon: <TrendingDown size={18} />, feature: "expenses", module: "finance" },
   { href: "/dashboard/students", label: "Students", icon: <GraduationCap size={18} />, feature: "students", module: "students" },
+  { href: "/dashboard/students/promotion", label: "Promotion", icon: <ArrowLeftRight size={18} />, feature: "students", module: "academics", adminOnly: true },
   { href: "/dashboard/vendors", label: "Vendors", icon: <Building2 size={18} />, feature: "vendors", module: "finance" },
   { href: "/dashboard/reconciliation", label: "Reconcile", icon: <ArrowLeftRight size={18} />, feature: "reconciliation", module: "finance" },
   { href: "/dashboard/reports", label: "Reports", icon: <FileBarChart size={18} />, feature: "reports" },

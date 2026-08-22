@@ -12,6 +12,14 @@ import { ChevronLeft, Phone, Mail, MapPin, Calendar } from "lucide-react";
 import Link from "next/link";
 import type { Student, IncomeEntry, FeeSchedule } from "@/lib/types";
 
+interface EnrollmentWithDetails {
+  id: string;
+  class_name: string;
+  year_name: string;
+  status: string;
+  enrolled_at: string;
+}
+
 export default function StudentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -19,18 +27,34 @@ export default function StudentDetailPage() {
   const [student, setStudent] = useState<Student | null>(null);
   const [history, setHistory] = useState<IncomeEntry[]>([]);
   const [fees, setFees] = useState<FeeSchedule[]>([]);
+  const [enrollments, setEnrollments] = useState<EnrollmentWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [studRes, histRes, feeRes] = await Promise.all([
+    const [studRes, histRes, feeRes, enrRes, clsRes, yrRes] = await Promise.all([
       supabase.from("students").select("*").eq("id", id).single(),
       supabase.from("income_entries").select("*").eq("student_id", id).order("date", { ascending: false }),
       supabase.from("fee_schedules").select("*").eq("active", true),
+      supabase.from("student_enrollments").select("*").eq("student_id", id).order("enrolled_at", { ascending: false }),
+      supabase.from("classes").select("id, name"),
+      supabase.from("academic_years").select("id, name"),
     ]);
     setStudent(studRes.data);
     setHistory(histRes.data ?? []);
     setFees(feeRes.data ?? []);
+
+    // Join enrollments with class/year names
+    const classMap = new Map((clsRes.data ?? []).map((c: { id: string; name: string }) => [c.id, c.name]));
+    const yearMap = new Map((yrRes.data ?? []).map((y: { id: string; name: string }) => [y.id, y.name]));
+    setEnrollments((enrRes.data ?? []).map((e: Record<string, unknown>) => ({
+      id: String(e.id),
+      class_name: classMap.get(String(e.class_id)) || "—",
+      year_name: yearMap.get(String(e.academic_year_id)) || "—",
+      status: String(e.status || "active"),
+      enrolled_at: String(e.enrolled_at || e.created_at || ""),
+    })));
+
     setLoading(false);
   }, [id, supabase]);
 
@@ -174,6 +198,54 @@ export default function StudentDetailPage() {
                 </tbody>
               </table>
             </div>
+          </Card>
+
+          {/* Academic History */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Academic History</CardTitle>
+                <Link href="/dashboard/students/promotion">
+                  <Button size="sm" variant="gold">Promote Student</Button>
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {enrollments.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">
+                  No enrollment history. Use the Promotion Center to create enrollments.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {enrollments.map((e, i) => (
+                    <div key={e.id} className={cn(
+                      "flex items-center justify-between p-3 rounded-lg border",
+                      i === 0 ? "bg-[#FBF6E8] border-[#C9A227]" : "bg-white border-gray-100"
+                    )}>
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
+                          i === 0 ? "bg-[#C9A227] text-white" : "bg-gray-100 text-gray-500"
+                        )}>
+                          {e.class_name.substring(0, 3)}
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-900">{e.class_name}</div>
+                          <div className="text-xs text-gray-500">{e.year_name}</div>
+                        </div>
+                      </div>
+                      <span className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase",
+                        e.status === "active" ? "bg-green-100 text-green-700" :
+                        e.status === "completed" ? "bg-blue-100 text-blue-600" :
+                        e.status === "graduated" ? "bg-purple-100 text-purple-700" :
+                        e.status === "repeated" ? "bg-amber-100 text-amber-700" :
+                        "bg-gray-100 text-gray-500"
+                      )}>{e.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
           </Card>
         </div>
       </div>
