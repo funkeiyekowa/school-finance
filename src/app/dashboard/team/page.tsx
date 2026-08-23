@@ -26,15 +26,37 @@ export default function TeamPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const [usersRes, rolesRes] = await Promise.all([
-      // Read profiles through org_memberships so RLS scopes it to the active tenant.
-      // This replaces the old global `profiles.select(*)`.
-      supabase
-        .from("profiles")
-        .select("*")
-        .order("created_at"),
+      // Only show profiles of people who are members of THIS school.
+      // Without the orgId filter, platform admins see every user on
+      // the platform (RLS allows it), which leaks across tenants in
+      // the UI even though the database is correctly scoped.
+      orgId
+        ? supabase
+            .from("org_memberships")
+            .select("user_id, role, active, profiles!inner(id, email, full_name, role, active, created_at, updated_at)")
+            .eq("organization_id", orgId)
+            .order("joined_at", { ascending: true })
+        : supabase.from("profiles").select("*").order("created_at"),
       supabase.from("roles").select("*").order("name"),
     ]);
-    setUsers(usersRes.data ?? []);
+
+    // Flatten the joined result into Profile-shaped objects.
+    if (orgId && usersRes.data) {
+      const flattened = usersRes.data.map((row: Record<string, unknown>) => {
+        const p = row.profiles as Record<string, unknown>;
+        return {
+          ...p,
+          // Show the membership role instead of the legacy profile role
+          // so the dropdown reflects what actually controls access.
+          _membership_role: row.role as string,
+          _membership_active: row.active as boolean,
+        };
+      });
+      setUsers(flattened as unknown as Profile[]);
+    } else {
+      setUsers(usersRes.data ?? []);
+    }
+
     setRoles(rolesRes.data ?? []);
 
     // Fetch the school's join code so we can display it.
