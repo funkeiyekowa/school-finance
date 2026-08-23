@@ -586,13 +586,13 @@ BEGIN
   -- Roles (per-org now that the unique index is composite)
   INSERT INTO roles (name, description, is_default, permissions, organization_id) VALUES
     ('admin', 'Full access to all features', false,
-     '{"income":true,"expenses":true,"students":true,"vendors":true,"reconciliation":true,"reports":true,"receipts":true,"setup":true,"roles":true,"team":true,"activity":true,"sms_alerts":true,"website":true,"analytics":true}', p_org),
+     '{"income":true,"expenses":true,"students":true,"student_finance":true,"vendors":true,"reconciliation":true,"reports":true,"receipts":true,"setup":true,"roles":true,"team":true,"activity":true,"sms_alerts":true,"website":true,"analytics":true}', p_org),
     ('bursar', 'Finance operations', false,
-     '{"income":true,"expenses":true,"students":true,"vendors":true,"reconciliation":true,"reports":true,"receipts":true,"setup":false,"roles":false,"team":false,"activity":false,"sms_alerts":true,"website":false,"analytics":true}', p_org),
+     '{"income":true,"expenses":true,"students":true,"student_finance":true,"vendors":true,"reconciliation":true,"reports":true,"receipts":true,"setup":false,"roles":false,"team":false,"activity":false,"sms_alerts":true,"website":false,"analytics":true}', p_org),
     ('editor', 'Can record and edit transactions', false,
-     '{"income":true,"expenses":true,"students":true,"vendors":true,"reconciliation":false,"reports":true,"receipts":true,"setup":false,"roles":false,"team":false,"activity":false,"sms_alerts":true,"website":false,"analytics":false}', p_org),
+     '{"income":true,"expenses":true,"students":true,"student_finance":true,"vendors":true,"reconciliation":false,"reports":true,"receipts":true,"setup":false,"roles":false,"team":false,"activity":false,"sms_alerts":true,"website":false,"analytics":false}', p_org),
     ('teacher', 'Teaching staff', false,
-     '{"income":false,"expenses":false,"students":true,"vendors":false,"reconciliation":false,"reports":false,"receipts":false,"setup":false,"roles":false,"team":false,"activity":false,"sms_alerts":false,"website":false,"analytics":false}', p_org),
+     '{"income":false,"expenses":false,"students":true,"student_finance":false,"vendors":false,"reconciliation":false,"reports":false,"receipts":false,"setup":false,"roles":false,"team":false,"activity":false,"sms_alerts":false,"website":false,"analytics":false}', p_org),
     ('viewer', 'Read-only access', true,
      '{"income":false,"expenses":false,"students":true,"vendors":false,"reconciliation":false,"reports":true,"receipts":false,"setup":false,"roles":false,"team":false,"activity":false,"sms_alerts":false,"website":false,"analytics":false}', p_org)
   ON CONFLICT DO NOTHING;
@@ -865,10 +865,10 @@ BEGIN
   -- Owners, org admins and platform admins get everything.
   IF is_platform_admin() OR v_membership_role IN ('owner','admin','super_admin') THEN
     RETURN jsonb_build_object(
-      'income', true, 'expenses', true, 'students', true, 'vendors', true,
-      'reconciliation', true, 'reports', true, 'receipts', true, 'setup', true,
-      'roles', true, 'team', true, 'activity', true, 'sms_alerts', true,
-      'website', true, 'analytics', true
+      'income', true, 'expenses', true, 'students', true, 'student_finance', true,
+      'vendors', true, 'reconciliation', true, 'reports', true, 'receipts', true,
+      'setup', true, 'roles', true, 'team', true, 'activity', true,
+      'sms_alerts', true, 'website', true, 'analytics', true
     );
   END IF;
 

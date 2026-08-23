@@ -28,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/income", label: "Income", icon: <TrendingUp size={18} />, feature: "income", module: "finance" },
   { href: "/dashboard/expenses", label: "Expenses", icon: <TrendingDown size={18} />, feature: "expenses", module: "finance" },
   { href: "/dashboard/students", label: "Students", icon: <GraduationCap size={18} />, feature: "students", module: "students" },
+  { href: "/dashboard/student-finance", label: "Student Finance", icon: <TrendingUp size={18} />, feature: "students", module: "finance" },
   { href: "/dashboard/students/promotion", label: "Promotion", icon: <ArrowLeftRight size={18} />, feature: "students", module: "academics", adminOnly: true },
   { href: "/dashboard/attendance", label: "Attendance", icon: <Users size={18} />, module: "attendance" },
   { href: "/dashboard/timetable", label: "Timetable", icon: <Clock size={18} />, module: "timetable" },

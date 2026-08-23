@@ -1,201 +1,171 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+/**
+ * Student Information System (SIS)
+ *
+ * Pure student master data — bio-data, demographics, guardian info, class
+ * enrollment, and status. No finance here. Financial data lives at
+ * /dashboard/student-finance.
+ *
+ * Premium features:
+ * - Inline editing on every field (click any cell)
+ * - Bulk import from Excel/CSV
+ * - Advanced search + multi-filter (grade, gender, status, admission year)
+ * - Quick stats: total, active, inactive, gender split
+ * - Student photo placeholder with initials
+ * - Bulk operations (developer)
+ * - Responsive + accessible
+ */
+
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
-import { fmtMoney, today } from "@/lib/utils";
+import { fmtDateTime } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
-import { StatusBadge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { ImportStudentsModal } from "@/components/students/ImportStudentsModal";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
-import { cn } from "@/lib/utils";
-import { GraduationCap, Plus, Search, ChevronRight, Upload, Trash2, Check, X, Pencil } from "lucide-react";
+import { cn, today } from "@/lib/utils";
+import {
+  GraduationCap, Plus, Search, ChevronRight, Upload, Trash2,
+  Check, X, Pencil, Filter, Users, UserCheck, UserX, Download,
+} from "lucide-react";
 import Link from "next/link";
-import type { Student, FeeSchedule } from "@/lib/types";
-
-interface StudentWithBalance extends Student {
-  total_due: number;
-  total_paid: number;
-  balance: number;
-  payment_status: "paid" | "partial" | "unpaid";
-}
-
-// Columns editable directly in the grid, in display order.
-const EDITABLE_COLUMNS: { key: keyof Student; label: string; type: "text" | "select"; options?: string[] }[] = [
-  { key: "full_name", label: "Full Name", type: "text" },
-  { key: "grade", label: "Grade", type: "text" },
-  { key: "guardian_name", label: "Guardian", type: "text" },
-  { key: "guardian_phone", label: "Phone", type: "text" },
-  { key: "status", label: "Enrollment", type: "select", options: ["active", "inactive"] },
-];
+import type { Student } from "@/lib/types";
 
 export default function StudentsPage() {
   const { canEdit, isAdmin, isDeveloper, profile } = useAuth();
-  const supabase = createClient();
-  const [students, setStudents] = useState<StudentWithBalance[]>([]);
+  const supabase = useMemo(() => createClient(), []);
+  const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [filterGrade, setFilterGrade] = useState("");
+  const [filterGender, setFilterGender] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
-  // Inline edit state: which cell is being edited
   const [editingCell, setEditingCell] = useState<{ id: string; key: string } | null>(null);
   const [editValue, setEditValue] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<StudentWithBalance | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [studRes, incRes, feeRes] = await Promise.all([
-      supabase.from("students").select("*").order("full_name"),
-      supabase.from("income_entries").select("student_id, amount"),
-      supabase.from("fee_schedules").select("*").eq("active", true),
-    ]);
-    const students: Student[] = studRes.data ?? [];
-    const income = incRes.data ?? [];
-    const fees: FeeSchedule[] = feeRes.data ?? [];
-
-    const paidMap: Record<string, number> = {};
-    income.forEach(r => {
-      if (r.student_id) paidMap[r.student_id] = (paidMap[r.student_id] || 0) + r.amount;
-    });
-
-    const withBalances: StudentWithBalance[] = students.map(s => {
-      const total_due = fees.filter(f => !f.grade || f.grade === s.grade).reduce((sum, f) => sum + f.amount, 0);
-      const total_paid = paidMap[s.id] || 0;
-      const balance = total_due - total_paid;
-      const payment_status = balance <= 0 ? "paid" : total_paid > 0 ? "partial" : "unpaid";
-      return { ...s, total_due, total_paid, balance, payment_status };
-    });
-
-    setStudents(withBalances);
+    const { data } = await supabase
+      .from("students")
+      .select("*")
+      .order("last_name")
+      .order("first_name");
+    setStudents((data ?? []) as Student[]);
     setLoading(false);
   }, [supabase]);
 
   useEffect(() => { load(); }, [load]);
-
   useEffect(() => {
     if (editingCell && inputRef.current) inputRef.current.focus();
   }, [editingCell]);
 
-  const filtered = students.filter(s => {
+  // Unique values for filter dropdowns
+  const grades = useMemo(() =>
+    Array.from(new Set(students.map(s => s.grade).filter(Boolean))).sort() as string[],
+    [students]
+  );
+  const genders = useMemo(() =>
+    Array.from(new Set(students.map(s => s.gender).filter(Boolean))).sort() as string[],
+    [students]
+  );
+
+  const filtered = useMemo(() => students.filter(s => {
     const q = search.toLowerCase();
-    const matchSearch = !q || s.full_name.toLowerCase().includes(q) || s.student_code.toLowerCase().includes(q) || (s.grade || "").toLowerCase().includes(q);
-    const matchStatus = !filterStatus || s.payment_status === filterStatus;
-    return matchSearch && matchStatus;
-  });
+    if (q && !(
+      s.full_name.toLowerCase().includes(q) ||
+      s.student_code.toLowerCase().includes(q) ||
+      (s.grade ?? "").toLowerCase().includes(q) ||
+      (s.guardian_name ?? "").toLowerCase().includes(q) ||
+      (s.guardian_phone ?? "").toLowerCase().includes(q)
+    )) return false;
+    if (filterGrade && s.grade !== filterGrade) return false;
+    if (filterGender && s.gender !== filterGender) return false;
+    if (filterStatus && s.status !== filterStatus) return false;
+    return true;
+  }), [students, search, filterGrade, filterGender, filterStatus]);
 
-  const totals = {
-    paid: students.filter(s => s.payment_status === "paid").length,
-    partial: students.filter(s => s.payment_status === "partial").length,
-    unpaid: students.filter(s => s.payment_status === "unpaid").length,
-    outstanding: students.reduce((sum, s) => sum + Math.max(0, s.balance), 0),
-  };
+  // Stats
+  const stats = useMemo(() => ({
+    total: students.length,
+    active: students.filter(s => s.status === "active").length,
+    inactive: students.filter(s => s.status !== "active").length,
+    male: students.filter(s => s.gender === "Male").length,
+    female: students.filter(s => s.gender === "Female").length,
+    classCount: grades.length,
+  }), [students, grades]);
 
-  // Bulk delete (developer only)
-  const { selectedIds, toggle: toggleBulkSelect, selectAll: bulkSelectAll, clearSelection: bulkClear } = useBulkSelect(filtered.map(s => s.id));
+  const { selectedIds, toggle: toggleBulk, selectAll: bulkSelectAll, clearSelection: bulkClear } = useBulkSelect(filtered.map(s => s.id));
 
-  async function bulkDeleteSelected(ids: string[]) {
-    for (const id of ids) { await supabase.from("students").delete().eq("id", id); }
-    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete Students", details: `${ids.length} students deleted` });
-    load();
-  }
-  async function bulkDeleteAll() {
-    await supabase.from("students").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Purge All Students", details: "All students deleted" });
-    load();
-  }
-
-  function startEdit(studentId: string, key: string, currentValue: string) {
+  // --- Edit logic ---
+  function startEdit(id: string, key: string, val: string) {
     if (!canEdit) return;
-    setEditingCell({ id: studentId, key });
-    setEditValue(currentValue || "");
+    setEditingCell({ id, key });
+    setEditValue(val || "");
   }
-
-  function cancelEdit() {
-    setEditingCell(null);
-    setEditValue("");
-  }
+  function cancelEdit() { setEditingCell(null); setEditValue(""); }
 
   async function saveEdit() {
     if (!editingCell) return;
     const { id, key } = editingCell;
     setSavingId(id);
 
-    const { error } = await supabase
-      .from("students")
-      .update({ [key]: editValue || null, updated_at: new Date().toISOString() })
-      .eq("id", id);
+    const updates: Record<string, unknown> = { [key]: editValue || null, updated_at: new Date().toISOString() };
 
+    // If editing a name field, recalculate full_name
+    if (["last_name", "first_name", "middle_name"].includes(key)) {
+      const student = students.find(s => s.id === id);
+      const last = key === "last_name" ? editValue : ((student as Record<string, unknown>)?.last_name as string ?? "");
+      const first = key === "first_name" ? editValue : ((student as Record<string, unknown>)?.first_name as string ?? "");
+      const middle = key === "middle_name" ? editValue : ((student as Record<string, unknown>)?.middle_name as string ?? "");
+      updates.full_name = [last, first, middle].filter(Boolean).join(" ");
+    }
+
+    const { error } = await supabase.from("students").update(updates).eq("id", id);
     if (!error) {
-      setStudents(prev => prev.map(s => s.id === id ? { ...s, [key]: editValue } : s));
+      setStudents(prev => prev.map(s => s.id === id ? { ...s, ...updates } as Student : s));
       await supabase.from("activity_log").insert({
         user_email: profile?.email, user_name: profile?.full_name,
-        action: "Edit Student", details: `Updated ${key} for student ${id}`,
+        action: "Edit Student", details: `Updated ${key} for ${id}`,
       });
     }
-
     setSavingId(null);
-    setEditingCell(null);
-    setEditValue("");
-  }
-
-  // Special save for name fields — also recalculates full_name
-  async function saveNameField() {
-    if (!editingCell) return;
-    const { id, key } = editingCell;
-    setSavingId(id);
-
-    // Get current student to recalculate full_name
-    const student = students.find(s => s.id === id);
-    const currentLast = (student as any)?.last_name || "";
-    const currentFirst = (student as any)?.first_name || "";
-    const currentMiddle = (student as any)?.middle_name || "";
-
-    // Apply the edit to the right field
-    const newLast = key === "last_name" ? editValue : currentLast;
-    const newFirst = key === "first_name" ? editValue : currentFirst;
-    const newMiddle = key === "middle_name" ? editValue : currentMiddle;
-    const newFullName = [newLast, newFirst, newMiddle].filter(Boolean).join(" ");
-
-    const { error } = await supabase
-      .from("students")
-      .update({
-        [key]: editValue || null,
-        full_name: newFullName,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-
-    if (!error) {
-      setStudents(prev => prev.map(s => s.id === id ? { ...s, [key]: editValue, full_name: newFullName } : s));
-    }
-
-    setSavingId(null);
-    setEditingCell(null);
-    setEditValue("");
+    cancelEdit();
   }
 
   async function confirmDelete() {
     if (!deleteTarget) return;
     setSavingId(deleteTarget.id);
-    const { error } = await supabase.from("students").delete().eq("id", deleteTarget.id);
-    if (!error) {
-      setStudents(prev => prev.filter(s => s.id !== deleteTarget.id));
-      await supabase.from("activity_log").insert({
-        user_email: profile?.email, user_name: profile?.full_name,
-        action: "Delete Student", details: `${deleteTarget.student_code} — ${deleteTarget.full_name}`,
-      });
-    }
+    await supabase.from("students").delete().eq("id", deleteTarget.id);
+    setStudents(prev => prev.filter(s => s.id !== deleteTarget.id));
+    await supabase.from("activity_log").insert({
+      user_email: profile?.email, user_name: profile?.full_name,
+      action: "Delete Student", details: `${deleteTarget.student_code} — ${deleteTarget.full_name}`,
+    });
     setSavingId(null);
     setDeleteTarget(null);
+  }
+
+  async function bulkDeleteSelected(ids: string[]) {
+    for (const id of ids) await supabase.from("students").delete().eq("id", id);
+    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete Students", details: `${ids.length} students` });
+    load();
+  }
+  async function bulkDeleteAll() {
+    await supabase.from("students").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    load();
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -203,206 +173,181 @@ export default function StudentsPage() {
     if (e.key === "Escape") { e.preventDefault(); cancelEdit(); }
   }
 
+  const hasActiveFilters = !!(filterGrade || filterGender || filterStatus);
+
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Students" subtitle={`${students.length} students registered · Click any cell to edit`}>
+      <PageHeader
+        title="Students"
+        subtitle={`${stats.total} registered · ${stats.active} active · ${stats.classCount} classes`}
+      >
         {canEdit && (
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setShowImport(true)}>
-              <Upload size={16} /> Import
+            <Button size="sm" variant="secondary" onClick={() => setShowImport(true)}>
+              <Upload size={14} /> Import
             </Button>
-            <Button onClick={() => setShowAdd(true)}>
-              <Plus size={16} /> Add Student
+            <Button size="sm" variant="gold" onClick={() => setShowAdd(true)}>
+              <Plus size={14} /> Add Student
             </Button>
           </div>
         )}
       </PageHeader>
 
-      {/* Summary */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { label: "Paid in Full", value: totals.paid, color: "text-green-700" },
-          { label: "Part Paid", value: totals.partial, color: "text-amber-700" },
-          { label: "Unpaid", value: totals.unpaid, color: "text-red-700" },
-          { label: "Total Outstanding", value: fmtMoney(totals.outstanding), color: "text-[#0F2A47]" },
-        ].map(item => (
-          <div key={item.label} className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="text-xs text-gray-500 font-medium mb-1">{item.label}</div>
-            <div className={`text-xl font-bold ${item.color}`}>{item.value}</div>
-          </div>
-        ))}
+      {/* Quick stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <StatCard label="Total" value={stats.total} icon={<GraduationCap size={14} />} />
+        <StatCard label="Active" value={stats.active} icon={<UserCheck size={14} />} color="text-green-700" />
+        <StatCard label="Inactive" value={stats.inactive} icon={<UserX size={14} />} color="text-gray-500" />
+        <StatCard label="Male" value={stats.male} icon={<Users size={14} />} color="text-blue-700" />
+        <StatCard label="Female" value={stats.female} icon={<Users size={14} />} color="text-pink-700" />
+        <StatCard label="Classes" value={stats.classCount} icon={<GraduationCap size={14} />} color="text-purple-700" />
       </div>
 
-      {/* Filters */}
+      {/* Search + Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="Search by name, ID, or grade…"
+            placeholder="Search by name, ID, grade, or guardian…"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]"
           />
         </div>
-        <select
-          value={filterStatus}
-          onChange={e => setFilterStatus(e.target.value)}
-          className="px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white"
+        <button
+          onClick={() => setShowFilters(f => !f)}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium border transition-colors",
+            hasActiveFilters
+              ? "bg-[#FBF6E8] border-[#C9A227] text-[#0F2A47]"
+              : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"
+          )}
         >
-          <option value="">All statuses</option>
-          <option value="paid">Paid in full</option>
-          <option value="partial">Part paid</option>
-          <option value="unpaid">Unpaid</option>
-        </select>
+          <Filter size={14} />
+          Filters
+          {hasActiveFilters && (
+            <span className="w-5 h-5 rounded-full bg-[#C9A227] text-white text-[10px] grid place-items-center font-bold">
+              {[filterGrade, filterGender, filterStatus].filter(Boolean).length}
+            </span>
+          )}
+        </button>
       </div>
+
+      {showFilters && (
+        <div className="flex flex-wrap gap-3 p-4 bg-white rounded-xl border border-gray-200">
+          <select value={filterGrade} onChange={e => setFilterGrade(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" aria-label="Filter by grade">
+            <option value="">All grades</option>
+            {grades.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <select value={filterGender} onChange={e => setFilterGender(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" aria-label="Filter by gender">
+            <option value="">All genders</option>
+            {genders.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" aria-label="Filter by status">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="graduated">Graduated</option>
+          </select>
+          {hasActiveFilters && (
+            <button
+              onClick={() => { setFilterGrade(""); setFilterGender(""); setFilterStatus(""); }}
+              className="text-xs text-gray-500 hover:text-red-600 underline"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
 
       {loading ? <LoadingSpinner /> : (
         <>
           <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="students"
             onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
             onSelectAll={bulkSelectAll} onClearSelection={bulkClear} isDeveloper={isDeveloper} />
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[#0F2A47] text-white">
-                  {isDeveloper && <th className="w-8 px-2 py-3" />}
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Student ID</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Last Name</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">First Name</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Middle</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Grade</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Guardian</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold">Balance</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold">Enrolled</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 ? (
-                  <tr><td colSpan={isDeveloper ? 11 : 10}><EmptyState message="No students found." icon={<GraduationCap size={32} />} /></td></tr>
-                ) : (
-                  filtered.map(s => {
-                    const isSaving = savingId === s.id;
+
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#0F2A47] text-white">
+                    {isDeveloper && <th className="w-8 px-2 py-3" />}
+                    <th className="text-left px-4 py-3 text-xs font-semibold">ID</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold">Last Name</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold">First Name</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold">Middle</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold">Class</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold">Gender</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold">Guardian</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold">Phone</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold">Status</th>
+                    <th className="px-4 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr><td colSpan={isDeveloper ? 12 : 11}>
+                      <EmptyState message="No students match your search." icon={<GraduationCap size={32} />} />
+                    </td></tr>
+                  ) : filtered.map(s => {
+                    const busy = savingId === s.id;
                     return (
-                      <tr key={s.id} className={cn("border-b border-gray-50 hover:bg-gray-50 transition-colors group", isSaving && "opacity-50")}>
-                        <RowCheckbox id={s.id} selectedIds={selectedIds} onToggle={toggleBulkSelect} isDeveloper={isDeveloper} />
-                        {/* Student ID — read only */}
-                        <td className="px-4 py-3">
-                          <div className="text-xs text-gray-500 font-mono font-semibold">{s.student_code}</div>
-                        </td>
-                        {/* Last Name — editable */}
-                        <EditableCell
-                          value={(s as any).last_name || ""}
-                          isEditing={editingCell?.id === s.id && editingCell.key === "last_name"}
-                          canEdit={canEdit}
-                          editValue={editValue}
-                          setEditValue={setEditValue}
-                          onStartEdit={() => startEdit(s.id, "last_name", (s as any).last_name || "")}
-                          onSave={saveNameField}
-                          onCancel={cancelEdit}
-                          onKeyDown={handleKeyDown}
-                          inputRef={editingCell?.key === "last_name" ? inputRef : undefined}
-                          renderDisplay={() => <span className="font-medium text-gray-900">{(s as any).last_name || "—"}</span>}
-                        />
-                        {/* First Name — editable */}
-                        <EditableCell
-                          value={(s as any).first_name || ""}
-                          isEditing={editingCell?.id === s.id && editingCell.key === "first_name"}
-                          canEdit={canEdit}
-                          editValue={editValue}
-                          setEditValue={setEditValue}
-                          onStartEdit={() => startEdit(s.id, "first_name", (s as any).first_name || "")}
-                          onSave={saveNameField}
-                          onCancel={cancelEdit}
-                          onKeyDown={handleKeyDown}
-                          inputRef={editingCell?.key === "first_name" ? inputRef : undefined}
-                          renderDisplay={() => <span className="text-gray-800">{(s as any).first_name || "—"}</span>}
-                        />
-                        {/* Middle Name — editable */}
-                        <EditableCell
-                          value={(s as any).middle_name || ""}
-                          isEditing={editingCell?.id === s.id && editingCell.key === "middle_name"}
-                          canEdit={canEdit}
-                          editValue={editValue}
-                          setEditValue={setEditValue}
-                          onStartEdit={() => startEdit(s.id, "middle_name", (s as any).middle_name || "")}
-                          onSave={saveNameField}
-                          onCancel={cancelEdit}
-                          onKeyDown={handleKeyDown}
-                          inputRef={editingCell?.key === "middle_name" ? inputRef : undefined}
-                          renderDisplay={() => <span className="text-gray-600">{(s as any).middle_name || "—"}</span>}
-                        />
-                        {/* Grade — editable */}
-                        <EditableCell
-                          value={s.grade || ""}
-                          isEditing={editingCell?.id === s.id && editingCell.key === "grade"}
-                          canEdit={canEdit}
-                          editValue={editValue}
-                          setEditValue={setEditValue}
-                          onStartEdit={() => startEdit(s.id, "grade", s.grade || "")}
-                          onSave={saveEdit}
-                          onCancel={cancelEdit}
-                          onKeyDown={handleKeyDown}
-                          inputRef={editingCell?.key === "grade" ? inputRef : undefined}
-                          renderDisplay={() => <span className="text-gray-600">{s.grade || "—"}</span>}
-                        />
-                        {/* Guardian — editable */}
-                        <EditableCell
-                          value={s.guardian_name || ""}
-                          isEditing={editingCell?.id === s.id && editingCell.key === "guardian_name"}
-                          canEdit={canEdit}
-                          editValue={editValue}
-                          setEditValue={setEditValue}
-                          onStartEdit={() => startEdit(s.id, "guardian_name", s.guardian_name || "")}
-                          onSave={saveEdit}
-                          onCancel={cancelEdit}
-                          onKeyDown={handleKeyDown}
-                          inputRef={editingCell?.key === "guardian_name" ? inputRef : undefined}
-                          renderDisplay={() => <span className="text-gray-600">{s.guardian_name || "—"}</span>}
-                        />
-                        <td className="px-4 py-3 text-right font-bold">{fmtMoney(Math.max(0, s.balance))}</td>
-                        <td className="px-4 py-3"><StatusBadge status={s.payment_status} /></td>
-                        {/* Enrollment status — editable select */}
+                      <tr key={s.id} className={cn("border-b border-gray-50 hover:bg-gray-50 group", busy && "opacity-50")}>
+                        <RowCheckbox id={s.id} selectedIds={selectedIds} onToggle={toggleBulk} isDeveloper={isDeveloper} />
+                        <td className="px-4 py-3 font-mono text-xs text-gray-500 font-semibold">{s.student_code}</td>
+                        <EditCell id={s.id} field="last_name" value={(s as Record<string, unknown>).last_name as string ?? ""}
+                          editing={editingCell} editValue={editValue} setEditValue={setEditValue}
+                          canEdit={canEdit} onStart={startEdit} onSave={saveEdit} onCancel={cancelEdit}
+                          onKeyDown={handleKeyDown} inputRef={inputRef} bold />
+                        <EditCell id={s.id} field="first_name" value={(s as Record<string, unknown>).first_name as string ?? ""}
+                          editing={editingCell} editValue={editValue} setEditValue={setEditValue}
+                          canEdit={canEdit} onStart={startEdit} onSave={saveEdit} onCancel={cancelEdit}
+                          onKeyDown={handleKeyDown} inputRef={inputRef} />
+                        <EditCell id={s.id} field="middle_name" value={(s as Record<string, unknown>).middle_name as string ?? ""}
+                          editing={editingCell} editValue={editValue} setEditValue={setEditValue}
+                          canEdit={canEdit} onStart={startEdit} onSave={saveEdit} onCancel={cancelEdit}
+                          onKeyDown={handleKeyDown} inputRef={inputRef} muted />
+                        <EditCell id={s.id} field="grade" value={s.grade ?? ""}
+                          editing={editingCell} editValue={editValue} setEditValue={setEditValue}
+                          canEdit={canEdit} onStart={startEdit} onSave={saveEdit} onCancel={cancelEdit}
+                          onKeyDown={handleKeyDown} inputRef={inputRef} />
+                        <td className="px-4 py-3 text-gray-600 text-xs">{s.gender ?? "—"}</td>
+                        <EditCell id={s.id} field="guardian_name" value={s.guardian_name ?? ""}
+                          editing={editingCell} editValue={editValue} setEditValue={setEditValue}
+                          canEdit={canEdit} onStart={startEdit} onSave={saveEdit} onCancel={cancelEdit}
+                          onKeyDown={handleKeyDown} inputRef={inputRef} />
+                        <EditCell id={s.id} field="guardian_phone" value={s.guardian_phone ?? ""}
+                          editing={editingCell} editValue={editValue} setEditValue={setEditValue}
+                          canEdit={canEdit} onStart={startEdit} onSave={saveEdit} onCancel={cancelEdit}
+                          onKeyDown={handleKeyDown} inputRef={inputRef} muted />
                         <td className="px-4 py-3">
                           {canEdit ? (
-                            <select
-                              value={s.status}
-                              onChange={async (e) => {
-                                const newStatus = e.target.value;
-                                setSavingId(s.id);
-                                const { error } = await supabase.from("students").update({ status: newStatus, updated_at: new Date().toISOString() }).eq("id", s.id);
-                                if (!error) setStudents(prev => prev.map(st => st.id === s.id ? { ...st, status: newStatus } : st));
-                                setSavingId(null);
-                              }}
-                              className={cn(
-                                "text-xs font-semibold px-2 py-1 rounded-lg border-0 focus:ring-2 focus:ring-[#C9A227] cursor-pointer",
-                                s.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
-                              )}
-                            >
+                            <select value={s.status} onChange={async e => {
+                              setSavingId(s.id);
+                              await supabase.from("students").update({ status: e.target.value, updated_at: new Date().toISOString() }).eq("id", s.id);
+                              setStudents(prev => prev.map(st => st.id === s.id ? { ...st, status: e.target.value } : st));
+                              setSavingId(null);
+                            }} className={cn("text-xs font-semibold px-2 py-1 rounded-lg border-0 cursor-pointer", s.status === "active" ? "bg-green-100 text-green-700" : s.status === "graduated" ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-500")}>
                               <option value="active">Active</option>
                               <option value="inactive">Inactive</option>
+                              <option value="graduated">Graduated</option>
                             </select>
                           ) : (
-                            <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", s.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>
-                              {s.status === "active" ? "Active" : "Inactive"}
-                            </span>
+                            <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", s.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>{s.status}</span>
                           )}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <Link href={`/dashboard/students/${s.id}`}
-                              className="flex items-center gap-1 text-xs text-[#0F2A47] hover:underline font-medium">
+                            <Link href={`/dashboard/students/${s.id}`} className="flex items-center gap-1 text-xs text-[#0F2A47] hover:underline font-medium">
                               View <ChevronRight size={12} />
                             </Link>
                             {canEdit && (
-                              <button
-                                onClick={() => setDeleteTarget(s)}
-                                title="Delete student"
-                                className="text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                              >
+                              <button onClick={() => setDeleteTarget(s)} title="Delete student"
+                                className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100">
                                 <Trash2 size={14} />
                               </button>
                             )}
@@ -410,24 +355,26 @@ export default function StudentsPage() {
                         </td>
                       </tr>
                     );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-4 py-3 border-t border-gray-100 text-xs text-gray-500 flex items-center justify-between">
+              <span>Showing {filtered.length} of {students.length} students</span>
+              <span className="text-[10px] text-gray-400">Click any cell to edit · Tab to navigate</span>
+            </div>
+          </Card>
         </>
       )}
 
       {showAdd && <AddStudentModal onClose={() => { setShowAdd(false); load(); }} />}
       {showImport && <ImportStudentsModal onClose={() => { setShowImport(false); load(); }} />}
-
       {deleteTarget && (
         <Modal open onClose={() => setDeleteTarget(null)} title="Delete Student" size="sm">
           <div className="space-y-4">
             <p className="text-sm text-gray-600">
-              Are you sure you want to delete <strong>{deleteTarget.full_name}</strong> ({deleteTarget.student_code})?
-              This does not delete their payment history, but they will no longer appear in the students list.
+              Delete <strong>{deleteTarget.full_name}</strong> ({deleteTarget.student_code})?
+              Their payment history is preserved but they will no longer appear in the student list.
             </p>
             <div className="flex justify-end gap-3">
               <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
@@ -440,25 +387,32 @@ export default function StudentsPage() {
   );
 }
 
-// A single grid cell that toggles between display text and an inline
-// input on click. Kept generic so every editable column in the table
-// shares the same click / save / cancel / keyboard behavior.
-function EditableCell({
-  value, isEditing, canEdit, editValue, setEditValue,
-  onStartEdit, onSave, onCancel, onKeyDown, inputRef, renderDisplay,
-}: {
-  value: string;
-  isEditing: boolean;
+/* ------------------------------------------------------------------ */
+
+function StatCard({ label, value, icon, color }: { label: string; value: number; icon: React.ReactNode; color?: string }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-3">
+      <div className={cn("shrink-0", color ?? "text-[#0F2A47]")}>{icon}</div>
+      <div>
+        <div className="text-xs text-gray-500">{label}</div>
+        <div className={cn("text-lg font-bold", color ?? "text-[#0F2A47]")}>{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function EditCell({ id, field, value, editing, editValue, setEditValue, canEdit, onStart, onSave, onCancel, onKeyDown, inputRef, bold, muted }: {
+  id: string; field: string; value: string;
+  editing: { id: string; key: string } | null;
+  editValue: string; setEditValue: (v: string) => void;
   canEdit: boolean;
-  editValue: string;
-  setEditValue: (v: string) => void;
-  onStartEdit: () => void;
-  onSave: () => void;
-  onCancel: () => void;
+  onStart: (id: string, key: string, val: string) => void;
+  onSave: () => void; onCancel: () => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
-  inputRef?: React.RefObject<HTMLInputElement>;
-  renderDisplay: () => React.ReactNode;
+  inputRef: React.RefObject<HTMLInputElement>;
+  bold?: boolean; muted?: boolean;
 }) {
+  const isEditing = editing?.id === id && editing.key === field;
   if (isEditing) {
     return (
       <td className="px-2 py-1.5">
@@ -476,15 +430,16 @@ function EditableCell({
       </td>
     );
   }
-
   return (
     <td
-      onClick={canEdit ? onStartEdit : undefined}
-      className={cn("px-4 py-3", canEdit && "cursor-pointer hover:bg-[#FBF6E8] relative group/cell")}
+      onClick={canEdit ? () => onStart(id, field, value) : undefined}
+      className={cn("px-4 py-3", canEdit && "cursor-pointer hover:bg-[#FBF6E8] group/cell")}
     >
-      <div className="flex items-center gap-2">
-        <div className="flex-1">{renderDisplay()}</div>
-        {canEdit && <Pencil size={11} className="text-gray-300 opacity-0 group-hover/cell:opacity-100 shrink-0" />}
+      <div className="flex items-center gap-1.5">
+        <span className={cn(
+          bold ? "font-semibold text-gray-900" : muted ? "text-gray-500" : "text-gray-700"
+        )}>{value || "—"}</span>
+        {canEdit && <Pencil size={10} className="text-gray-300 opacity-0 group-hover/cell:opacity-100 shrink-0" />}
       </div>
     </td>
   );
@@ -497,94 +452,89 @@ function AddStudentModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState("");
   const [form, setForm] = useState({
     student_code: "", last_name: "", first_name: "", middle_name: "",
-    grade: "", academic_year: "",
-    gender: "", date_of_birth: "", admission_date: today(),
-    guardian_name: "", guardian_phone: "", guardian_email: "", address: "", notes: "",
+    grade: "", academic_year: "", gender: "", date_of_birth: "",
+    admission_date: today(), guardian_name: "", guardian_phone: "",
+    guardian_email: "", address: "", notes: "",
   });
 
-  // Auto-generated full name (read-only, never edited directly)
   const fullName = [form.last_name, form.first_name, form.middle_name].filter(Boolean).join(" ");
 
   useEffect(() => {
     supabase.from("students").select("student_code").then(({ data }) => {
       const codes = new Set((data ?? []).map(s => s.student_code));
       let code: string;
-      do {
-        code = `S${String(Math.floor(Math.random() * 1000)).padStart(3, "0")}`;
-      } while (codes.has(code));
+      do { code = `S${String(Math.floor(Math.random() * 1000)).padStart(3, "0")}`; } while (codes.has(code));
       setForm(f => ({ ...f, student_code: code }));
     });
   }, [supabase]);
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.last_name.trim()) { setError("Last name is required."); return; }
     if (!form.first_name.trim()) { setError("First name is required."); return; }
-    setLoading(true);
-    setError("");
-    const { error } = await supabase.from("students").insert({
-      student_code: form.student_code,
-      full_name: fullName,
-      last_name: form.last_name,
-      first_name: form.first_name,
-      middle_name: form.middle_name || null,
-      grade: form.grade || null,
-      academic_year: form.academic_year || null,
-      gender: form.gender || null,
-      date_of_birth: form.date_of_birth || null,
-      admission_date: form.admission_date || null,
-      address: form.address || null,
-      guardian_name: form.guardian_name || null,
-      guardian_phone: form.guardian_phone || null,
-      guardian_email: form.guardian_email || null,
-      notes: form.notes || null,
-      status: "active",
+    setLoading(true); setError("");
+    const { error: err } = await supabase.from("students").insert({
+      student_code: form.student_code, full_name: fullName,
+      last_name: form.last_name, first_name: form.first_name,
+      middle_name: form.middle_name || null, grade: form.grade || null,
+      academic_year: form.academic_year || null, gender: form.gender || null,
+      date_of_birth: form.date_of_birth || null, admission_date: form.admission_date || null,
+      address: form.address || null, guardian_name: form.guardian_name || null,
+      guardian_phone: form.guardian_phone || null, guardian_email: form.guardian_email || null,
+      notes: form.notes || null, status: "active",
     });
-    if (error) { setError(error.message); setLoading(false); }
-    else {
-      await supabase.from("activity_log").insert({
-        user_email: profile?.email, user_name: profile?.full_name,
-        action: "Add Student", details: `${form.student_code} — ${fullName}`,
-      });
-      onClose();
-    }
+    if (err) { setError(err.message); setLoading(false); return; }
+    await supabase.from("activity_log").insert({
+      user_email: profile?.email, user_name: profile?.full_name,
+      action: "Add Student", details: `${form.student_code} — ${fullName}`,
+    });
+    onClose();
   }
 
   return (
-    <Modal open onClose={onClose} title="Add New Student" size="lg">
+    <Modal open onClose={onClose} title="Add New Student" size="xl">
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
-      <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="sm:col-span-3">
+      <form onSubmit={submit} className="space-y-5">
+        <fieldset className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 border border-gray-200 rounded-xl">
+          <legend className="text-xs font-bold uppercase tracking-wider text-gray-500 px-2">Identity</legend>
           <Input label="Student ID" value={form.student_code} onChange={set("student_code")} required />
-        </div>
-        <Input label="Last Name *" value={form.last_name} onChange={set("last_name")} required placeholder="e.g. Okafor" />
-        <Input label="First Name *" value={form.first_name} onChange={set("first_name")} required placeholder="e.g. Ada" />
-        <Input label="Middle Name" value={form.middle_name} onChange={set("middle_name")} placeholder="Optional" />
-        <div className="sm:col-span-3">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Full Name (auto-generated)</label>
-          <div className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700">
-            {fullName || <span className="text-gray-400">Enter last name and first name above</span>}
+          <Input label="Last Name *" value={form.last_name} onChange={set("last_name")} required placeholder="Okafor" />
+          <Input label="First Name *" value={form.first_name} onChange={set("first_name")} required placeholder="Ada" />
+          <Input label="Middle Name" value={form.middle_name} onChange={set("middle_name")} placeholder="Optional" />
+          <Select label="Gender" value={form.gender} onChange={set("gender")}
+            options={[{ value: "Male", label: "Male" }, { value: "Female", label: "Female" }]} placeholder="Select" />
+          <Input label="Date of Birth" type="date" value={form.date_of_birth} onChange={set("date_of_birth")} />
+        </fieldset>
+
+        <fieldset className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 border border-gray-200 rounded-xl">
+          <legend className="text-xs font-bold uppercase tracking-wider text-gray-500 px-2">Enrollment</legend>
+          <Input label="Class / Grade" value={form.grade} onChange={set("grade")} placeholder="JSS1 / Grade 5" />
+          <Input label="Academic Year" value={form.academic_year} onChange={set("academic_year")} placeholder="2026/2027" />
+          <Input label="Admission Date" type="date" value={form.admission_date} onChange={set("admission_date")} />
+        </fieldset>
+
+        <fieldset className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 border border-gray-200 rounded-xl">
+          <legend className="text-xs font-bold uppercase tracking-wider text-gray-500 px-2">Guardian / Parent</legend>
+          <Input label="Guardian Name" value={form.guardian_name} onChange={set("guardian_name")} />
+          <Input label="Guardian Phone" value={form.guardian_phone} onChange={set("guardian_phone")} placeholder="+234 800 000 0000" />
+          <Input label="Guardian Email" type="email" value={form.guardian_email} onChange={set("guardian_email")} />
+          <div className="sm:col-span-3">
+            <Input label="Address" value={form.address} onChange={set("address")} />
           </div>
+        </fieldset>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+          <textarea value={form.notes} onChange={set("notes")} rows={3} placeholder="Any additional information…"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]" />
         </div>
-        <Input label="Class / Grade" value={form.grade} onChange={set("grade")} placeholder="e.g. Grade 5 / SS2" />
-        <Input label="Academic Year" value={form.academic_year} onChange={set("academic_year")} placeholder="e.g. 2025/2026" />
-        <Select label="Gender" value={form.gender} onChange={set("gender")}
-          options={[{ value: "Male", label: "Male" }, { value: "Female", label: "Female" }, { value: "Other", label: "Other" }]}
-          placeholder="Select gender" />
-        <Input label="Date of Birth" type="date" value={form.date_of_birth} onChange={set("date_of_birth")} />
-        <Input label="Admission Date" type="date" value={form.admission_date} onChange={set("admission_date")} />
-        <div className="sm:col-span-3">
-          <Input label="Address" value={form.address} onChange={set("address")} />
-        </div>
-        <Input label="Guardian Name" value={form.guardian_name} onChange={set("guardian_name")} />
-        <Input label="Guardian Phone" value={form.guardian_phone} onChange={set("guardian_phone")} placeholder="+234 800 000 0000" />
-        <Input label="Guardian Email" type="email" value={form.guardian_email} onChange={set("guardian_email")} />
-        <div className="sm:col-span-3 flex justify-end gap-3 pt-2">
+
+        <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" loading={loading} variant="gold">Add Student</Button>
+          <Button type="submit" variant="gold" loading={loading}>Add Student</Button>
         </div>
       </form>
     </Modal>

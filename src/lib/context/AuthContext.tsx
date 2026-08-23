@@ -54,9 +54,9 @@ interface AuthContextValue {
 }
 
 const FULL_PERMISSIONS: Record<string, boolean> = {
-  income: true, expenses: true, students: true, vendors: true,
-  reconciliation: true, reports: true, receipts: true, setup: true,
-  roles: true, team: true, activity: true, sms_alerts: true,
+  income: true, expenses: true, students: true, student_finance: true,
+  vendors: true, reconciliation: true, reports: true, receipts: true,
+  setup: true, roles: true, team: true, activity: true, sms_alerts: true,
   website: true, analytics: true,
 };
 
