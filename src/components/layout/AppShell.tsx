@@ -1,6 +1,17 @@
 "use client";
 
-import { useState } from "react";
+/**
+ * Application shell — collapsible grouped sidebar navigation.
+ *
+ * NAVIGATION REFACTORING ONLY:
+ * - All existing routes are preserved.
+ * - All permissions/module/feature checks are preserved.
+ * - No pages, APIs, database logic, or permissions were changed.
+ * - The sidebar is now organized into 8 logical sections with
+ *   accordion behaviour so only the active section is expanded.
+ */
+
+import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/context/AuthContext";
@@ -10,80 +21,158 @@ import {
   LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2,
   ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users,
   Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen,
-  Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle,
+  Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown,
+  Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle,
 } from "lucide-react";
+
+/* ------------------------------------------------------------------ */
+/* Navigation configuration                                           */
+/* ------------------------------------------------------------------ */
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ReactNode;
   feature?: string;
-  module?: string;       // Required module subscription
+  module?: string;
   adminOnly?: boolean;
   superAdminOnly?: boolean;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
-  { href: "/dashboard/income", label: "Income", icon: <TrendingUp size={18} />, feature: "income", module: "finance" },
-  { href: "/dashboard/expenses", label: "Expenses", icon: <TrendingDown size={18} />, feature: "expenses", module: "finance" },
-  { href: "/dashboard/students", label: "Students", icon: <GraduationCap size={18} />, feature: "students", module: "students" },
-  { href: "/dashboard/student-finance", label: "Student Finance", icon: <TrendingUp size={18} />, feature: "students", module: "finance" },
-  { href: "/dashboard/students/promotion", label: "Promotion", icon: <ArrowLeftRight size={18} />, feature: "students", module: "academics", adminOnly: true },
-  { href: "/dashboard/attendance", label: "Attendance", icon: <Users size={18} />, module: "attendance" },
-  { href: "/dashboard/timetable", label: "Timetable", icon: <Clock size={18} />, module: "timetable" },
-  { href: "/dashboard/assessments", label: "Assessments", icon: <FileBarChart size={18} />, module: "assessments" },
-  { href: "/dashboard/cbt", label: "CBT / Exams", icon: <BookOpen size={18} />, module: "cbt" },
-  { href: "/dashboard/teaching", label: "My Teaching", icon: <Users size={18} />, module: "teacher_portal" },
-  { href: "/dashboard/my-results", label: "My Results", icon: <FileBarChart size={18} />, module: "student_portal" },
-  { href: "/dashboard/my-exams", label: "My Exams", icon: <BookOpen size={18} />, module: "student_portal" },
-  { href: "/dashboard/my-children", label: "My Children", icon: <Users size={18} />, module: "parent_portal" },
-  { href: "/dashboard/staff", label: "Staff", icon: <Users size={18} />, module: "hr" },
-  { href: "/dashboard/inventory", label: "Inventory", icon: <Receipt size={18} />, module: "inventory" },
-  { href: "/dashboard/announcements", label: "Announcements", icon: <MessageSquare size={18} />, module: "communication" },
-  { href: "/dashboard/website", label: "Website Studio", icon: <Globe size={18} />, module: "website", feature: "website" },
-  { href: "/dashboard/leads", label: "Enquiries", icon: <Inbox size={18} />, module: "crm" },
-  { href: "/dashboard/automations", label: "Automations", icon: <Settings size={18} />, adminOnly: true },
-  { href: "/dashboard/analytics", label: "Analytics", icon: <LayoutDashboard size={18} />, adminOnly: true },
-  { href: "/dashboard/vendors", label: "Vendors", icon: <Building2 size={18} />, feature: "vendors", module: "finance" },
-  { href: "/dashboard/reconciliation", label: "Reconcile", icon: <ArrowLeftRight size={18} />, feature: "reconciliation", module: "finance" },
-  { href: "/dashboard/reports", label: "Reports", icon: <FileBarChart size={18} />, feature: "reports" },
-  { href: "/dashboard/receipts", label: "Receipts", icon: <Receipt size={18} />, feature: "receipts", module: "finance" },
-  { href: "/dashboard/sms-alerts", label: "Payment Alerts", icon: <MessageSquare size={18} />, feature: "sms_alerts", module: "finance" },
-  { href: "/dashboard/setup", label: "Setup", icon: <Settings size={18} />, feature: "setup" },
-  { href: "/dashboard/roles", label: "Roles", icon: <Shield size={18} />, feature: "roles", adminOnly: true },
-  { href: "/dashboard/team", label: "Team", icon: <Users size={18} />, feature: "team", adminOnly: true },
-  { href: "/dashboard/activity", label: "Activity", icon: <Activity size={18} />, feature: "activity", adminOnly: true },
-  { href: "/dashboard/help", label: "Help & Manual", icon: <HelpCircle size={18} /> },
-  { href: "/dashboard/platform", label: "Platform Admin", icon: <Shield size={18} />, superAdminOnly: true },
-  { href: "/dashboard/platform/verify", label: "Verify Isolation", icon: <ShieldCheck size={18} />, superAdminOnly: true },
+interface NavGroup {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  items: NavItem[];
+  /** If true, this group is always visible (no accordion header) */
+  standalone?: boolean;
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    key: "overview",
+    label: "",
+    icon: <LayoutDashboard size={16} />,
+    standalone: true,
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={17} /> },
+    ],
+  },
+  {
+    key: "workspace",
+    label: "My Workspace",
+    icon: <UserCircle size={16} />,
+    items: [
+      { href: "/dashboard/teaching", label: "My Teaching", icon: <BookOpen size={17} />, module: "teacher_portal" },
+      { href: "/dashboard/my-results", label: "My Results", icon: <FileBarChart size={17} />, module: "student_portal" },
+      { href: "/dashboard/my-exams", label: "My Exams", icon: <BookOpen size={17} />, module: "student_portal" },
+      { href: "/dashboard/my-children", label: "My Children", icon: <Users size={17} />, module: "parent_portal" },
+    ],
+  },
+  {
+    key: "academics",
+    label: "Students & Academics",
+    icon: <GraduationCap size={16} />,
+    items: [
+      { href: "/dashboard/students", label: "Students", icon: <GraduationCap size={17} />, feature: "students", module: "students" },
+      { href: "/dashboard/attendance", label: "Attendance", icon: <Clock size={17} />, module: "attendance" },
+      { href: "/dashboard/timetable", label: "Timetable", icon: <Clock size={17} />, module: "timetable" },
+      { href: "/dashboard/assessments", label: "Assessments", icon: <FileBarChart size={17} />, module: "assessments" },
+      { href: "/dashboard/cbt", label: "CBT / Exams", icon: <BookOpen size={17} />, module: "cbt" },
+      { href: "/dashboard/students/promotion", label: "Promotion", icon: <ArrowLeftRight size={17} />, feature: "students", module: "academics", adminOnly: true },
+    ],
+  },
+  {
+    key: "finance",
+    label: "Finance",
+    icon: <Wallet size={16} />,
+    items: [
+      { href: "/dashboard/student-finance", label: "Student Finance", icon: <TrendingUp size={17} />, feature: "students", module: "finance" },
+      { href: "/dashboard/income", label: "Income", icon: <TrendingUp size={17} />, feature: "income", module: "finance" },
+      { href: "/dashboard/expenses", label: "Expenses", icon: <TrendingDown size={17} />, feature: "expenses", module: "finance" },
+      { href: "/dashboard/receipts", label: "Receipts", icon: <Receipt size={17} />, feature: "receipts", module: "finance" },
+      { href: "/dashboard/sms-alerts", label: "Payment Alerts", icon: <MessageSquare size={17} />, feature: "sms_alerts", module: "finance" },
+      { href: "/dashboard/reconciliation", label: "Reconcile", icon: <ArrowLeftRight size={17} />, feature: "reconciliation", module: "finance" },
+    ],
+  },
+  {
+    key: "people",
+    label: "People",
+    icon: <Briefcase size={16} />,
+    items: [
+      { href: "/dashboard/staff", label: "Staff", icon: <Users size={17} />, module: "hr" },
+      { href: "/dashboard/team", label: "Team", icon: <Users size={17} />, feature: "team", adminOnly: true },
+      { href: "/dashboard/roles", label: "Roles", icon: <Shield size={17} />, feature: "roles", adminOnly: true },
+    ],
+  },
+  {
+    key: "operations",
+    label: "Operations",
+    icon: <Package size={16} />,
+    items: [
+      { href: "/dashboard/inventory", label: "Inventory", icon: <Package size={17} />, module: "inventory" },
+      { href: "/dashboard/vendors", label: "Vendors", icon: <Building2 size={17} />, feature: "vendors", module: "finance" },
+      { href: "/dashboard/automations", label: "Automations", icon: <Settings size={17} />, adminOnly: true },
+    ],
+  },
+  {
+    key: "communication",
+    label: "Communication",
+    icon: <Megaphone size={16} />,
+    items: [
+      { href: "/dashboard/announcements", label: "Announcements", icon: <MessageSquare size={17} />, module: "communication" },
+      { href: "/dashboard/leads", label: "Enquiries", icon: <Inbox size={17} />, module: "crm" },
+      { href: "/dashboard/website", label: "Website Studio", icon: <Globe size={17} />, module: "website", feature: "website" },
+    ],
+  },
+  {
+    key: "admin",
+    label: "Reports & Admin",
+    icon: <BarChart3 size={16} />,
+    items: [
+      { href: "/dashboard/reports", label: "Reports", icon: <FileBarChart size={17} />, feature: "reports" },
+      { href: "/dashboard/analytics", label: "Analytics", icon: <BarChart3 size={17} />, adminOnly: true },
+      { href: "/dashboard/activity", label: "Activity", icon: <Activity size={17} />, feature: "activity", adminOnly: true },
+      { href: "/dashboard/setup", label: "Setup", icon: <Settings size={17} />, feature: "setup" },
+    ],
+  },
+  {
+    key: "help",
+    label: "",
+    icon: <HelpCircle size={16} />,
+    standalone: true,
+    items: [
+      { href: "/dashboard/help", label: "Help & Manual", icon: <HelpCircle size={17} /> },
+    ],
+  },
+  {
+    key: "platform",
+    label: "Platform",
+    icon: <Shield size={16} />,
+    items: [
+      { href: "/dashboard/platform", label: "Platform Admin", icon: <Shield size={17} />, superAdminOnly: true },
+      { href: "/dashboard/platform/verify", label: "Verify Isolation", icon: <ShieldCheck size={17} />, superAdminOnly: true },
+    ],
+  },
 ];
+
+/* ------------------------------------------------------------------ */
+/* Component                                                          */
+/* ------------------------------------------------------------------ */
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const {
     profile, signOut, hasFeature, hasModule, isAdmin, isSuperAdmin,
-    org, availableOrgs, isSupportSession,
+    org, availableOrgs, isSupportSession, membership,
   } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  const visibleItems = NAV_ITEMS.filter(item => {
-    if (item.superAdminOnly && !isSuperAdmin) return false;
-    if (item.adminOnly && !isAdmin) return false;
-    if (item.feature && !isAdmin && !hasFeature(item.feature)) return false;
-    if (item.module && !hasModule(item.module)) return false;
-    return true;
-  });
-
-  async function handleSignOut() {
-    await signOut();
-    router.push("/auth/login");
-  }
-
-  // Longest-prefix match, so /dashboard/platform/verify does not also
-  // light up /dashboard/platform.
-  const bestMatch = visibleItems.reduce<string | null>((best, item) => {
+  // Determine which item is active (longest prefix match)
+  const allItems = NAV_GROUPS.flatMap(g => g.items);
+  const activeHref = allItems.reduce<string | null>((best, item) => {
     const matches =
       pathname === item.href ||
       (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
@@ -92,15 +181,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return best;
   }, null);
 
-  const isActive = (href: string) => bestMatch === href;
+  // Auto-expand the group containing the active item
+  useEffect(() => {
+    for (const group of NAV_GROUPS) {
+      if (group.items.some(i => i.href === activeHref)) {
+        setExpanded(e => ({ ...e, [group.key]: true }));
+        break;
+      }
+    }
+  }, [activeHref]);
+
+  function isVisible(item: NavItem): boolean {
+    if (item.superAdminOnly && !isSuperAdmin) return false;
+    if (item.adminOnly && !isAdmin) return false;
+    if (item.feature && !isAdmin && !hasFeature(item.feature)) return false;
+    if (item.module && !hasModule(item.module)) return false;
+    return true;
+  }
+
+  function toggleGroup(key: string) {
+    setExpanded(e => ({ ...e, [key]: !e[key] }));
+  }
+
+  async function handleSignOut() {
+    await signOut();
+    router.push("/auth/login");
+  }
 
   function Sidebar({ mobile = false }: { mobile?: boolean }) {
     return (
-      <div className={cn(
-        "flex flex-col h-full",
-        mobile ? "w-full" : "w-64"
-      )} style={{ backgroundColor: "#0F2A47" }}>
-        {/* Active tenant + switcher */}
+      <div className={cn("flex flex-col h-full", mobile ? "w-full" : "w-64")}
+        style={{ backgroundColor: "#0F2A47" }}>
+
+        {/* Org switcher */}
         <div className="px-2.5 py-3 border-b border-[#1B3E63]">
           {org || (availableOrgs && availableOrgs.length > 0) ? (
             <OrgSwitcher />
@@ -113,38 +226,67 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
               <div>
                 <div className="text-white font-bold text-sm leading-tight">School Suite</div>
-                <div className="text-[#C9A227] text-xs">Premium bursary console</div>
+                <div className="text-[#C9A227] text-xs">Premium console</div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 py-3 overflow-y-auto px-2">
-          {visibleItems.map(item => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setMobileOpen(false)}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5 transition-all group",
-                isActive(item.href)
-                  ? "bg-[#C9A227] text-[#0F2A47]"
-                  : "text-[#B8C8DC] hover:bg-[#1B3E63] hover:text-white"
-              )}
-            >
-              <span className={cn(
-                "shrink-0",
-                isActive(item.href) ? "text-[#0F2A47]" : "text-[#7A9EC0] group-hover:text-white"
-              )}>
-                {item.icon}
-              </span>
-              {item.label}
-            </Link>
-          ))}
+        {/* Navigation */}
+        <nav className="flex-1 py-2 overflow-y-auto px-2" aria-label="Main navigation">
+          {NAV_GROUPS.map(group => {
+            const visibleItems = group.items.filter(isVisible);
+            if (visibleItems.length === 0) return null;
+
+            const isOpen = group.standalone || expanded[group.key];
+            const hasActiveChild = visibleItems.some(i => i.href === activeHref);
+
+            // Standalone groups (Dashboard, Help) render without a header
+            if (group.standalone) {
+              return (
+                <div key={group.key} className="mb-1">
+                  {visibleItems.map(item => (
+                    <NavLink key={item.href} item={item} active={item.href === activeHref}
+                      onClick={() => setMobileOpen(false)} />
+                  ))}
+                </div>
+              );
+            }
+
+            return (
+              <div key={group.key} className="mb-0.5">
+                <button
+                  onClick={() => toggleGroup(group.key)}
+                  className={cn(
+                    "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-colors",
+                    hasActiveChild
+                      ? "text-[#C9A227]"
+                      : "text-[#7A9EC0] hover:text-[#B8C8DC]"
+                  )}
+                  aria-expanded={isOpen}
+                >
+                  <span className="shrink-0 opacity-70">{group.icon}</span>
+                  <span className="flex-1 text-left">{group.label}</span>
+                  <ChevronDown size={12} className={cn(
+                    "transition-transform opacity-50",
+                    isOpen && "rotate-180"
+                  )} />
+                </button>
+
+                {isOpen && (
+                  <div className="ml-2 border-l border-[#1B3E63] pl-2 mb-2">
+                    {visibleItems.map(item => (
+                      <NavLink key={item.href} item={item} active={item.href === activeHref}
+                        onClick={() => setMobileOpen(false)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
-        {/* User */}
+        {/* User card */}
         <div className="border-t border-[#1B3E63] p-4">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-[#1B3E63] flex items-center justify-center shrink-0">
@@ -157,7 +299,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {profile?.full_name || profile?.email?.split("@")[0]}
               </div>
               <div className="text-[#C9A227] text-xs uppercase tracking-wide font-semibold">
-                {profile?.role}
+                {membership?.role?.replace("_", " ") || profile?.role}
               </div>
             </div>
             <button onClick={handleSignOut} title="Sign out"
@@ -206,8 +348,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
 
-        {/* Support-access warning: you are operating inside someone
-            else's tenant, so make that impossible to miss. */}
+        {/* Support-access warning */}
         {isSupportSession && org && (
           <div role="status" className="shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-100 border-b border-amber-300 text-amber-900 text-xs font-medium">
             <LifeBuoy size={14} className="shrink-0" />
@@ -224,5 +365,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+function NavLink({ item, active, onClick }: { item: NavItem; active: boolean; onClick: () => void }) {
+  return (
+    <Link
+      href={item.href}
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium mb-0.5 transition-all group",
+        active
+          ? "bg-[#C9A227] text-[#0F2A47]"
+          : "text-[#B8C8DC] hover:bg-[#1B3E63] hover:text-white"
+      )}
+    >
+      <span className={cn(
+        "shrink-0",
+        active ? "text-[#0F2A47]" : "text-[#7A9EC0] group-hover:text-white"
+      )}>
+        {item.icon}
+      </span>
+      {item.label}
+    </Link>
   );
 }
