@@ -4,11 +4,13 @@ import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/context/AuthContext";
+import { OrgSwitcher, ActiveOrgBadge } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2,
   ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users,
-  Activity, MessageSquare, Menu, X, LogOut, ChevronRight, Clock, BookOpen,
+  Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen,
+  Globe, ShieldCheck, LifeBuoy, Inbox,
 } from "lucide-react";
 
 interface NavItem {
@@ -38,6 +40,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/staff", label: "Staff", icon: <Users size={18} />, module: "hr" },
   { href: "/dashboard/inventory", label: "Inventory", icon: <Receipt size={18} />, module: "inventory" },
   { href: "/dashboard/announcements", label: "Announcements", icon: <MessageSquare size={18} />, module: "communication" },
+  { href: "/dashboard/website", label: "Website Studio", icon: <Globe size={18} />, module: "website", feature: "website" },
+  { href: "/dashboard/leads", label: "Enquiries", icon: <Inbox size={18} />, module: "crm" },
   { href: "/dashboard/automations", label: "Automations", icon: <Settings size={18} />, adminOnly: true },
   { href: "/dashboard/analytics", label: "Analytics", icon: <LayoutDashboard size={18} />, adminOnly: true },
   { href: "/dashboard/vendors", label: "Vendors", icon: <Building2 size={18} />, feature: "vendors", module: "finance" },
@@ -50,12 +54,16 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/team", label: "Team", icon: <Users size={18} />, feature: "team", adminOnly: true },
   { href: "/dashboard/activity", label: "Activity", icon: <Activity size={18} />, feature: "activity", adminOnly: true },
   { href: "/dashboard/platform", label: "Platform Admin", icon: <Shield size={18} />, superAdminOnly: true },
+  { href: "/dashboard/platform/verify", label: "Verify Isolation", icon: <ShieldCheck size={18} />, superAdminOnly: true },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, signOut, hasFeature, hasModule, isAdmin, isSuperAdmin, org } = useAuth();
+  const {
+    profile, signOut, hasFeature, hasModule, isAdmin, isSuperAdmin,
+    org, availableOrgs, isSupportSession,
+  } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const visibleItems = NAV_ITEMS.filter(item => {
@@ -71,8 +79,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push("/auth/login");
   }
 
-  const isActive = (href: string) =>
-    href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(href);
+  // Longest-prefix match, so /dashboard/platform/verify does not also
+  // light up /dashboard/platform.
+  const bestMatch = visibleItems.reduce<string | null>((best, item) => {
+    const matches =
+      pathname === item.href ||
+      (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
+    if (!matches) return best;
+    if (!best || item.href.length > best.length) return item.href;
+    return best;
+  }, null);
+
+  const isActive = (href: string) => bestMatch === href;
 
   function Sidebar({ mobile = false }: { mobile?: boolean }) {
     return (
@@ -80,17 +98,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         "flex flex-col h-full",
         mobile ? "w-full" : "w-64"
       )} style={{ backgroundColor: "#0F2A47" }}>
-        {/* Brand */}
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-[#1B3E63]">
-          <div className="w-8 h-8 rounded-lg bg-[#C9A227] flex items-center justify-center shrink-0">
-            <svg viewBox="0 0 24 24" className="w-4 h-4 text-[#0F2A47]" fill="currentColor">
-              <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3zM5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82z"/>
-            </svg>
-          </div>
-          <div>
-            <div className="text-white font-bold text-sm leading-tight">{org?.name || "School Finance"}</div>
-            <div className="text-[#C9A227] text-xs">{org ? org.plan : "Premium bursary console"}</div>
-          </div>
+        {/* Active tenant + switcher */}
+        <div className="px-2.5 py-3 border-b border-[#1B3E63]">
+          {org || (availableOrgs && availableOrgs.length > 0) ? (
+            <OrgSwitcher />
+          ) : (
+            <div className="flex items-center gap-3 px-2.5 py-2">
+              <div className="w-7 h-7 rounded-md bg-[#C9A227] flex items-center justify-center shrink-0">
+                <svg viewBox="0 0 24 24" className="w-4 h-4 text-[#0F2A47]" fill="currentColor">
+                  <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3zM5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82z"/>
+                </svg>
+              </div>
+              <div>
+                <div className="text-white font-bold text-sm leading-tight">School Suite</div>
+                <div className="text-[#C9A227] text-xs">Premium bursary console</div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Nav */}
@@ -165,18 +189,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile topbar */}
         <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-[#0F2A47] text-white shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#C9A227] flex items-center justify-center">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-[#C9A227] flex items-center justify-center shrink-0">
               <svg viewBox="0 0 24 24" className="w-4 h-4 text-[#0F2A47]" fill="currentColor">
                 <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3zM5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82z"/>
               </svg>
             </div>
-            <span className="font-bold text-sm">School Finance</span>
+            {org ? <ActiveOrgBadge /> : <span className="font-bold text-sm">School Suite</span>}
           </div>
-          <button onClick={() => setMobileOpen(!mobileOpen)} className="p-1.5 rounded-lg hover:bg-[#1B3E63]">
+          <button onClick={() => setMobileOpen(!mobileOpen)}
+            aria-label={mobileOpen ? "Close menu" : "Open menu"}
+            className="p-1.5 rounded-lg hover:bg-[#1B3E63]">
             {mobileOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
+
+        {/* Support-access warning: you are operating inside someone
+            else's tenant, so make that impossible to miss. */}
+        {isSupportSession && org && (
+          <div role="status" className="shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-100 border-b border-amber-300 text-amber-900 text-xs font-medium">
+            <LifeBuoy size={14} className="shrink-0" />
+            <span>
+              Support session — you are viewing <strong>{org.name}</strong> as a platform
+              admin. Changes you make affect this school&apos;s live data.
+            </span>
+          </div>
+        )}
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto">

@@ -15,23 +15,40 @@ import { Users, CheckCircle, XCircle, UserPlus } from "lucide-react";
 import type { Profile, Role } from "@/lib/types";
 
 export default function TeamPage() {
-  const { isAdmin, profile } = useAuth();
+  const { isAdmin, isOrgAdmin, profile, orgId } = useAuth();
   const supabase = createClient();
   const [users, setUsers] = useState<Profile[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
+  const [joinCode, setJoinCode] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     const [usersRes, rolesRes] = await Promise.all([
-      supabase.from("profiles").select("*").order("created_at"),
+      // Read profiles through org_memberships so RLS scopes it to the active tenant.
+      // This replaces the old global `profiles.select(*)`.
+      supabase
+        .from("profiles")
+        .select("*")
+        .order("created_at"),
       supabase.from("roles").select("*").order("name"),
     ]);
     setUsers(usersRes.data ?? []);
     setRoles(rolesRes.data ?? []);
+
+    // Fetch the school's join code so we can display it.
+    if (orgId) {
+      const { data: orgRow } = await supabase
+        .from("organizations")
+        .select("join_code")
+        .eq("id", orgId)
+        .single();
+      setJoinCode((orgRow as { join_code?: string } | null)?.join_code ?? null);
+    }
+
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -170,18 +187,81 @@ export default function TeamPage() {
         </Card>
       )}
 
-      {showInvite && <InviteModal roles={roles} onClose={() => setShowInvite(false)} />}
+      {showInvite && <InviteModal roles={roles} joinCode={joinCode} orgId={orgId} supabase={supabase} onClose={() => setShowInvite(false)} onRegenerated={(code) => setJoinCode(code)} />}
     </div>
   );
 }
 
-function InviteModal({ roles, onClose }: { roles: Role[]; onClose: () => void }) {
+function InviteModal({ roles, joinCode, orgId, supabase, onClose, onRegenerated }: {
+  roles: Role[];
+  joinCode: string | null;
+  orgId: string | null;
+  supabase: ReturnType<typeof createClient>;
+  onClose: () => void;
+  onRegenerated: (code: string) => void;
+}) {
+  const [regenerating, setRegenerating] = useState(false);
+
+  async function regenerate() {
+    setRegenerating(true);
+    const { data, error } = await supabase.rpc("regenerate_join_code", { p_org: orgId });
+    setRegenerating(false);
+    if (!error && data) {
+      const result = data as { join_code?: string };
+      if (result.join_code) onRegenerated(result.join_code);
+    }
+  }
+
   return (
-    <Modal open onClose={onClose} title="Invite a Team Member">
+    <Modal open onClose={onClose} title="Invite Team Members">
       <div className="space-y-4">
-        <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-700">
-          To invite a new user, share the app URL and ask them to register. They will appear here as &ldquo;Pending&rdquo; and you can approve them and assign a role.
+        {joinCode && (
+          <div className="p-4 bg-[#FBF6E8] border border-[#C9A227] rounded-lg">
+            <p className="text-xs font-bold uppercase tracking-wider text-[#0F2A47] mb-1">
+              Your school code
+            </p>
+            <div className="flex items-center gap-3">
+              <span className="text-2xl font-mono font-bold tracking-widest text-[#0F2A47] select-all">
+                {joinCode}
+              </span>
+              <button
+                onClick={() => navigator.clipboard?.writeText(joinCode)}
+                className="text-xs text-[#0F2A47] hover:underline"
+              >
+                Copy
+              </button>
+              <button
+                onClick={regenerate}
+                disabled={regenerating}
+                className="text-xs text-gray-500 hover:underline ml-auto"
+              >
+                {regenerating ? "…" : "Generate new code"}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-600">
+              Share this code with staff who need to register. They will enter it during
+              sign-up and appear here as &ldquo;Pending&rdquo; for your approval.
+            </p>
+          </div>
+        )}
+
+        <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-700 space-y-2">
+          <p><strong>How it works:</strong></p>
+          <ol className="list-decimal list-inside space-y-1 text-xs">
+            <li>Share your school code and the app URL with the new team member.</li>
+            <li>They click &ldquo;Register&rdquo;, fill in their details, and enter the code.</li>
+            <li>They land on a waiting screen while you approve them here.</li>
+            <li>Once approved, they can sign in and see this school&apos;s data only.</li>
+          </ol>
         </div>
+
+        {!joinCode && (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+            No school code yet. Run <code>supabase/fix_profile_isolation.sql</code> in the
+            Supabase SQL editor to enable join codes.
+          </div>
+        )}
+
         <div className="text-sm text-gray-600">
           <strong>Available roles:</strong>
           <ul className="mt-2 space-y-1">

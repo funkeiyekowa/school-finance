@@ -1,0 +1,176 @@
+/**
+ * Shapes returned by get_public_page() and used across the studio and the
+ * public renderer. Section content is intentionally loose (jsonb) — each
+ * section component narrows what it needs and tolerates missing keys, so an
+ * older saved section never breaks a page.
+ */
+
+export type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
+export type JsonObject = Record<string, unknown>;
+
+export interface ThemeTokens {
+  colors?: Record<string, string>;
+  fonts?: { heading?: string; body?: string; accent?: string };
+  scale?: Record<string, string>;
+  radius?: Record<string, string>;
+  spacing?: Record<string, string>;
+  button?: Record<string, string>;
+  shadow?: Record<string, string>;
+  headerStyle?: string;
+  heroStyle?: string;
+}
+
+export interface WebsiteTheme {
+  key: string;
+  name: string;
+  description?: string | null;
+  preview_image_url?: string | null;
+  tokens: ThemeTokens;
+  default_sections?: string[];
+  is_premium?: boolean;
+  sort_order?: number;
+}
+
+export interface SiteContact {
+  address?: string;
+  phone?: string;
+  email?: string;
+  hours?: string;
+  map_embed_url?: string;
+}
+
+export interface SiteSocial {
+  facebook?: string;
+  instagram?: string;
+  x?: string;
+  youtube?: string;
+  linkedin?: string;
+  tiktok?: string;
+}
+
+export interface SiteSeo {
+  title?: string;
+  description?: string;
+  keywords?: string;
+  og_image_url?: string;
+  robots?: string;
+}
+
+export interface SiteFeatures {
+  news?: boolean;
+  events?: boolean;
+  admissions?: boolean;
+  contact_form?: boolean;
+  gallery?: boolean;
+}
+
+export interface PublicSite {
+  id: string;
+  site_name: string;
+  tagline: string | null;
+  logo_url: string | null;
+  favicon_url: string | null;
+  theme_key: string;
+  brand: ThemeTokens;
+  typography: { heading?: string; body?: string; accent?: string };
+  contact: SiteContact;
+  social: SiteSocial;
+  seo: SiteSeo;
+  features: SiteFeatures;
+  maintenance_mode: boolean;
+  organization_id: string;
+  organization_name: string;
+}
+
+export interface PublicPage {
+  id: string;
+  slug: string;
+  title: string;
+  page_type: string;
+  seo: SiteSeo;
+}
+
+export interface PublicSection {
+  id: string;
+  section_type: string;
+  content: JsonObject;
+  style: JsonObject;
+}
+
+export interface NavEntry {
+  label: string;
+  menu: string;
+  href: string;
+  new_tab?: boolean;
+}
+
+export interface PageLink {
+  slug: string;
+  label: string;
+}
+
+export interface NewsItem {
+  slug: string;
+  title: string;
+  excerpt: string | null;
+  cover_image_url: string | null;
+  category: string | null;
+  published_at: string | null;
+  body?: string | null;
+  author_name?: string | null;
+}
+
+export interface EventItem {
+  slug: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  all_day: boolean;
+  cover_image_url: string | null;
+}
+
+export interface FormField {
+  name: string;
+  label: string;
+  type: string;
+  required?: boolean;
+  options?: string[];
+  placeholder?: string;
+  help?: string;
+}
+
+export interface PublicForm {
+  id: string;
+  key: string;
+  name: string;
+  fields: FormField[];
+  success_message: string | null;
+}
+
+/** The full payload get_public_page() returns. */
+export interface PagePayload {
+  site: PublicSite;
+  theme: WebsiteTheme;
+  page: PublicPage;
+  sections: PublicSection[];
+  nav: NavEntry[];
+  pages: PageLink[];
+  news: NewsItem[];
+  events: EventItem[];
+  forms: PublicForm[];
+  not_found?: boolean;
+}
+
+/** Host resolution result. */
+export interface SiteResolution {
+  found: boolean;
+  available?: boolean;
+  reason?: string;
+  organization_id?: string;
+  organization_name?: string;
+  organization_slug?: string;
+  website_id?: string;
+  maintenance_mode?: boolean;
+}

@@ -9,6 +9,8 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [schoolCode, setSchoolCode] = useState("");
+  const [schoolName, setSchoolName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -35,19 +37,46 @@ export default function LoginPage() {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
+    if (!schoolCode.trim()) {
+      setError("Please enter your school code. Your school administrator can give you this.");
+      return;
+    }
     setLoading(true);
     setError("");
+
+    // First verify the school code is valid (before creating the account).
+    const { data: lookup, error: lookupErr } = await supabase.rpc("lookup_school_code", {
+      p_code: schoolCode.trim(),
+    });
+    if (lookupErr) {
+      // RPC may not exist yet if migration hasn't run — proceed anyway
+    } else {
+      const result = lookup as { found?: boolean } | null;
+      if (result && result.found === false) {
+        setError("No active school found with that code. Check with your school administrator.");
+        setLoading(false);
+        return;
+      }
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: name } },
+      options: { data: { full_name: name, school_code: schoolCode.trim() } },
     });
     if (error) {
       setError(error.message);
       setLoading(false);
     } else if (data.session) {
-      // Auto-confirmed (email confirmation disabled) — go straight to dashboard
-      window.location.href = "/dashboard";
+      // Auto-confirmed — join the school and redirect
+      const { error: joinErr } = await supabase.rpc("join_school_by_code", {
+        p_code: schoolCode.trim(),
+      });
+      if (joinErr) {
+        // Non-fatal: they'll land on pending page and can be assigned manually
+        console.warn("join_school_by_code failed:", joinErr.message);
+      }
+      window.location.href = "/auth/pending";
     } else {
       // Email confirmation required
       setMessage("Account created! Check your email to confirm, then sign in.");
@@ -146,17 +175,51 @@ export default function LoginPage() {
 
           <form onSubmit={tab === "signin" ? handleSignIn : handleRegister} className="space-y-4">
             {tab === "register" && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  placeholder="Your full name"
-                  required
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] focus:border-transparent"
-                />
-              </div>
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="Your full name"
+                    required
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">School Code</label>
+                  <input
+                    type="text"
+                    value={schoolCode}
+                    onChange={e => {
+                      const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                      setSchoolCode(v);
+                      setSchoolName("");
+                    }}
+                    onBlur={async () => {
+                      if (schoolCode.trim().length >= 4) {
+                        const { data } = await supabase.rpc("lookup_school_code", { p_code: schoolCode.trim() });
+                        const r = data as { found?: boolean; name?: string } | null;
+                        if (r?.found && r.name) setSchoolName(r.name);
+                      }
+                    }}
+                    placeholder="e.g. AB3F9K"
+                    required
+                    maxLength={8}
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] focus:border-transparent font-mono tracking-wider uppercase"
+                  />
+                  {schoolName && (
+                    <p className="mt-1 text-xs text-green-700 font-medium flex items-center gap-1">
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                      {schoolName}
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-gray-500">
+                    Ask your school administrator for the code. It identifies which school you are joining.
+                  </p>
+                </div>
+              </>
             )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
