@@ -25,39 +25,38 @@ export default function TeamPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [usersRes, rolesRes] = await Promise.all([
-      // Only show profiles of people who are members of THIS school.
-      // Without the orgId filter, platform admins see every user on
-      // the platform (RLS allows it), which leaks across tenants in
-      // the UI even though the database is correctly scoped.
-      orgId
-        ? supabase
-            .from("org_memberships")
-            .select("user_id, role, active, profiles!inner(id, email, full_name, role, active, created_at, updated_at)")
-            .eq("organization_id", orgId)
-            .order("joined_at", { ascending: true })
-        : supabase.from("profiles").select("*").order("created_at"),
-      supabase.from("roles").select("*").order("name"),
-    ]);
 
-    // Flatten the joined result into Profile-shaped objects.
-    if (orgId && usersRes.data) {
-      const flattened = usersRes.data.map((row: Record<string, unknown>) => {
-        const p = row.profiles as Record<string, unknown>;
-        return {
-          ...p,
-          // Show the membership role instead of the legacy profile role
-          // so the dropdown reflects what actually controls access.
-          _membership_role: row.role as string,
-          _membership_active: row.active as boolean,
-        };
-      });
-      setUsers(flattened as unknown as Profile[]);
+    // Step 1: Get all memberships for this school.
+    // Step 2: Fetch the profiles for those user IDs.
+    // This avoids the PostgREST join syntax which requires a FK relationship
+    // between org_memberships and profiles that may not exist.
+    let profileList: Profile[] = [];
+
+    if (orgId) {
+      const { data: members } = await supabase
+        .from("org_memberships")
+        .select("user_id, role, active")
+        .eq("organization_id", orgId);
+
+      if (members && members.length > 0) {
+        const userIds = members.map((m: { user_id: string }) => m.user_id);
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("*")
+          .in("id", userIds)
+          .order("created_at");
+
+        profileList = (profiles ?? []) as Profile[];
+      }
     } else {
-      setUsers(usersRes.data ?? []);
+      const { data } = await supabase.from("profiles").select("*").order("created_at");
+      profileList = (data ?? []) as Profile[];
     }
 
-    setRoles(rolesRes.data ?? []);
+    setUsers(profileList);
+
+    const { data: rolesData } = await supabase.from("roles").select("*").order("name");
+    setRoles(rolesData ?? []);
 
     // Fetch the school's join code so we can display it.
     if (orgId) {
