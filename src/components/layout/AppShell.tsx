@@ -10,7 +10,7 @@ import {
   LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2,
   ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users,
   Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen,
-  Globe, ShieldCheck, LifeBuoy, Inbox,
+  Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle,
 } from "lucide-react";
 
 interface NavItem {
@@ -53,6 +53,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/roles", label: "Roles", icon: <Shield size={18} />, feature: "roles", adminOnly: true },
   { href: "/dashboard/team", label: "Team", icon: <Users size={18} />, feature: "team", adminOnly: true },
   { href: "/dashboard/activity", label: "Activity", icon: <Activity size={18} />, feature: "activity", adminOnly: true },
+  { href: "/dashboard/help", label: "Help & Manual", icon: <HelpCircle size={18} /> },
   { href: "/dashboard/platform", label: "Platform Admin", icon: <Shield size={18} />, superAdminOnly: true },
   { href: "/dashboard/platform/verify", label: "Verify Isolation", icon: <ShieldCheck size={18} />, superAdminOnly: true },
 ];
