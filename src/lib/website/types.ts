@@ -174,3 +174,59 @@ export interface SiteResolution {
   website_id?: string;
   maintenance_mode?: boolean;
 }
+
+// ============================================================
+// DRAFT / CUSTOM THEME TYPES (website_studio_upgrade_migration)
+// ============================================================
+
+/** A custom theme owned by a specific organization. */
+export interface CustomTheme {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string | null;
+  tokens: ThemeTokens;
+  based_on: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The draft state stored in website_drafts. */
+export interface WebsiteDraft {
+  id: string;
+  organization_id: string;
+  website_id: string;
+  theme_key: string | null;
+  custom_theme_id: string | null;
+  brand: ThemeTokens;
+  typography: { heading?: string; body?: string; accent?: string };
+  last_saved_at: string | null;
+  saved_by: string | null;
+  published_at: string | null;
+}
+
+/** Extended WebsiteTheme with the category field from the migration. */
+export interface CategorizedTheme extends WebsiteTheme {
+  category: string;
+}
+
+/** Result from publish_website_draft RPC. */
+export interface PublishResult {
+  ok: boolean;
+  error?: string;
+  code?: string;
+  published_at?: string;
+}
+
+/** Result from save_website_draft RPC. */
+export interface SaveDraftResult {
+  ok: boolean;
+  error?: string;
+  saved_at?: string;
+}
+
+/** Payload returned by get_draft_preview RPC (same shape as PagePayload + is_preview flag). */
+export interface DraftPreviewPayload extends PagePayload {
+  is_preview?: boolean;
+}
