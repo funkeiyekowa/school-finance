@@ -26,7 +26,6 @@ import { cn } from "@/lib/utils";
 import {
   SECTION_CATALOGUE, SECTION_META, type SectionFieldMeta,
 } from "@/components/website/sections";
-import { ALL_FONTS, FONT_LIBRARY, COLOR_ROLES, contrastRatio } from "@/lib/website/theme";
 import type { WebsiteTheme } from "@/lib/website/types";
 import {
   Globe, Palette, FileText, Newspaper, CalendarDays, Image as ImageIcon,
@@ -35,9 +34,8 @@ import {
   LayoutTemplate, Type, Monitor, Paintbrush, Shield,
 } from "lucide-react";
 import { DevicePreview } from "@/components/website/DevicePreview";
-import { ContrastChecker } from "@/components/website/ContrastChecker";
 import { BrandKit } from "@/components/website/BrandKit";
-import { CustomThemeManager } from "@/components/website/CustomThemeEditor";
+import { ThemeStudio } from "@/components/website/ThemeStudio";
 import type { CustomTheme } from "@/lib/website/types";
 
 /* ------------------------------ types ------------------------------ */
@@ -46,6 +44,7 @@ interface SiteRow {
   id: string;
   organization_id: string;
   theme_key: string;
+  custom_theme_id: string | null;
   site_name: string;
   tagline: string | null;
   logo_url: string | null;
@@ -420,15 +419,14 @@ export default function WebsiteStudioPage() {
       )}
 
       {tab === "theme" && (
-        <ThemeTab
+        <ThemeStudio
+          supabase={supabase}
           site={site}
           themes={themes}
           customThemes={customThemes}
-          supabase={supabase}
-          onPatch={patchSite}
-          saving={saving}
-          media={media}
-          reload={load}
+          previewPath={previewPath}
+          isAdmin={!!isOrgAdmin}
+          onSiteUpdate={load}
           flash={flash}
           setError={setError}
         />
@@ -778,287 +776,6 @@ function Metric({ label, value }: { label: string; value: number }) {
     <div className="rounded-lg border border-gray-200 p-3">
       <dt className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</dt>
       <dd className="text-xl font-bold text-[#0F2A47] mt-0.5">{value}</dd>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Theme & Brand                                                       */
-/* ------------------------------------------------------------------ */
-
-function ThemeTab({
-  site, themes, customThemes, supabase, onPatch, saving, media, reload, flash, setError,
-}: {
-  site: SiteRow;
-  themes: WebsiteTheme[];
-  customThemes: CustomTheme[];
-  supabase: Sb;
-  onPatch: (p: Partial<SiteRow>) => Promise<void>;
-  saving: boolean;
-  media: MediaRow[];
-  reload: () => Promise<void>;
-  flash: (msg: string) => void;
-  setError: (msg: string) => void;
-}) {
-  const activeTheme = themes.find(t => t.key === site.theme_key);
-  const themeColors = activeTheme?.tokens?.colors ?? {};
-
-  const brand = (site.brand ?? {}) as { colors?: Record<string, string> };
-  const [colors, setColors] = useState<Record<string, string>>(brand.colors ?? {});
-  const [typo, setTypo] = useState<Record<string, string>>(site.typography ?? {});
-  const [contact, setContact] = useState<Record<string, string>>(site.contact ?? {});
-  const [social, setSocial] = useState<Record<string, string>>(site.social ?? {});
-  const [logo, setLogo] = useState(site.logo_url ?? "");
-
-  /* Warn when an override makes body text hard to read. This is a colour
-     contrast check only — it is not a full accessibility audit. */
-  const effective = (key: string) => colors[key] || themeColors[key] || "";
-  const bodyContrast = (() => {
-    const fg = effective("text"), bg = effective("background");
-    if (!fg || !bg) return null;
-    return contrastRatio(fg, bg);
-  })();
-
-  return (
-    <div className="space-y-5">
-      <Card>
-        <CardHeader><CardTitle>Theme</CardTitle></CardHeader>
-        <CardContent>
-          <p className="text-sm text-gray-600 mb-4">
-            Switching theme changes colours, type and spacing. Your pages, sections and
-            content stay exactly as they are.
-          </p>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {themes.map(t => (
-              <ThemeCard
-                key={t.key}
-                theme={t}
-                active={t.key === site.theme_key}
-                onSelect={() => onPatch({ theme_key: t.key })}
-                disabled={saving}
-                actionLabel="Use this theme"
-              />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Type size={15} /> Typography</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {(["heading", "body", "accent"] as const).map(slot => (
-              <div key={slot}>
-                <label htmlFor={`font-${slot}`} className="block text-sm font-medium text-gray-700 mb-1 capitalize">
-                  {slot} font
-                </label>
-                <select
-                  id={`font-${slot}`}
-                  value={typo[slot] ?? ""}
-                  onChange={e => setTypo(t => ({ ...t, [slot]: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-                  style={{ fontFamily: typo[slot] || activeTheme?.tokens?.fonts?.[slot] }}
-                >
-                  <option value="">
-                    Theme default ({activeTheme?.tokens?.fonts?.[slot] ?? "—"})
-                  </option>
-                  <optgroup label="Sans serif">
-                    {FONT_LIBRARY.sans.map(f => <option key={f} value={f}>{f}</option>)}
-                  </optgroup>
-                  <optgroup label="Serif">
-                    {FONT_LIBRARY.serif.map(f => <option key={f} value={f}>{f}</option>)}
-                  </optgroup>
-                </select>
-              </div>
-            ))}
-            <p className="text-xs text-gray-500">
-              Fonts come from a curated list so every site stays fast and legible.
-            </p>
-            <div
-              className="p-4 rounded-lg border border-gray-200"
-              aria-label="Typography preview"
-            >
-              <p
-                className="text-xl font-bold"
-                style={{ fontFamily: typo.heading || activeTheme?.tokens?.fonts?.heading }}
-              >
-                {site.site_name}
-              </p>
-              <p
-                className="text-sm mt-1.5 text-gray-600"
-                style={{ fontFamily: typo.body || activeTheme?.tokens?.fonts?.body }}
-              >
-                The quick brown fox jumps over the lazy dog. 0123456789
-              </p>
-            </div>
-            <Button
-              size="sm" variant="gold" loading={saving}
-              onClick={() => onPatch({ typography: typo })}
-            >
-              <Save size={14} /> Save typography
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Palette size={15} /> Colours</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-xs text-gray-500">
-              Leave a field blank to inherit the theme&apos;s value.
-            </p>
-            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-              {COLOR_ROLES.map(role => (
-                <div key={role.key} className="flex items-center gap-2">
-                  <label
-                    htmlFor={`color-${role.key}`}
-                    className="flex-1 min-w-0 text-sm text-gray-700"
-                  >
-                    {role.label}
-                    <span className="block text-[10px] text-gray-400 truncate">{role.hint}</span>
-                  </label>
-                  <input
-                    id={`color-${role.key}`}
-                    type="color"
-                    value={effective(role.key) || "#000000"}
-                    onChange={e => setColors(c => ({ ...c, [role.key]: e.target.value }))}
-                    className="w-9 h-9 rounded border border-gray-300 shrink-0 cursor-pointer"
-                    aria-label={`${role.label} colour`}
-                  />
-                  <input
-                    type="text"
-                    value={colors[role.key] ?? ""}
-                    onChange={e => setColors(c => ({ ...c, [role.key]: e.target.value }))}
-                    placeholder={themeColors[role.key] ?? ""}
-                    aria-label={`${role.label} hex value`}
-                    className="w-24 shrink-0 px-2 py-1.5 border border-gray-300 rounded text-xs font-mono"
-                  />
-                </div>
-              ))}
-            </div>
-
-            {bodyContrast !== null && bodyContrast < 4.5 && (
-              <Banner tone="error">
-                Body text contrast is {bodyContrast.toFixed(1)}:1, below the 4.5:1 minimum
-                for normal text. Pick a darker text colour or a lighter background.
-              </Banner>
-            )}
-
-            <div className="flex gap-2">
-              <Button
-                size="sm" variant="gold" loading={saving}
-                onClick={() => onPatch({ brand: { ...(site.brand ?? {}), colors } })}
-              >
-                <Save size={14} /> Save colours
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => setColors({})}>
-                Reset to theme
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader><CardTitle>Logo</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center gap-4">
-              <div className="w-20 h-20 rounded-lg border border-gray-200 grid place-items-center bg-gray-50 overflow-hidden shrink-0">
-                {logo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={logo} alt="Logo preview" className="w-full h-full object-contain" />
-                ) : (
-                  <ImageIcon size={20} className="text-gray-300" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0 space-y-2">
-                <JsonField label="Logo URL" value={logo} onChange={setLogo}
-                  placeholder="https://…/logo.png" />
-                {media.length > 0 && (
-                  <select
-                    aria-label="Choose from media library"
-                    onChange={e => e.target.value && setLogo(e.target.value)}
-                    className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 bg-white"
-                    defaultValue=""
-                  >
-                    <option value="">Choose from media library…</option>
-                    {media.map(m => (
-                      <option key={m.id} value={m.url}>{m.file_name}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            </div>
-            <Button size="sm" variant="gold" loading={saving} onClick={() => onPatch({ logo_url: logo })}>
-              <Save size={14} /> Save logo
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle>Contact details</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <JsonField label="Address" value={contact.address ?? ""}
-              onChange={v => setContact(c => ({ ...c, address: v }))} textarea />
-            <JsonField label="Phone" value={contact.phone ?? ""}
-              onChange={v => setContact(c => ({ ...c, phone: v }))} />
-            <JsonField label="Email" value={contact.email ?? ""} type="email"
-              onChange={v => setContact(c => ({ ...c, email: v }))} />
-            <JsonField label="Office hours" value={contact.hours ?? ""}
-              onChange={v => setContact(c => ({ ...c, hours: v }))}
-              placeholder="Monday to Friday, 8am – 4pm" />
-            <Button size="sm" variant="gold" loading={saving} onClick={() => onPatch({ contact })}>
-              <Save size={14} /> Save contact
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader><CardTitle>Social profiles</CardTitle></CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {(["facebook", "instagram", "x", "youtube", "linkedin", "tiktok"] as const).map(k => (
-              <JsonField
-                key={k}
-                label={k === "x" ? "X (Twitter)" : k.charAt(0).toUpperCase() + k.slice(1)}
-                value={social[k] ?? ""}
-                onChange={v => setSocial(s => ({ ...s, [k]: v }))}
-                placeholder="https://…"
-              />
-            ))}
-          </div>
-          <Button size="sm" variant="gold" className="mt-4" loading={saving}
-            onClick={() => onPatch({ social })}>
-            <Save size={14} /> Save social links
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Shield size={15} /> Accessibility — Contrast check
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ContrastChecker colors={{ ...themeColors, ...colors }} />
-        </CardContent>
-      </Card>
-
-      <CustomThemeManager
-        supabase={supabase}
-        themes={customThemes}
-        platformThemes={themes}
-        onThemeSelect={(id) => onPatch({ custom_theme_id: id } as Partial<SiteRow>)}
-        onReload={reload}
-        flash={flash}
-        setError={setError}
-      />
     </div>
   );
 }
