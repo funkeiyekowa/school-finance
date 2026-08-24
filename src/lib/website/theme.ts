@@ -283,6 +283,23 @@ ${S} .mobile-nav .btn{margin-top:14px;width:100%;}
   ${S} .mobile-nav{display:none !important;}
 }
 
+/* --- Header style: LIGHT --- */
+${S}[data-header-style="light"] .site-header{background:var(--c-background);color:var(--c-text);border-bottom-color:var(--c-border);}
+${S}[data-header-style="light"] .main-nav a{color:var(--c-text);}
+${S}[data-header-style="light"] .main-nav a:hover{border-color:var(--c-primary);}
+${S}[data-header-style="light"] .nav-toggle{border-color:var(--c-border);color:var(--c-text);}
+${S}[data-header-style="light"] .mobile-nav{background:var(--c-surface);border-top-color:var(--c-border);}
+${S}[data-header-style="light"] .mobile-nav a{color:var(--c-text);border-bottom-color:var(--c-border);}
+
+/* --- Header style: DARK (default — primary color bg, white text) --- */
+${S}[data-header-style="dark"] .site-header{background:var(--c-primary);color:#fff;border-bottom-color:rgba(255,255,255,.12);}
+${S}[data-header-style="dark"] .nav-toggle{border-color:rgba(255,255,255,.3);color:#fff;}
+
+/* --- Header style: MINIMAL — transparent until scrolled --- */
+${S}[data-header-style="minimal"] .site-header{background:transparent;color:#fff;border-bottom-color:transparent;}
+${S}[data-header-style="minimal"] .site-header.is-scrolled{background:var(--c-primary);border-bottom-color:rgba(255,255,255,.12);}
+${S}[data-header-style="minimal"] .nav-toggle{border-color:rgba(255,255,255,.3);color:#fff;}
+
 /* ============ HERO ============ */
 ${S} .hero{
   position:relative;
@@ -338,6 +355,38 @@ ${S} .hero--centered .hero-stats{justify-content:center;}
 @media (min-width:960px){
   ${S} .hero-inner{grid-template-columns:1.15fr .85fr;}
 }
+
+/* --- Hero style: IMAGE-RIGHT (default at 960px+, no override needed) --- */
+
+/* --- Hero style: CENTERED --- overrides grid to single column centered */
+${S}[data-hero-style="centered"] .hero{text-align:center;}
+${S}[data-hero-style="centered"] .hero-inner{display:block;max-width:800px;}
+${S}[data-hero-style="centered"] .hero h1{margin:0 auto 22px;max-width:16ch;}
+${S}[data-hero-style="centered"] .hero-sub{margin:0 auto 40px;}
+${S}[data-hero-style="centered"] .hero-ctas{justify-content:center;}
+${S}[data-hero-style="centered"] .hero-stats{justify-content:center;}
+${S}[data-hero-style="centered"] .hero-panel{display:none;}
+
+/* --- Hero style: FULL-BLEED — image covers entire background --- */
+${S}[data-hero-style="full-bleed"] .hero{background:var(--c-primary);padding:0;}
+${S}[data-hero-style="full-bleed"] .hero::before{display:none;}
+${S}[data-hero-style="full-bleed"] .hero-inner{max-width:none;padding:0;grid-template-columns:1fr !important;position:relative;min-height:70vh;display:flex;align-items:center;justify-content:center;}
+${S}[data-hero-style="full-bleed"] .hero-panel{position:absolute;inset:0;border-radius:0;border:none;aspect-ratio:auto;}
+${S}[data-hero-style="full-bleed"] .hero-panel img{width:100%;height:100%;object-fit:cover;opacity:.35;}
+${S}[data-hero-style="full-bleed"] .hero-content{position:relative;z-index:2;text-align:center;padding:clamp(48px,8vw,100px) 24px;}
+${S}[data-hero-style="full-bleed"] .hero h1{max-width:16ch;margin:0 auto .5em;text-align:center;}
+${S}[data-hero-style="full-bleed"] .hero-sub{margin:0 auto 1.75em;text-align:center;}
+${S}[data-hero-style="full-bleed"] .hero-ctas{justify-content:center;}
+
+/* --- Hero style: GRADIENT — no image, bold gradient + pattern --- */
+${S}[data-hero-style="gradient"] .hero{
+  background:linear-gradient(135deg, var(--c-primary) 0%, var(--c-primary-dark,var(--c-primary)) 50%, var(--c-secondary,var(--c-primary)) 100%);
+}
+${S}[data-hero-style="gradient"] .hero-panel{display:none;}
+${S}[data-hero-style="gradient"] .hero-inner{grid-template-columns:1fr !important;text-align:center;max-width:800px;}
+${S}[data-hero-style="gradient"] .hero h1{max-width:16ch;margin:0 auto .5em;}
+${S}[data-hero-style="gradient"] .hero-sub{margin:0 auto 1.75em;}
+${S}[data-hero-style="gradient"] .hero-ctas{justify-content:center;}
 
 /* ============ SECTIONS ============ */
 ${S} .section{padding:var(--sp-section-y) 0;}
