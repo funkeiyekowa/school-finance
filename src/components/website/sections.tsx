@@ -282,121 +282,6 @@ const list = (o: JsonObject, k: string): JsonObject[] => {
   return Array.isArray(v) ? (v as JsonObject[]) : [];
 };
 
-/** Section wrapper: alternating band colour and consistent rhythm. */
-function Band({
-  children, style, tone = "background", id,
-}: {
-  children: React.ReactNode;
-  style?: JsonObject;
-  tone?: "background" | "surface" | "surfaceAlt" | "primary";
-  id?: string;
-}) {
-  const override = str(style ?? {}, "background");
-  const bg = override
-    ? override
-    : tone === "surface" ? "var(--c-surface)"
-    : tone === "surfaceAlt" ? "var(--c-surface-alt)"
-    : tone === "primary" ? "var(--c-primary)"
-    : "var(--c-background)";
-  const fg = tone === "primary" ? "#fff" : "var(--c-text)";
-
-  return (
-    <section
-      id={id}
-      style={{
-        background: bg,
-        color: fg,
-        paddingTop: "var(--sp-section)",
-        paddingBottom: "var(--sp-section)",
-      }}
-    >
-      <div className="mx-auto w-full max-w-6xl px-5">{children}</div>
-    </section>
-  );
-}
-
-function H2({ children }: { children: React.ReactNode }) {
-  if (!children) return null;
-  return (
-    <h2
-      className="mb-8 text-balance"
-      style={{
-        fontFamily: "var(--font-heading)",
-        fontSize: "var(--fs-h2)",
-        fontWeight: 700,
-        lineHeight: 1.15,
-      }}
-    >
-      {children}
-    </h2>
-  );
-}
-
-function Btn({
-  href, label, variant = "primary",
-}: { href: string; label: string; variant?: "primary" | "outline" }) {
-  if (!label) return null;
-  const base: React.CSSProperties = {
-    borderRadius: "var(--btn-radius)",
-    fontWeight: "var(--btn-weight)" as unknown as number,
-    textTransform: "var(--btn-transform)" as React.CSSProperties["textTransform"],
-  };
-  const styles: React.CSSProperties = variant === "primary"
-    ? { ...base, background: "var(--c-accent)", color: "#111827" }
-    : { ...base, background: "transparent", color: "inherit", border: "2px solid currentColor" };
-
-  return (
-    <a
-      href={href || "#"}
-      className="inline-flex items-center justify-center px-6 py-3 text-sm transition-opacity hover:opacity-85"
-      style={styles}
-    >
-      {label}
-    </a>
-  );
-}
-
-/** Image that degrades to a themed placeholder when none is set. */
-function Img({
-  url, alt, className, ratio = "aspect-[4/3]",
-}: { url: string; alt: string; className?: string; ratio?: string }) {
-  if (!url) {
-    return (
-      <div
-        className={`${ratio} w-full ${className ?? ""}`}
-        style={{ background: "var(--c-surface-alt)", borderRadius: "var(--r-md)" }}
-        aria-hidden="true"
-      />
-    );
-  }
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={url}
-      alt={alt}
-      loading="lazy"
-      className={`${ratio} w-full object-cover ${className ?? ""}`}
-      style={{ borderRadius: "var(--r-md)" }}
-    />
-  );
-}
-
-function Card({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className="p-6 h-full"
-      style={{
-        background: "var(--c-background)",
-        border: "1px solid var(--c-border)",
-        borderRadius: "var(--r-md)",
-        boxShadow: "var(--sh-card)",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
 function fmtDate(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -434,471 +319,706 @@ export function RenderSection({
       : `${ctx.basePath}${href.startsWith("/") ? href : `/${href}`}`;
 
   switch (section.section_type) {
-    /* ---------------- Header ---------------- */
+    /* ============================================================ */
+    /* HERO                                                          */
+    /* ============================================================ */
     case "hero": {
       const img = str(c, "image_url");
+      const heroVariant = str(s, "variant", "image-right");
+      const isCentered = heroVariant === "centered" || !img;
+
       return (
-        <section
-          style={{
-            background: img ? "var(--c-background)" : "var(--c-primary)",
-            color: img ? "var(--c-text)" : "#fff",
-            paddingTop: "var(--sp-section)",
-            paddingBottom: "var(--sp-section)",
-          }}
-        >
-          <div className="mx-auto w-full max-w-6xl px-5 grid gap-10 lg:grid-cols-2 lg:items-center">
+        <section className={`hero${isCentered ? " hero--centered" : ""}`}>
+          <div className="hero-inner">
             <div>
-              <h1
-                className="text-balance"
-                style={{
-                  fontFamily: "var(--font-heading)",
-                  fontSize: "var(--fs-h1)",
-                  fontWeight: 700,
-                  lineHeight: 1.08,
-                }}
-              >
-                {str(c, "heading")}
-              </h1>
-              {str(c, "subheading") && (
-                <p className="mt-4 text-lg" style={{ opacity: 0.85, maxWidth: "38ch" }}>
-                  {str(c, "subheading")}
-                </p>
+              {str(c, "eyebrow") && (
+                <span className="eyebrow on-dark">{str(c, "eyebrow")}</span>
               )}
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Btn href={link(str(c, "primary_cta_href", "/admissions"))} label={str(c, "primary_cta_label")} />
-                <Btn href={link(str(c, "secondary_cta_href", "/contact"))} label={str(c, "secondary_cta_label")} variant="outline" />
+              <h1
+                dangerouslySetInnerHTML={{
+                  __html: str(c, "heading").replace(
+                    /\*(.*?)\*/g,
+                    "<em>$1</em>"
+                  ),
+                }}
+              />
+              {str(c, "subheading") && (
+                <p className="hero-sub">{str(c, "subheading")}</p>
+              )}
+              <div className="hero-ctas">
+                {str(c, "primary_cta_label") && (
+                  <a
+                    href={link(str(c, "primary_cta_href", "/admissions"))}
+                    className="btn btn-primary"
+                  >
+                    {str(c, "primary_cta_label")}
+                  </a>
+                )}
+                {str(c, "secondary_cta_label") && (
+                  <a
+                    href={link(str(c, "secondary_cta_href", "/contact"))}
+                    className="btn btn-outline-light"
+                  >
+                    {str(c, "secondary_cta_label")}
+                  </a>
+                )}
               </div>
+              {list(c, "stats").length > 0 && (
+                <div className="hero-stats">
+                  {list(c, "stats").map((stat, i) => (
+                    <div key={i} className="hero-stat">
+                      <b>{str(stat, "value")}</b>
+                      <span>{str(stat, "label")}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            {img && (
-              <Img url={img} alt={str(c, "image_alt")} ratio="aspect-[4/3]" />
+
+            {img && !isCentered && (
+              <div className="hero-panel">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={img}
+                  alt={str(c, "image_alt", "")}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    position: "relative",
+                    zIndex: 1,
+                  }}
+                />
+              </div>
             )}
           </div>
         </section>
       );
     }
 
+    /* ============================================================ */
+    /* PAGE HEADER                                                   */
+    /* ============================================================ */
     case "page_header":
       return (
-        <section
-          style={{
-            background: "var(--c-primary)",
-            color: "#fff",
-            paddingTop: "3.5rem",
-            paddingBottom: "3.5rem",
-          }}
-        >
-          <div className="mx-auto w-full max-w-6xl px-5">
-            <h1 style={{ fontFamily: "var(--font-heading)", fontSize: "var(--fs-h2)", fontWeight: 700 }}>
-              {str(c, "heading")}
-            </h1>
+        <section className="hero" style={{ padding: "clamp(48px,6vw,80px) 0" }}>
+          <div className="hero-inner" style={{ display: "block" }}>
+            {str(c, "eyebrow") && (
+              <span className="eyebrow on-dark">{str(c, "eyebrow")}</span>
+            )}
+            <h1>{str(c, "heading")}</h1>
             {str(c, "subheading") && (
-              <p className="mt-2 text-base" style={{ opacity: 0.85 }}>{str(c, "subheading")}</p>
+              <p className="hero-sub">{str(c, "subheading")}</p>
             )}
           </div>
         </section>
       );
 
-    /* ---------------- Story ---------------- */
+    /* ============================================================ */
+    /* ABOUT / SPLIT LAYOUT                                         */
+    /* ============================================================ */
     case "about":
       return (
-        <Band style={s} tone={alt ? "surface" : "background"}>
-          <div className="grid gap-10 lg:grid-cols-2 lg:items-center">
-            <div>
-              <H2>{str(c, "heading")}</H2>
-              <Prose text={str(c, "body")} />
+        <section className={`section${alt ? " alt" : ""} reveal`}>
+          <div className="wrap">
+            <div className={`split${alt ? " split--reverse" : ""}`}>
+              <div>
+                <div className="section-head">
+                  <h2>{str(c, "heading")}</h2>
+                </div>
+                <div className="prose">
+                  <Prose text={str(c, "body")} />
+                </div>
+              </div>
+              <SectionImage url={str(c, "image_url")} alt={str(c, "image_alt")} />
             </div>
-            <Img url={str(c, "image_url")} alt={str(c, "image_alt")} />
           </div>
-        </Band>
+        </section>
       );
 
+    /* ============================================================ */
+    /* PRINCIPAL'S MESSAGE                                           */
+    /* ============================================================ */
     case "principal_message":
       return (
-        <Band style={s} tone="surface">
-          <div className="grid gap-10 lg:grid-cols-[280px_1fr] lg:items-start">
-            <Img url={str(c, "image_url")} alt={str(c, "image_alt")} ratio="aspect-[3/4]" />
-            <div>
-              <H2>{str(c, "heading")}</H2>
-              <Prose text={str(c, "body")} />
-              {str(c, "author_name") && (
-                <p className="mt-6 font-semibold" style={{ fontFamily: "var(--font-accent)" }}>
-                  {str(c, "author_name")}
-                  <span className="block text-sm font-normal" style={{ color: "var(--c-text-muted)" }}>
-                    {str(c, "author_title")}
-                  </span>
-                </p>
-              )}
+        <section className="section alt reveal">
+          <div className="wrap">
+            <div className="split">
+              <SectionImage
+                url={str(c, "image_url")}
+                alt={str(c, "image_alt")}
+                style={{ aspectRatio: "3/4" }}
+              />
+              <div>
+                <div className="section-head">
+                  <h2>{str(c, "heading")}</h2>
+                </div>
+                <div className="prose">
+                  <Prose text={str(c, "body")} />
+                </div>
+                {str(c, "author_name") && (
+                  <p style={{ marginTop: "1.5rem" }}>
+                    <strong style={{ display: "block" }}>{str(c, "author_name")}</strong>
+                    <span style={{ fontSize: ".88rem", color: "var(--c-text-muted)" }}>
+                      {str(c, "author_title")}
+                    </span>
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-        </Band>
+        </section>
       );
 
+    /* ============================================================ */
+    /* RICH TEXT                                                     */
+    /* ============================================================ */
     case "rich_text":
       return (
-        <Band style={s} tone={alt ? "surface" : "background"}>
-          <div className="max-w-3xl">
-            <H2>{str(c, "heading")}</H2>
-            <Prose text={str(c, "body")} />
+        <section className={`section${alt ? " alt" : ""} reveal`}>
+          <div className="wrap">
+            <div style={{ maxWidth: 720 }}>
+              {str(c, "heading") && (
+                <div className="section-head">
+                  <h2>{str(c, "heading")}</h2>
+                </div>
+              )}
+              <div className="prose">
+                <Prose text={str(c, "body")} />
+              </div>
+            </div>
           </div>
-        </Band>
+        </section>
       );
 
-    /* ---------------- Offering ---------------- */
+    /* ============================================================ */
+    /* WHY CHOOSE US / VALUES — card grid                           */
+    /* ============================================================ */
     case "why_choose_us":
     case "values": {
       const items = list(c, "items");
       return (
-        <Band style={s} tone={alt ? "surface" : "background"}>
-          <H2>{str(c, "heading")}</H2>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {items.map((it, i) => (
-              <Card key={i}>
-                <h3 className="font-bold mb-2" style={{ fontFamily: "var(--font-heading)", fontSize: "var(--fs-h3)" }}>
-                  {str(it, "title")}
-                </h3>
-                <p className="text-sm leading-relaxed" style={{ color: "var(--c-text-muted)" }}>
-                  {str(it, "body")}
-                </p>
-              </Card>
-            ))}
+        <section className={`section${alt ? " alt" : ""} reveal`}>
+          <div className="wrap">
+            <div className="section-head center">
+              <h2>{str(c, "heading")}</h2>
+              {str(c, "subheading") && <p>{str(c, "subheading")}</p>}
+            </div>
+            <div className="grid-3 reveal-stagger">
+              {items.map((it, i) => (
+                <div key={i} className="card" style={{ "--i": i } as React.CSSProperties}>
+                  <h3>{str(it, "title")}</h3>
+                  <p>{str(it, "body")}</p>
+                </div>
+              ))}
+            </div>
           </div>
-        </Band>
+        </section>
       );
     }
 
+    /* ============================================================ */
+    /* PROGRAMS / FACILITIES / ACHIEVEMENTS — image cards            */
+    /* ============================================================ */
     case "programs":
     case "facilities":
     case "achievements": {
       const items = list(c, "items");
       return (
-        <Band style={s} tone={alt ? "surface" : "background"}>
-          <H2>{str(c, "heading")}</H2>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {items.map((it, i) => (
-              <Card key={i}>
-                <Img url={str(it, "image_url")} alt={str(it, "title")} className="mb-4" />
-                <h3 className="font-bold mb-1.5" style={{ fontFamily: "var(--font-heading)", fontSize: "1.125rem" }}>
-                  {str(it, "title")}
-                </h3>
-                <p className="text-sm leading-relaxed" style={{ color: "var(--c-text-muted)" }}>
-                  {str(it, "body")}
-                </p>
-              </Card>
-            ))}
+        <section className={`section${alt ? " alt" : ""} reveal`}>
+          <div className="wrap">
+            <div className="section-head center">
+              <h2>{str(c, "heading")}</h2>
+              {str(c, "subheading") && <p>{str(c, "subheading")}</p>}
+            </div>
+            <div className="grid-3 reveal-stagger">
+              {items.map((it, i) => (
+                <div
+                  key={i}
+                  className="card"
+                  style={{ "--i": i, padding: 0, overflow: "hidden" } as React.CSSProperties}
+                >
+                  {str(it, "image_url") && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={str(it, "image_url")}
+                      alt={str(it, "title")}
+                      loading="lazy"
+                      style={{ width: "100%", aspectRatio: "16/10", objectFit: "cover" }}
+                    />
+                  )}
+                  <div style={{ padding: "24px 28px" }}>
+                    <h3>{str(it, "title")}</h3>
+                    <p>{str(it, "body")}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </Band>
+        </section>
       );
     }
 
-    /* ---------------- Proof ---------------- */
+    /* ============================================================ */
+    /* STATS BAND                                                    */
+    /* ============================================================ */
     case "stats": {
       const items = list(c, "items");
       return (
-        <Band style={s} tone="primary">
-          {str(c, "heading") && (
-            <h2 className="mb-8 text-center" style={{ fontFamily: "var(--font-heading)", fontSize: "var(--fs-h2)", fontWeight: 700 }}>
-              {str(c, "heading")}
-            </h2>
-          )}
-          <dl className="grid gap-8 grid-cols-2 lg:grid-cols-4 text-center">
-            {items.map((it, i) => (
-              <div key={i}>
-                <dt className="sr-only">{str(it, "label")}</dt>
-                <dd>
-                  <span className="block font-bold" style={{ fontFamily: "var(--font-heading)", fontSize: "2.5rem", lineHeight: 1 }}>
-                    {str(it, "value")}
-                  </span>
-                  <span className="block mt-1.5 text-sm uppercase tracking-wide" style={{ opacity: 0.8 }}>
-                    {str(it, "label")}
-                  </span>
-                </dd>
+        <section className="stats-band reveal">
+          <div className="wrap">
+            {str(c, "heading") && (
+              <div className="section-head center" style={{ marginBottom: 36 }}>
+                <h2 style={{ color: "#fff" }}>{str(c, "heading")}</h2>
               </div>
-            ))}
-          </dl>
-        </Band>
+            )}
+            <div className="stats-grid">
+              {items.map((it, i) => (
+                <div key={i}>
+                  <span className="stat-value">{str(it, "value")}</span>
+                  <span className="stat-label">{str(it, "label")}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
       );
     }
 
+    /* ============================================================ */
+    /* TESTIMONIALS                                                  */
+    /* ============================================================ */
     case "testimonials": {
       const items = list(c, "items");
       return (
-        <Band style={s} tone="surface">
-          <H2>{str(c, "heading")}</H2>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {items.map((it, i) => (
-              <figure key={i}>
-                <Card>
-                  <blockquote className="text-base leading-relaxed" style={{ fontFamily: "var(--font-accent)" }}>
-                    &ldquo;{str(it, "quote")}&rdquo;
-                  </blockquote>
-                  <figcaption className="mt-4 text-sm font-semibold">
-                    {str(it, "author")}
+        <section className="section alt reveal">
+          <div className="wrap">
+            <div className="section-head center">
+              <h2>{str(c, "heading")}</h2>
+            </div>
+            <div className="testimonial-grid reveal-stagger">
+              {items.map((it, i) => (
+                <figure
+                  key={i}
+                  className="testimonial-card"
+                  style={{ "--i": i } as React.CSSProperties}
+                >
+                  <blockquote>&ldquo;{str(it, "quote")}&rdquo;</blockquote>
+                  <figcaption>
+                    <cite>{str(it, "author")}</cite>
                     {str(it, "role") && (
-                      <span className="block font-normal" style={{ color: "var(--c-text-muted)" }}>
-                        {str(it, "role")}
-                      </span>
+                      <span className="cite-role">{str(it, "role")}</span>
                     )}
                   </figcaption>
-                </Card>
-              </figure>
-            ))}
+                </figure>
+              ))}
+            </div>
           </div>
-        </Band>
+        </section>
       );
     }
 
+    /* ============================================================ */
+    /* STAFF                                                         */
+    /* ============================================================ */
     case "staff": {
       const items = list(c, "items");
       return (
-        <Band style={s} tone={alt ? "surface" : "background"}>
-          <H2>{str(c, "heading")}</H2>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {items.map((it, i) => (
-              <div key={i} className="text-center">
-                <Img url={str(it, "image_url")} alt={str(it, "name")} ratio="aspect-square" className="mb-3" />
-                <p className="font-semibold">{str(it, "name")}</p>
-                <p className="text-sm" style={{ color: "var(--c-text-muted)" }}>{str(it, "role")}</p>
-              </div>
-            ))}
+        <section className={`section${alt ? " alt" : ""} reveal`}>
+          <div className="wrap">
+            <div className="section-head center">
+              <h2>{str(c, "heading")}</h2>
+            </div>
+            <div className="staff-grid reveal-stagger">
+              {items.map((it, i) => (
+                <div
+                  key={i}
+                  className="staff-card"
+                  style={{ "--i": i } as React.CSSProperties}
+                >
+                  {str(it, "image_url") ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={str(it, "image_url")}
+                      alt={str(it, "name")}
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div
+                      aria-hidden="true"
+                      style={{
+                        width: "100%",
+                        aspectRatio: "1/1",
+                        borderRadius: "var(--r-md)",
+                        background: "var(--c-surface-alt)",
+                        marginBottom: 12,
+                      }}
+                    />
+                  )}
+                  <span className="staff-name">{str(it, "name")}</span>
+                  <span className="staff-role">{str(it, "role")}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </Band>
+        </section>
       );
     }
 
-    /* ---------------- Media ---------------- */
+    /* ============================================================ */
+    /* GALLERY                                                       */
+    /* ============================================================ */
     case "gallery": {
       const images = list(c, "images");
       return (
-        <Band style={s} tone={alt ? "surface" : "background"}>
-          <H2>{str(c, "heading")}</H2>
-          {images.length === 0 ? (
-            <p className="text-sm" style={{ color: "var(--c-text-muted)" }}>
-              No photographs have been added yet.
-            </p>
-          ) : (
-            <ul className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 list-none p-0">
-              {images.map((im, i) => (
-                <li key={i}>
-                  <Img url={str(im, "url")} alt={str(im, "alt")} ratio="aspect-square" />
-                </li>
-              ))}
-            </ul>
-          )}
-        </Band>
+        <section className={`section${alt ? " alt" : ""} reveal`}>
+          <div className="wrap">
+            <div className="section-head center">
+              <h2>{str(c, "heading")}</h2>
+            </div>
+            {images.length === 0 ? (
+              <p style={{ color: "var(--c-text-muted)", textAlign: "center" }}>
+                No photographs have been added yet.
+              </p>
+            ) : (
+              <div className="gallery-grid">
+                {images.map((im, i) =>
+                  str(im, "url") ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={i}
+                      src={str(im, "url")}
+                      alt={str(im, "alt")}
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div key={i} className="gallery-tile" aria-hidden="true">
+                      <span>No image</span>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        </section>
       );
     }
 
+    /* ============================================================ */
+    /* VIDEO                                                         */
+    /* ============================================================ */
     case "video": {
       const embed = str(c, "embed_url");
       return (
-        <Band style={s} tone="surface">
-          <H2>{str(c, "heading")}</H2>
-          {embed ? (
-            <div className="aspect-video w-full overflow-hidden" style={{ borderRadius: "var(--r-md)" }}>
-              <iframe
-                src={embed}
-                title={str(c, "heading") || "Video"}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                className="w-full h-full border-0"
-              />
-            </div>
-          ) : (
-            <p className="text-sm" style={{ color: "var(--c-text-muted)" }}>No video has been added yet.</p>
-          )}
-          {str(c, "caption") && (
-            <p className="mt-3 text-sm" style={{ color: "var(--c-text-muted)" }}>{str(c, "caption")}</p>
-          )}
-        </Band>
+        <section className="section alt reveal">
+          <div className="wrap">
+            {str(c, "heading") && (
+              <div className="section-head center">
+                <h2>{str(c, "heading")}</h2>
+              </div>
+            )}
+            {embed ? (
+              <div className="video-wrap">
+                <iframe
+                  src={embed}
+                  title={str(c, "heading") || "Video"}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            ) : (
+              <p style={{ color: "var(--c-text-muted)", textAlign: "center" }}>
+                No video has been added yet.
+              </p>
+            )}
+            {str(c, "caption") && (
+              <p style={{ textAlign: "center", color: "var(--c-text-muted)", marginTop: 12, fontSize: ".9rem" }}>
+                {str(c, "caption")}
+              </p>
+            )}
+          </div>
+        </section>
       );
     }
 
-    /* ---------------- Dynamic ---------------- */
+    /* ============================================================ */
+    /* LATEST NEWS                                                   */
+    /* ============================================================ */
     case "news": {
       const items = ctx.news.slice(0, num(c, "limit", 3));
       if (items.length === 0) return null;
       return (
-        <Band style={s} tone={alt ? "surface" : "background"}>
-          <div className="flex items-end justify-between gap-4 mb-8">
-            <h2 style={{ fontFamily: "var(--font-heading)", fontSize: "var(--fs-h2)", fontWeight: 700 }}>
-              {str(c, "heading", "Latest news")}
-            </h2>
-            <a href={`${ctx.basePath}/news`} className="text-sm font-semibold underline shrink-0">
-              All news
-            </a>
-          </div>
-          <div className="grid gap-6 md:grid-cols-3">
-            {items.map((n) => (
-              <article key={n.slug}>
-                <Card>
-                  <Img url={n.cover_image_url ?? ""} alt={n.title} className="mb-4" />
-                  <p className="text-xs uppercase tracking-wide mb-1.5" style={{ color: "var(--c-text-muted)" }}>
-                    {fmtDate(n.published_at)}
-                    {n.category ? ` · ${n.category}` : ""}
-                  </p>
-                  <h3 className="font-bold mb-2" style={{ fontFamily: "var(--font-heading)", fontSize: "1.125rem" }}>
-                    <a href={`${ctx.basePath}/news/${n.slug}`} className="hover:underline">{n.title}</a>
-                  </h3>
-                  {n.excerpt && (
-                    <p className="text-sm leading-relaxed" style={{ color: "var(--c-text-muted)" }}>{n.excerpt}</p>
+        <section className={`section${alt ? " alt" : ""} reveal`}>
+          <div className="wrap">
+            <div
+              className="section-head"
+              style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}
+            >
+              <h2>{str(c, "heading", "Latest news")}</h2>
+              <a href={`${ctx.basePath}/news`} className="btn btn-ghost btn-sm">
+                All news &rarr;
+              </a>
+            </div>
+            <div className="grid-3 reveal-stagger">
+              {items.map((n, i) => (
+                <article
+                  key={n.slug}
+                  className="news-card"
+                  style={{ "--i": i } as React.CSSProperties}
+                >
+                  {n.cover_image_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={n.cover_image_url} alt="" loading="lazy" />
                   )}
-                </Card>
-              </article>
-            ))}
+                  <div className="news-card-body">
+                    <p className="meta">
+                      {fmtDate(n.published_at)}
+                      {n.category ? ` · ${n.category}` : ""}
+                    </p>
+                    <h3>
+                      <a href={`${ctx.basePath}/news/${n.slug}`}>{n.title}</a>
+                    </h3>
+                    {n.excerpt && <p>{n.excerpt}</p>}
+                  </div>
+                </article>
+              ))}
+            </div>
           </div>
-        </Band>
+        </section>
       );
     }
 
+    /* ============================================================ */
+    /* UPCOMING EVENTS                                               */
+    /* ============================================================ */
     case "events": {
       const items = ctx.events.slice(0, num(c, "limit", 3));
       if (items.length === 0) return null;
       return (
-        <Band style={s} tone={alt ? "surface" : "background"}>
-          <div className="flex items-end justify-between gap-4 mb-8">
-            <h2 style={{ fontFamily: "var(--font-heading)", fontSize: "var(--fs-h2)", fontWeight: 700 }}>
-              {str(c, "heading", "Upcoming events")}
-            </h2>
-            <a href={`${ctx.basePath}/events`} className="text-sm font-semibold underline shrink-0">
-              All events
-            </a>
-          </div>
-          <ul className="grid gap-4 md:grid-cols-3 list-none p-0">
-            {items.map((ev) => (
-              <li key={ev.slug}>
-                <Card>
-                  <time
-                    dateTime={ev.starts_at}
-                    className="block text-xs font-bold uppercase tracking-wide mb-1.5"
-                    style={{ color: "var(--c-accent)" }}
-                  >
-                    {fmtDate(ev.starts_at)}
+        <section className={`section${alt ? " alt" : ""} reveal`}>
+          <div className="wrap">
+            <div
+              className="section-head"
+              style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}
+            >
+              <h2>{str(c, "heading", "Upcoming events")}</h2>
+              <a href={`${ctx.basePath}/events`} className="btn btn-ghost btn-sm">
+                All events &rarr;
+              </a>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {items.map((ev) => (
+                <div key={ev.slug} className="event-item">
+                  <time dateTime={ev.starts_at} className="event-date">
+                    <span className="day">{new Date(ev.starts_at).getDate()}</span>
+                    <span className="month">
+                      {new Date(ev.starts_at).toLocaleDateString(undefined, { month: "short" })}
+                    </span>
                   </time>
-                  <h3 className="font-bold mb-1.5" style={{ fontFamily: "var(--font-heading)", fontSize: "1.125rem" }}>
-                    {ev.title}
-                  </h3>
-                  {ev.location && (
-                    <p className="text-sm" style={{ color: "var(--c-text-muted)" }}>{ev.location}</p>
-                  )}
-                </Card>
-              </li>
-            ))}
-          </ul>
-        </Band>
+                  <div className="event-info">
+                    <h3>{ev.title}</h3>
+                    {ev.location && <p>{ev.location}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
       );
     }
 
+    /* ============================================================ */
+    /* FAQ                                                           */
+    /* ============================================================ */
     case "faq": {
       const items = list(c, "items");
       return (
-        <Band style={s} tone={alt ? "surface" : "background"}>
-          <H2>{str(c, "heading")}</H2>
-          <div className="max-w-3xl space-y-3">
-            {items.map((it, i) => (
-              <details
-                key={i}
-                className="p-4"
-                style={{
-                  background: "var(--c-background)",
-                  border: "1px solid var(--c-border)",
-                  borderRadius: "var(--r-md)",
-                }}
-              >
-                <summary className="font-semibold cursor-pointer">{str(it, "q")}</summary>
-                <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--c-text-muted)" }}>
-                  {str(it, "a")}
-                </p>
-              </details>
-            ))}
+        <section className={`section${alt ? " alt" : ""} reveal`}>
+          <div className="wrap">
+            <div className="section-head center">
+              <h2>{str(c, "heading")}</h2>
+            </div>
+            <div style={{ maxWidth: 720, margin: "0 auto" }}>
+              {items.map((it, i) => (
+                <details key={i} className="faq-item">
+                  <summary>{str(it, "q")}</summary>
+                  <div className="faq-body">{str(it, "a")}</div>
+                </details>
+              ))}
+            </div>
           </div>
-        </Band>
+        </section>
       );
     }
 
-    /* ---------------- Action ---------------- */
+    /* ============================================================ */
+    /* ADMISSIONS CTA / CTA BANNER                                  */
+    /* ============================================================ */
     case "admissions_cta":
     case "cta_banner":
       return (
-        <Band style={s} tone="primary">
-          <div className="text-center max-w-2xl mx-auto">
-            <h2 style={{ fontFamily: "var(--font-heading)", fontSize: "var(--fs-h2)", fontWeight: 700 }}>
-              {str(c, "heading")}
-            </h2>
-            {str(c, "body") && <p className="mt-3" style={{ opacity: 0.9 }}>{str(c, "body")}</p>}
-            <div className="mt-7 flex flex-wrap gap-3 justify-center">
-              <Btn href={link(str(c, "cta_href", "/admissions"))} label={str(c, "cta_label")} />
-              <Btn href={link(str(c, "secondary_href", "/contact"))} label={str(c, "secondary_label")} variant="outline" />
+        <section className="cta-band reveal">
+          <div className="wrap">
+            <h2>{str(c, "heading")}</h2>
+            {str(c, "body") && <p>{str(c, "body")}</p>}
+            <div className="cta-actions">
+              {str(c, "cta_label") && (
+                <a
+                  href={link(str(c, "cta_href", "/admissions"))}
+                  className="btn btn-primary"
+                >
+                  {str(c, "cta_label")}
+                </a>
+              )}
+              {str(c, "secondary_label") && (
+                <a
+                  href={link(str(c, "secondary_href", "/contact"))}
+                  className="btn btn-outline-light"
+                >
+                  {str(c, "secondary_label")}
+                </a>
+              )}
             </div>
           </div>
-        </Band>
+        </section>
       );
 
+    /* ============================================================ */
+    /* CONTACT                                                       */
+    /* ============================================================ */
     case "contact": {
       const formKey = str(c, "form_key", "contact");
       const form = ctx.forms.find(f => f.key === formKey) ?? ctx.forms[0];
       const contact = ctx.site.contact ?? {};
       return (
-        <Band style={s} tone={alt ? "surface" : "background"} id="contact">
-          <H2>{str(c, "heading", "Get in touch")}</H2>
-          <div className="grid gap-10 lg:grid-cols-2">
-            <div>
-              {str(c, "body") && <p className="mb-6 leading-relaxed">{str(c, "body")}</p>}
-              <dl className="space-y-3 text-sm">
-                {contact.address && <ContactLine label="Address" value={contact.address} />}
-                {contact.phone && <ContactLine label="Telephone" value={contact.phone} href={`tel:${contact.phone}`} />}
-                {contact.email && <ContactLine label="Email" value={contact.email} href={`mailto:${contact.email}`} />}
-                {contact.hours && <ContactLine label="Office hours" value={contact.hours} />}
-              </dl>
-              {bool(c, "show_map") && str(c, "map_embed_url") && (
-                <div className="mt-6 aspect-video overflow-hidden" style={{ borderRadius: "var(--r-md)" }}>
-                  <iframe
-                    src={str(c, "map_embed_url")}
-                    title="Map"
-                    className="w-full h-full border-0"
-                    loading="lazy"
-                  />
-                </div>
-              )}
-            </div>
-            <div>
-              {form ? (
-                <SiteForm form={form} websiteId={ctx.site.id} sourcePage={ctx.currentPath} />
-              ) : (
-                <p className="text-sm" style={{ color: "var(--c-text-muted)" }}>
-                  No enquiry form has been configured yet.
-                </p>
-              )}
+        <section className="section reveal" id="contact">
+          <div className="wrap">
+            <div className="contact-grid">
+              <div className="contact-info">
+                <h2>{str(c, "heading", "Get in touch")}</h2>
+                {str(c, "body") && <p>{str(c, "body")}</p>}
+                {contact.address && (
+                  <div className="info-row">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <div>
+                      <b>Address</b>
+                      <address>{contact.address}</address>
+                    </div>
+                  </div>
+                )}
+                {contact.phone && (
+                  <div className="info-row">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z" />
+                    </svg>
+                    <div>
+                      <b>Telephone</b>
+                      <a href={`tel:${contact.phone}`}>{contact.phone}</a>
+                    </div>
+                  </div>
+                )}
+                {contact.email && (
+                  <div className="info-row">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                      <polyline points="22,6 12,13 2,6" />
+                    </svg>
+                    <div>
+                      <b>Email</b>
+                      <a href={`mailto:${contact.email}`}>{contact.email}</a>
+                    </div>
+                  </div>
+                )}
+                {contact.hours && (
+                  <div className="info-row">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                    <div>
+                      <b>Office hours</b>
+                      <span>{contact.hours}</span>
+                    </div>
+                  </div>
+                )}
+                {bool(c, "show_map") && str(c, "map_embed_url") && (
+                  <div className="video-wrap" style={{ marginTop: 24 }}>
+                    <iframe
+                      src={str(c, "map_embed_url")}
+                      title="Map"
+                      loading="lazy"
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="contact-form-box">
+                {form ? (
+                  <SiteForm form={form} websiteId={ctx.site.id} sourcePage={ctx.currentPath} />
+                ) : (
+                  <p style={{ color: "var(--c-text-muted)" }}>
+                    No enquiry form has been configured yet.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-        </Band>
+        </section>
       );
     }
 
     default:
-      // Unknown block type: render nothing rather than break the page.
       return null;
   }
 }
 
-function ContactLine({ label, value, href }: { label: string; value: string; href?: string }) {
+/* ------------------------------------------------------------------ */
+/* Shared sub-components                                               */
+/* ------------------------------------------------------------------ */
+
+function SectionImage({
+  url,
+  alt,
+  style,
+}: {
+  url: string;
+  alt: string;
+  style?: React.CSSProperties;
+}) {
+  if (!url) {
+    return (
+      <div
+        aria-hidden="true"
+        style={{
+          width: "100%",
+          aspectRatio: "4/3",
+          background: "var(--c-surface-alt)",
+          borderRadius: "var(--r-md)",
+          ...style,
+        }}
+      />
+    );
+  }
   return (
-    <div className="flex gap-2">
-      <dt className="font-semibold shrink-0" style={{ minWidth: "6.5rem" }}>{label}</dt>
-      <dd>
-        {href ? <a href={href} className="underline">{value}</a> : value}
-      </dd>
-    </div>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={alt}
+      loading="lazy"
+      style={{ width: "100%", objectFit: "cover", borderRadius: "var(--r-md)", ...style }}
+    />
   );
 }
 
-/** Renders newline-separated copy as paragraphs. */
 function Prose({ text }: { text: string }) {
   if (!text) return null;
   return (
-    <div className="space-y-4">
+    <>
       {text.split(/\n{2,}|\n/).filter(Boolean).map((p, i) => (
-        <p key={i} className="leading-relaxed" style={{ color: "var(--c-text-muted)" }}>{p}</p>
+        <p key={i}>{p}</p>
       ))}
-    </div>
+    </>
   );
 }
