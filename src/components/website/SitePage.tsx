@@ -153,6 +153,8 @@ export function SiteShell({
     forms: payload.forms ?? [],
     basePath,
     currentPath,
+    heroStyle: theme.heroStyle,
+    headerStyle: theme.headerStyle,
   };
 
   const navPages = (payload.pages ?? []).filter(p => p.slug !== "");
@@ -183,7 +185,7 @@ export function SiteShell({
       {fontsHref && <link rel="stylesheet" href={fontsHref} />}
       <style dangerouslySetInnerHTML={{ __html: css }} />
 
-      <div className="site-root">
+      <div className="site-root" data-header-style={theme.headerStyle} data-hero-style={theme.heroStyle}>
         {/* Skip link */}
         <a className="skip-link" href="#site-main">
           Skip to main content

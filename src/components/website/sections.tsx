@@ -301,6 +301,8 @@ export interface SectionContext {
   /** Base path for internal links: "" on a real domain, "/s/<slug>" otherwise. */
   basePath: string;
   currentPath?: string;
+  heroStyle?: string;
+  headerStyle?: string;
 }
 
 export function RenderSection({
@@ -324,13 +326,14 @@ export function RenderSection({
     /* ============================================================ */
     case "hero": {
       const img = str(c, "image_url");
-      const heroVariant = str(s, "variant", "image-right");
-      const isCentered = heroVariant === "centered" || !img;
+      const heroVariant = str(s, "variant") || ctx.heroStyle || "image-right";
+      const hidePanel = heroVariant === "centered" || heroVariant === "gradient";
+      const isCentered = hidePanel || !img;
 
       return (
-        <section className={`hero${isCentered ? " hero--centered" : ""}`}>
+        <section className={`hero${isCentered && heroVariant !== "full-bleed" ? " hero--centered" : ""}`}>
           <div className="hero-inner">
-            <div>
+            <div className="hero-content">
               {str(c, "eyebrow") && (
                 <span className="eyebrow on-dark">{str(c, "eyebrow")}</span>
               )}
@@ -375,7 +378,7 @@ export function RenderSection({
               )}
             </div>
 
-            {img && !isCentered && (
+            {img && !hidePanel && (
               <div className="hero-panel">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
