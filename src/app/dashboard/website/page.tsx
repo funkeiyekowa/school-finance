@@ -32,8 +32,13 @@ import {
   Globe, Palette, FileText, Newspaper, CalendarDays, Image as ImageIcon,
   Search, Link2, History, Rocket, Plus, Trash2, ChevronUp, ChevronDown,
   Eye, EyeOff, ExternalLink, AlertTriangle, CheckCircle2, Copy, Save,
-  LayoutTemplate, Type,
+  LayoutTemplate, Type, Monitor, Paintbrush, Shield,
 } from "lucide-react";
+import { DevicePreview } from "@/components/website/DevicePreview";
+import { ContrastChecker } from "@/components/website/ContrastChecker";
+import { BrandKit } from "@/components/website/BrandKit";
+import { CustomThemeManager } from "@/components/website/CustomThemeEditor";
+import type { CustomTheme } from "@/lib/website/types";
 
 /* ------------------------------ types ------------------------------ */
 
@@ -131,11 +136,12 @@ interface MediaRow {
 
 type Tab =
   | "overview" | "theme" | "pages" | "news" | "events"
-  | "media" | "seo" | "domains" | "versions";
+  | "media" | "seo" | "domains" | "versions" | "brand";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "overview", label: "Overview", icon: <Rocket size={14} /> },
   { id: "theme",    label: "Theme & Brand", icon: <Palette size={14} /> },
+  { id: "brand",    label: "Brand Kit", icon: <Paintbrush size={14} /> },
   { id: "pages",    label: "Pages & Sections", icon: <FileText size={14} /> },
   { id: "news",     label: "News", icon: <Newspaper size={14} /> },
   { id: "events",   label: "Events", icon: <CalendarDays size={14} /> },
@@ -171,6 +177,8 @@ export default function WebsiteStudioPage() {
   const [media, setMedia] = useState<MediaRow[]>([]);
 
   const [activePageId, setActivePageId] = useState<string | null>(null);
+  const [customThemes, setCustomThemes] = useState<CustomTheme[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
 
   const flash = useCallback((msg: string) => {
     setNotice(msg);
@@ -222,6 +230,10 @@ export default function WebsiteStudioPage() {
     setDomains((domRes.data ?? []) as DomainRow[]);
     setVersions((verRes.data ?? []) as VersionRow[]);
     setMedia((medRes.data ?? []) as MediaRow[]);
+
+    const { data: ctRows } = await supabase
+      .from("website_custom_themes").select("*").order("created_at", { ascending: false });
+    setCustomThemes((ctRows ?? []) as CustomTheme[]);
 
     setActivePageId(prev => prev ?? ((pageRes.data ?? [])[0]?.id ?? null));
     setLoading(false);
@@ -339,9 +351,12 @@ export default function WebsiteStudioPage() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader title="Website Studio" subtitle={site.site_name}>
+        <Button size="sm" variant="secondary" onClick={() => setShowPreview(true)}>
+          <Monitor size={14} /> Device preview
+        </Button>
         <a href={previewPath} target="_blank" rel="noopener noreferrer">
           <Button size="sm" variant="secondary">
-            <Eye size={14} /> Preview
+            <Eye size={14} /> Open site
           </Button>
         </a>
         <Button
@@ -408,9 +423,14 @@ export default function WebsiteStudioPage() {
         <ThemeTab
           site={site}
           themes={themes}
+          customThemes={customThemes}
+          supabase={supabase}
           onPatch={patchSite}
           saving={saving}
           media={media}
+          reload={load}
+          flash={flash}
+          setError={setError}
         />
       )}
 
@@ -487,6 +507,25 @@ export default function WebsiteStudioPage() {
           reload={load}
           flash={flash}
           setError={setError}
+        />
+      )}
+
+      {tab === "brand" && (
+        <BrandKit
+          site={{
+            site_name: site.site_name,
+            logo_url: site.logo_url,
+            brand: site.brand,
+            typography: site.typography,
+          }}
+          theme={themes.find(t => t.key === site.theme_key)}
+        />
+      )}
+
+      {showPreview && (
+        <DevicePreview
+          previewUrl={previewPath}
+          onClose={() => setShowPreview(false)}
         />
       )}
     </div>
@@ -748,13 +787,18 @@ function Metric({ label, value }: { label: string; value: number }) {
 /* ------------------------------------------------------------------ */
 
 function ThemeTab({
-  site, themes, onPatch, saving, media,
+  site, themes, customThemes, supabase, onPatch, saving, media, reload, flash, setError,
 }: {
   site: SiteRow;
   themes: WebsiteTheme[];
+  customThemes: CustomTheme[];
+  supabase: Sb;
   onPatch: (p: Partial<SiteRow>) => Promise<void>;
   saving: boolean;
   media: MediaRow[];
+  reload: () => Promise<void>;
+  flash: (msg: string) => void;
+  setError: (msg: string) => void;
 }) {
   const activeTheme = themes.find(t => t.key === site.theme_key);
   const themeColors = activeTheme?.tokens?.colors ?? {};
@@ -994,6 +1038,27 @@ function ThemeTab({
           </Button>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield size={15} /> Accessibility — Contrast check
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ContrastChecker colors={{ ...themeColors, ...colors }} />
+        </CardContent>
+      </Card>
+
+      <CustomThemeManager
+        supabase={supabase}
+        themes={customThemes}
+        platformThemes={themes}
+        onThemeSelect={(id) => onPatch({ custom_theme_id: id } as Partial<SiteRow>)}
+        onReload={reload}
+        flash={flash}
+        setError={setError}
+      />
     </div>
   );
 }
@@ -2173,6 +2238,17 @@ function MediaTab({
           Files are stored under a folder named after your school, so one school&apos;s
           uploads are never writable by another. Maximum 10 MB per file.
         </p>
+
+        {rows.filter(m => !m.alt_text).length > 0 && (
+          <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-200 bg-amber-50 text-sm text-amber-800">
+            <AlertTriangle size={15} className="mt-px shrink-0" />
+            <span>
+              <strong>{rows.filter(m => !m.alt_text).length} image{rows.filter(m => !m.alt_text).length === 1 ? "" : "s"}</strong>{" "}
+              missing alt text. Screen readers and search engines need descriptions for every image.
+              Fill in the &ldquo;Describe this image&rdquo; field below each one.
+            </span>
+          </div>
+        )}
 
         {rows.length === 0 ? (
           <p className="py-8 text-center text-sm text-gray-500">Nothing uploaded yet.</p>
