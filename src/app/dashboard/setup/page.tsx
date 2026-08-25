@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -69,7 +69,7 @@ function SchoolSettingsTab() {
   const [saved, setSaved] = useState(false);
   const [form, setForm] = useState({
     school_name: "", address: "", phone: "", email: "",
-    currency_symbol: "â‚¦", currency_code: "NGN",
+    currency_symbol: "₦", currency_code: "NGN",
     receipt_prefix: "RCT-", voucher_prefix: "VCH-",
     receipt_footer: "Thank you for your payment.", current_term: "Term 1", current_year: "2026",
   });
@@ -119,7 +119,7 @@ function SchoolSettingsTab() {
           </div>
           <Input label="Phone" value={form.phone} onChange={set("phone")} />
           <Input label="Email" type="email" value={form.email} onChange={set("email")} />
-          <Input label="Currency Symbol" value={form.currency_symbol} onChange={set("currency_symbol")} helpText="e.g. â‚¦" />
+          <Input label="Currency Symbol" value={form.currency_symbol} onChange={set("currency_symbol")} helpText="e.g. ₦" />
           <Input label="Currency Code" value={form.currency_code} onChange={set("currency_code")} helpText="e.g. NGN" />
           <Input label="Receipt Prefix" value={form.receipt_prefix} onChange={set("receipt_prefix")} helpText="e.g. RCT-" />
           <Input label="Voucher Prefix" value={form.voucher_prefix} onChange={set("voucher_prefix")} helpText="e.g. VCH-" />
@@ -132,7 +132,7 @@ function SchoolSettingsTab() {
             <Button type="submit" variant="gold" loading={saving}>
               <Save size={14} /> Save Settings
             </Button>
-            {saved && <span className="text-green-600 text-sm font-medium">âœ“ Saved successfully</span>}
+            {saved && <span className="text-green-600 text-sm font-medium">✓ Saved successfully</span>}
           </div>
         </form>
       </CardContent>
@@ -198,8 +198,8 @@ function FeeScheduleTab() {
                       <td className="px-4 py-3 font-medium">{fee.name}</td>
                       <td className="px-4 py-3 text-gray-600">{fee.category}</td>
                       <td className="px-4 py-3 text-gray-600">{fee.grade || "All grades"}</td>
-                      <td className="px-4 py-3 text-gray-600">{fee.term || "â€”"}</td>
-                      <td className="px-4 py-3 text-gray-600">{fee.academic_year || "â€”"}</td>
+                      <td className="px-4 py-3 text-gray-600">{fee.term || "—"}</td>
+                      <td className="px-4 py-3 text-gray-600">{fee.academic_year || "—"}</td>
                       <td className="px-4 py-3 text-right font-bold">{fmtMoney(fee.amount)}</td>
                       <td className="px-4 py-3">
                         <button onClick={() => toggleActive(fee)}
@@ -227,7 +227,7 @@ function FeeScheduleTab() {
 
 function AddFeeModal({ onClose }: { onClose: () => void }) {
   const supabase = createClient();
-  const { profile } = useAuth();
+  const { profile, orgId } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({
@@ -244,6 +244,7 @@ function AddFeeModal({ onClose }: { onClose: () => void }) {
       name: form.name, category: form.category, amount: parseFloat(form.amount),
       grade: form.grade || null, term: form.term || null, academic_year: form.academic_year || null,
       description: form.description || null, active: true,
+      organization_id: orgId,
     });
     if (error) { setError(error.message); setLoading(false); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Add Fee Schedule", details: form.name });
@@ -258,7 +259,7 @@ function AddFeeModal({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-2 gap-3">
           <Select label="Category" value={form.category} onChange={set("category")}
             options={INCOME_CATEGORIES.map(c => ({ value: c, label: c }))} />
-          <Input label="Amount (â‚¦)" type="number" value={form.amount} onChange={set("amount")} min="0" step="0.01" required />
+          <Input label="Amount (₦)" type="number" value={form.amount} onChange={set("amount")} min="0" step="0.01" required />
           <Input label="Grade (optional)" value={form.grade} onChange={set("grade")} placeholder="e.g. Grade 5 or leave blank for all" />
           <Input label="Term (optional)" value={form.term} onChange={set("term")} placeholder="e.g. Term 1" />
           <div className="col-span-2">
@@ -277,7 +278,7 @@ function AddFeeModal({ onClose }: { onClose: () => void }) {
 
 function CategoriesTab() {
   const supabase = createClient();
-  const { profile } = useAuth();
+  const { profile, orgId } = useAuth();
   const [categories, setCategories] = useState<{ id: string; name: string; type: string; active: boolean }[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
@@ -297,7 +298,7 @@ function CategoriesTab() {
   async function addCategory(e: React.FormEvent) {
     e.preventDefault();
     if (!newName.trim()) return;
-    await supabase.from("categories").insert({ name: newName.trim(), type: newType, active: true, sort_order: 50 });
+    await supabase.from("categories").insert({ name: newName.trim(), type: newType, active: true, sort_order: 50, organization_id: orgId });
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Add Category", details: `${newType}: ${newName}` });
     setNewName("");
     load();
@@ -532,11 +533,11 @@ function SmsGatewayTab() {
       setConnTestResult({
         ok: data.ok,
         msg: data.ok
-          ? `âœ“ Connected. ${data.existingWebhooks ?? 0} webhook(s) currently registered on this account.`
-          : `âœ— ${data.error}`,
+          ? `✓ Connected. ${data.existingWebhooks ?? 0} webhook(s) currently registered on this account.`
+          : `✗ ${data.error}`,
       });
     } catch (err: unknown) {
-      setConnTestResult({ ok: false, msg: `âœ— ${err instanceof Error ? err.message : "Connection failed"}` });
+      setConnTestResult({ ok: false, msg: `✗ ${err instanceof Error ? err.message : "Connection failed"}` });
     } finally {
       setConnTesting(false);
     }
@@ -566,12 +567,12 @@ function SmsGatewayTab() {
           user_email: profile?.email, user_name: profile?.full_name,
           action: "Register SMS Webhook", details: `Webhook ID: ${data.webhookId}`,
         });
-        setConnTestResult({ ok: true, msg: "âœ“ Webhook registered! Your gateway will now forward every incoming SMS to this app." });
+        setConnTestResult({ ok: true, msg: "✓ Webhook registered! Your gateway will now forward every incoming SMS to this app." });
       } else {
-        setConnTestResult({ ok: false, msg: `âœ— ${data.error}` });
+        setConnTestResult({ ok: false, msg: `✗ ${data.error}` });
       }
     } catch (err: unknown) {
-      setConnTestResult({ ok: false, msg: `âœ— ${err instanceof Error ? err.message : "Registration failed"}` });
+      setConnTestResult({ ok: false, msg: `✗ ${err instanceof Error ? err.message : "Registration failed"}` });
     } finally {
       setRegistering(false);
     }
@@ -602,10 +603,10 @@ function SmsGatewayTab() {
         });
         setConnTestResult({ ok: true, msg: "Webhook removed. SMS will no longer be forwarded to this app." });
       } else {
-        setConnTestResult({ ok: false, msg: `âœ— ${data.error}` });
+        setConnTestResult({ ok: false, msg: `✗ ${data.error}` });
       }
     } catch (err: unknown) {
-      setConnTestResult({ ok: false, msg: `âœ— ${err instanceof Error ? err.message : "Removal failed"}` });
+      setConnTestResult({ ok: false, msg: `✗ ${err instanceof Error ? err.message : "Removal failed"}` });
     } finally {
       setUnregistering(false);
     }
@@ -624,12 +625,12 @@ function SmsGatewayTab() {
       });
       const data = await res.json();
       if (data.success) {
-        setTestResult({ ok: true, msg: `âœ“ Webhook working! Parsed: â‚¦${data.parsed.amount?.toLocaleString()}, Student: ${data.parsed.student_number || data.parsed.student_name || "unknown"}` });
+        setTestResult({ ok: true, msg: `✓ Webhook working! Parsed: ₦${data.parsed.amount?.toLocaleString()}, Student: ${data.parsed.student_number || data.parsed.student_name || "unknown"}` });
       } else {
-        setTestResult({ ok: false, msg: `âœ— Error: ${data.error}` });
+        setTestResult({ ok: false, msg: `✗ Error: ${data.error}` });
       }
     } catch (err: unknown) {
-      setTestResult({ ok: false, msg: `âœ— Connection failed: ${err instanceof Error ? err.message : ""}` });
+      setTestResult({ ok: false, msg: `✗ Connection failed: ${err instanceof Error ? err.message : ""}` });
     }
   }
 
@@ -647,23 +648,23 @@ function SmsGatewayTab() {
         <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", isConnected ? "bg-green-500" : "bg-gray-400")} />
         <div className="flex-1">
           <div className={cn("text-sm font-semibold", isConnected ? "text-green-800" : "text-gray-600")}>
-            {isConnected ? "Connected â€” SMS Gate is forwarding messages to this app" : "Not connected"}
+            {isConnected ? "Connected — SMS Gate is forwarding messages to this app" : "Not connected"}
           </div>
           {isConnected && form.sms_webhook_registered_at && (
             <div className="text-xs text-green-600 mt-0.5">
-              Registered {new Date(form.sms_webhook_registered_at).toLocaleString("en-NG")} Â· Webhook ID: <span className="font-mono">{form.sms_webhook_id}</span>
+              Registered {new Date(form.sms_webhook_registered_at).toLocaleString("en-NG")} · Webhook ID: <span className="font-mono">{form.sms_webhook_id}</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Gateway connection form â€” fully self-service, nothing hardcoded */}
+      {/* Gateway connection form — fully self-service, nothing hardcoded */}
       <Card>
         <CardHeader><CardTitle>Connect Your SMS Gateway</CardTitle></CardHeader>
         <CardContent>
           <p className="text-sm text-gray-500 mb-4">
-            Enter the credentials shown in your SMS Gateway Android app (Home tab â†’ Cloud server section), then test the
-            connection and register the webhook. Every school uses their own account â€” nothing here is shared or hardcoded.
+            Enter the credentials shown in your SMS Gateway Android app (Home tab → Cloud server section), then test the
+            connection and register the webhook. Every school uses their own account — nothing here is shared or hardcoded.
           </p>
           <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
             <div className="sm:col-span-2">
@@ -737,7 +738,7 @@ function SmsGatewayTab() {
                   Unregister Webhook
                 </Button>
               )}
-              {saved && <span className="text-green-600 text-sm font-medium">âœ“ Saved</span>}
+              {saved && <span className="text-green-600 text-sm font-medium">✓ Saved</span>}
             </div>
           </form>
 
@@ -887,7 +888,7 @@ function SmsGatewayTab() {
           </div>
           <div className="flex items-start gap-3">
             <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">3</span>
-            <p>From then on, every SMS the phone receives is forwarded here automatically â€” no manual re-entry needed.</p>
+            <p>From then on, every SMS the phone receives is forwarded here automatically — no manual re-entry needed.</p>
           </div>
           <div className="flex items-start gap-3">
             <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">4</span>
@@ -902,7 +903,7 @@ function SmsGatewayTab() {
 
 
 /**
- * Email Alerts â€” configuration for the Gmail â†’ webhook pipeline.
+ * Email Alerts — configuration for the Gmail → webhook pipeline.
  *
  * Every value here is read by the Apps Script at runtime via
  * /api/email-config, so the script itself never needs editing once it's
@@ -1006,7 +1007,7 @@ function EmailAlertsTab() {
     }
 
     // Confirm what was actually written, rather than trusting the payload
-    // we sent — this is what makes the "resets after refresh" symptom
+    // we sent � this is what makes the "resets after refresh" symptom
     // visible immediately instead of only on the next page load.
     await load();
     return null;
@@ -1061,7 +1062,7 @@ function EmailAlertsTab() {
       user_email: profile?.email,
       user_name: profile?.full_name,
       action: "Rotate Email Webhook Secret",
-      details: "A new secret was generated â€” the Apps Script must be updated.",
+      details: "A new secret was generated — the Apps Script must be updated.",
     });
   }
 
@@ -1091,10 +1092,10 @@ function EmailAlertsTab() {
       if (data.success && !data.skipped) {
         setTestResult({
           ok: true,
-          msg: `Webhook is live. Parsed â‚¦${Number(data.parsed?.amount ?? 0).toLocaleString()} as ${data.type}, status "${data.parsed?.match_status}". Check Payment Alerts for the test entry.`,
+          msg: `Webhook is live. Parsed ₦${Number(data.parsed?.amount ?? 0).toLocaleString()} as ${data.type}, status "${data.parsed?.match_status}". Check Payment Alerts for the test entry.`,
         });
       } else if (data.skipped) {
-        setTestResult({ ok: false, msg: `Skipped â€” ${data.reason}` });
+        setTestResult({ ok: false, msg: `Skipped — ${data.reason}` });
       } else {
         setTestResult({ ok: false, msg: data.error || "Unknown error." });
       }
@@ -1134,15 +1135,15 @@ function EmailAlertsTab() {
             {!form.email_alerts_enabled
               ? "Email alerts are off"
               : isConnected
-              ? "Connected â€” the Gmail script is checking in"
+              ? "Connected — the Gmail script is checking in"
               : "Enabled, but the Gmail script hasn't checked in yet"}
           </div>
           <div className="text-xs text-gray-500 mt-0.5">
             {health.lastSyncAt
               ? `Script last checked in ${fmtDateTime(health.lastSyncAt)}`
               : "Install the Apps Script below to start the sync."}
-            {health.lastReceivedAt && ` Â· Last email processed ${fmtDateTime(health.lastReceivedAt)}`}
-            {` Â· ${health.totalReceived} email${health.totalReceived === 1 ? "" : "s"} processed in total`}
+            {health.lastReceivedAt && ` · Last email processed ${fmtDateTime(health.lastReceivedAt)}`}
+            {` · ${health.totalReceived} email${health.totalReceived === 1 ? "" : "s"} processed in total`}
           </div>
         </div>
         <Button size="sm" variant="secondary" onClick={load}>
@@ -1178,7 +1179,7 @@ function EmailAlertsTab() {
           <div className="mt-3 flex items-start gap-2 text-xs text-gray-500">
             <CheckCircle2 size={14} className="text-green-600 shrink-0 mt-0.5" />
             <p>
-              Running SMS and email together is safe â€” if the same transaction arrives on both
+              Running SMS and email together is safe — if the same transaction arrives on both
               channels within 30 minutes, the second one is flagged as a duplicate and nothing is
               posted twice.
             </p>
@@ -1241,7 +1242,7 @@ function EmailAlertsTab() {
               type="date"
               value={form.email_start_date}
               onChange={set("email_start_date")}
-              helpText="Emails older than this date are ignored. Bank labels often hold years of alerts â€” this stops them being posted as new transactions."
+              helpText="Emails older than this date are ignored. Bank labels often hold years of alerts — this stops them being posted as new transactions."
             />
             <div className="sm:col-span-2 flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <AlertTriangle size={16} className="text-blue-600 shrink-0 mt-0.5" />
@@ -1272,7 +1273,7 @@ function EmailAlertsTab() {
               <div className="sm:col-span-2 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
                 <AlertTriangle size={16} className="text-red-600 shrink-0 mt-0.5" />
                 <p className="text-xs text-red-800">
-                  Save failed — {saveError}. If this mentions a missing column, the fix migration
+                  Save failed � {saveError}. If this mentions a missing column, the fix migration
                   (<code className="bg-red-100 px-1 rounded">email_alerts_fix_migration.sql</code>)
                   hasn't been run yet in Supabase.
                 </p>
@@ -1317,7 +1318,7 @@ function EmailAlertsTab() {
                 {form.email_webhook_secret
                   ? showSecret
                     ? form.email_webhook_secret
-                    : "â€¢".repeat(24)
+                    : "•".repeat(24)
                   : "Not generated yet"}
               </code>
               <Button size="sm" variant="secondary" onClick={() => setShowSecret(s => !s)}>
@@ -1377,8 +1378,8 @@ function EmailAlertsTab() {
             {[
               <>In Gmail, create a filter for your bank's alert address and apply the label <strong>{form.email_gmail_label || "BankAlerts"}</strong>. Tick &ldquo;Also apply to matching conversations&rdquo;.</>,
               <>Go to <a href="https://script.google.com" target="_blank" rel="noreferrer" className="text-[#0F2A47] underline font-medium">script.google.com</a> and create a new project.</>,
-              <>Paste the script below. The secret is already filled in â€” nothing else to edit.</>,
-              <>Click the clock icon (Triggers) â†’ Add Trigger â†’ function <code className="bg-gray-100 px-1 rounded">processBankEmails</code>, time-driven, minutes timer, every 5 minutes.</>,
+              <>Paste the script below. The secret is already filled in — nothing else to edit.</>,
+              <>Click the clock icon (Triggers) → Add Trigger → function <code className="bg-gray-100 px-1 rounded">processBankEmails</code>, time-driven, minutes timer, every 5 minutes.</>,
               <>Run <code className="bg-gray-100 px-1 rounded">processBankEmails</code> once manually and approve the Gmail permission prompt.</>,
               <>Turn on the switch at the top of this page. Alerts will appear under <strong>Payment Alerts</strong>.</>,
             ].map((step, i) => (
@@ -1425,7 +1426,7 @@ function EmailAlertsTab() {
  */
 function buildAppsScript(configUrl: string, secret: string): string {
   return `/**
- * School Finance Suite — bank alert email forwarder.
+ * School Finance Suite � bank alert email forwarder.
  *
  * Reads bank alert emails from a Gmail label and forwards them to the app,
  * which parses them and posts income or expense entries.
@@ -1511,7 +1512,7 @@ function processBankEmails() {
       }
     }
 
-    // Informational only — the label is a progress marker for you, never
+    // Informational only � the label is a progress marker for you, never
     // a skip condition for the script.
     if (anySent) thread.addLabel(processedLabel);
   }
@@ -1664,7 +1665,7 @@ function testConnection() {
 
 /**
  * Troubleshooting helper: forget which messages were forwarded so the next
- * run re-sends everything in range. Safe — the app rejects duplicates by
+ * run re-sends everything in range. Safe � the app rejects duplicates by
  * message id, so nothing is posted twice.
  */
 function resetForwardedMemory() {
@@ -1675,7 +1676,7 @@ function resetForwardedMemory() {
 }
 
 /**
- * Academic Setup — Class/Grade Structure and Academic Years configuration.
+ * Academic Setup � Class/Grade Structure and Academic Years configuration.
  */
 function AcademicSetupTab() {
   const supabase = createClient();
@@ -1693,7 +1694,7 @@ function AcademicSetupTab() {
   // --- Academic Years state ---
   const [years, setYears] = useState<Record<string, unknown>[]>([]);
   const [editingYear, setEditingYear] = useState<Record<string, unknown> | null>(null);
-  const [yearForm, setYearForm] = useState({ name: "", start_date: "", end_date: "", status: "upcoming" });
+  const [yearForm, setYearForm] = useState({ name: "", term: "", start_date: "", end_date: "", status: "upcoming" });
   const [savingYear, setSavingYear] = useState(false);
   const [showYearForm, setShowYearForm] = useState(false);
 
@@ -1767,7 +1768,7 @@ function AcademicSetupTab() {
 
   async function saveClass() {
     setSavingClass(true);
-    const payload = {
+    const payload: Record<string, unknown> = {
       name: classForm.name.trim(),
       short_code: classForm.short_code.trim() || classForm.name.trim(),
       sequence: parseInt(classForm.sequence) || 0,
@@ -1779,12 +1780,13 @@ function AcademicSetupTab() {
     if (editingClass) {
       await supabase.from("classes").update(payload).eq("id", editingClass.id);
     } else {
+      payload.organization_id = orgId;
       await supabase.from("classes").insert(payload);
     }
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,
       action: editingClass ? "Update Class" : "Create Class",
-      details: payload.name,
+      details: payload.name as string,
     });
     setEditingClass(null);
     setShowClassForm(false);
@@ -1804,21 +1806,23 @@ function AcademicSetupTab() {
       setEditingYear(yr);
       setYearForm({
         name: String(yr.name || ""),
+        term: String((yr as Record<string, unknown>).term || ""),
         start_date: String(yr.start_date || ""),
         end_date: String(yr.end_date || ""),
         status: String(yr.status || "upcoming"),
       });
     } else {
       setEditingYear(null);
-      setYearForm({ name: "", start_date: "", end_date: "", status: "upcoming" });
+      setYearForm({ name: "", term: "", start_date: "", end_date: "", status: "upcoming" });
     }
     setShowYearForm(true);
   }
 
   async function saveYear() {
     setSavingYear(true);
-    const payload = {
+    const payload: Record<string, unknown> = {
       name: yearForm.name.trim(),
+      term: yearForm.term.trim() || null,
       start_date: yearForm.start_date || null,
       end_date: yearForm.end_date || null,
       status: yearForm.status,
@@ -1827,6 +1831,7 @@ function AcademicSetupTab() {
     if (editingYear) {
       await supabase.from("academic_years").update(payload).eq("id", editingYear.id);
     } else {
+      payload.organization_id = orgId;
       await supabase.from("academic_years").insert(payload);
     }
     await supabase.from("activity_log").insert({
@@ -1990,11 +1995,11 @@ function AcademicSetupTab() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Next Class</label>
                     <select value={classForm.next_class_id} onChange={e => setClassForm(f => ({ ...f, next_class_id: e.target.value }))}
                       className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white">
-                      <option value="">— Auto (by sequence) —</option>
+                      <option value="">� Auto (by sequence) �</option>
                       {classes.filter(c => c.id !== editingClass?.id && c.active !== false).map(c => (
                         <option key={String(c.id)} value={String(c.id)}>{String(c.name)}</option>
                       ))}
-                      <option value="__terminal__">— Terminal / Graduation —</option>
+                      <option value="__terminal__">� Terminal / Graduation �</option>
                     </select>
                   </div>
                   <div className="flex items-end pb-1">
@@ -2039,8 +2044,8 @@ function AcademicSetupTab() {
                         <td className="px-3 py-2 text-gray-500">{String(c.sequence)}</td>
                         <td className="px-3 py-2 font-medium">{String(c.name)}</td>
                         <td className="px-3 py-2 text-gray-500 font-mono text-xs">{String(c.short_code)}</td>
-                        <td className="px-3 py-2 text-gray-500">{String(c.stage || "—")}</td>
-                        <td className="px-3 py-2 text-gray-500">{nextCls ? String(nextCls.name) : c.is_terminal ? "Graduation" : "—"}</td>
+                        <td className="px-3 py-2 text-gray-500">{String(c.stage || "�")}</td>
+                        <td className="px-3 py-2 text-gray-500">{nextCls ? String(nextCls.name) : c.is_terminal ? "Graduation" : "�"}</td>
                         <td className="px-3 py-2">{c.is_terminal ? <span className="text-xs font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded">Yes</span> : ""}</td>
                         <td className="px-3 py-2 text-right">
                           <button onClick={() => openClassForm(c)} className="text-xs text-[#0F2A47] hover:underline mr-2">Edit</button>
@@ -2078,8 +2083,17 @@ function AcademicSetupTab() {
             {/* Year form */}
             {showYearForm && (
               <div className="mb-4 p-4 border border-[#C9A227] bg-[#FBF6E8] rounded-xl space-y-3">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                   <Input label="Year Name" value={yearForm.name} onChange={e => setYearForm(f => ({ ...f, name: e.target.value }))} placeholder="2025/2026" />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Term</label>
+                    <select value={yearForm.term} onChange={e => setYearForm(f => ({ ...f, term: e.target.value }))} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white">
+                      <option value="">Full Year</option>
+                      <option value="Term 1">Term 1</option>
+                      <option value="Term 2">Term 2</option>
+                      <option value="Term 3">Term 3</option>
+                    </select>
+                  </div>
                   <Input label="Start Date" type="date" value={yearForm.start_date} onChange={e => setYearForm(f => ({ ...f, start_date: e.target.value }))} />
                   <Input label="End Date" type="date" value={yearForm.end_date} onChange={e => setYearForm(f => ({ ...f, end_date: e.target.value }))} />
                   <div>
@@ -2096,7 +2110,7 @@ function AcademicSetupTab() {
                   <Button size="sm" variant="gold" loading={savingYear} onClick={saveYear} disabled={!yearForm.name.trim()}>
                     <Save size={14} /> {editingYear ? "Update" : "Add"}
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={() => { setEditingYear(null); setShowYearForm(false); setYearForm({ name: "", start_date: "", end_date: "", status: "upcoming" }); }}>
+                  <Button size="sm" variant="secondary" onClick={() => { setEditingYear(null); setShowYearForm(false); setYearForm({ name: "", term: "", start_date: "", end_date: "", status: "upcoming" }); }}>
                     Cancel
                   </Button>
                 </div>
@@ -2119,8 +2133,8 @@ function AcademicSetupTab() {
                   {years.map(y => (
                     <tr key={String(y.id)} className="border-b hover:bg-gray-50">
                       <td className="px-3 py-2 font-medium">{String(y.name)}</td>
-                      <td className="px-3 py-2 text-gray-500">{y.start_date ? String(y.start_date) : "—"}</td>
-                      <td className="px-3 py-2 text-gray-500">{y.end_date ? String(y.end_date) : "—"}</td>
+                      <td className="px-3 py-2 text-gray-500">{y.start_date ? String(y.start_date) : "�"}</td>
+                      <td className="px-3 py-2 text-gray-500">{y.end_date ? String(y.end_date) : "�"}</td>
                       <td className="px-3 py-2">
                         <span className={cn("px-2 py-0.5 rounded text-xs font-bold",
                           y.status === "current" ? "bg-green-100 text-green-700" :
@@ -2197,8 +2211,8 @@ function AcademicSetupTab() {
                     <tr key={String(s.id)} className="border-b hover:bg-gray-50">
                       <td className="px-3 py-2 font-medium">{String(s.name)}</td>
                       <td className="px-3 py-2 text-gray-500 font-mono text-xs">{String(s.short_code)}</td>
-                      <td className="px-3 py-2 text-gray-500">{String(s.department || "—")}</td>
-                      <td className="px-3 py-2 text-gray-500">{s.class_id ? String(classes.find(c => c.id === s.class_id)?.name || "—") : "All"}</td>
+                      <td className="px-3 py-2 text-gray-500">{String(s.department || "�")}</td>
+                      <td className="px-3 py-2 text-gray-500">{s.class_id ? String(classes.find(c => c.id === s.class_id)?.name || "�") : "All"}</td>
                       <td className="px-3 py-2">{s.is_elective ? <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">Yes</span> : ""}</td>
                       <td className="px-3 py-2 text-right"><button onClick={() => openSubjectForm(s)} className="text-xs text-[#0F2A47] hover:underline">Edit</button></td>
                     </tr>
@@ -2399,7 +2413,7 @@ function AcademicSetupTab() {
 }
 
 /**
- * Auto-Credit Policy — configurable rule-based auto-credit decision system.
+ * Auto-Credit Policy � configurable rule-based auto-credit decision system.
  */
 function AutoCreditPolicyTab() {
   const supabase = createClient();
@@ -2524,7 +2538,7 @@ function AutoCreditPolicyTab() {
             The system evaluates identity evidence, checks safety gates, then applies the confidence threshold.
           </p>
           <p className="text-xs text-gray-400 mt-2">
-            A high confidence score alone is <strong>never</strong> enough — hard safety gates always block regardless of score.
+            A high confidence score alone is <strong>never</strong> enough � hard safety gates always block regardless of score.
           </p>
         </CardContent>
       </Card>
@@ -2565,7 +2579,7 @@ function AutoCreditPolicyTab() {
                     rule.rec === "recommended" ? "text-green-600" :
                     rule.rec === "caution" ? "text-amber-600" : "text-red-600"
                   )}>
-                    {rule.rec === "recommended" ? "✓ Recommended" : rule.rec === "caution" ? "⚠ Use with caution" : "✕ Not recommended"}
+                    {rule.rec === "recommended" ? "? Recommended" : rule.rec === "caution" ? "? Use with caution" : "? Not recommended"}
                   </span>
                 </div>
                 {rule.warn && policy[rule.key] && (
@@ -2599,7 +2613,7 @@ function AutoCreditPolicyTab() {
               </label>
               <span className="text-sm font-medium text-gray-900">{gate.label}</span>
               {!policy[gate.key] && (
-                <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded">DISABLED — HIGH RISK</span>
+                <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded">DISABLED � HIGH RISK</span>
               )}
             </div>
           ))}
@@ -2666,7 +2680,7 @@ function AutoCreditPolicyTab() {
 }
 
 /**
- * Matching Tester — dry-run the parse + match pipeline on pasted text.
+ * Matching Tester � dry-run the parse + match pipeline on pasted text.
  *
  * Calls POST /api/alert-test which reads but never writes. Shows every
  * field the real pipeline would compute so you can verify rules before
@@ -2753,7 +2767,7 @@ function MatchingTesterTab() {
               value={subject}
               onChange={e => setSubject(e.target.value)}
               placeholder="Union Bank Transaction Alert (Credit 9,000.00 NGN)"
-              helpText="Leave blank for SMS. For email, paste the subject line — it often carries the direction and amount."
+              helpText="Leave blank for SMS. For email, paste the subject line � it often carries the direction and amount."
             />
             <div className="flex items-end gap-4 pb-1">
               <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
@@ -2822,24 +2836,24 @@ function MatchingTesterTab() {
             <div>
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Parsed Fields</div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                <ResultField label="Format" value={String(r.format ?? "—")} />
-                <ResultField label="Direction" value={String(r.direction ?? "—")} />
-                <ResultField label="Amount" value={r.amount != null ? `₦${Number(r.amount).toLocaleString()}` : "—"} />
+                <ResultField label="Format" value={String(r.format ?? "�")} />
+                <ResultField label="Direction" value={String(r.direction ?? "�")} />
+                <ResultField label="Amount" value={r.amount != null ? `?${Number(r.amount).toLocaleString()}` : "�"} />
                 <ResultField label="Currency" value={String(r.currency ?? "NGN")} />
-                <ResultField label="Transaction Date" value={String(r.transactionDate ?? "—")} />
-                <ResultField label="Date (ISO)" value={String(r.transactionDateISO ?? "—")} />
-                <ResultField label="Reference" value={String(r.reference ?? "—")} />
+                <ResultField label="Transaction Date" value={String(r.transactionDate ?? "�")} />
+                <ResultField label="Date (ISO)" value={String(r.transactionDateISO ?? "�")} />
+                <ResultField label="Reference" value={String(r.reference ?? "�")} />
                 {isCredit && (
                   <>
-                    <ResultField label="Student Number" value={String(r.studentNumber ?? "—")} highlight={!!r.studentNumber} />
-                    <ResultField label="Student Name (parsed)" value={String(r.studentName ?? "—")} highlight={!!r.studentName} />
+                    <ResultField label="Student Number" value={String(r.studentNumber ?? "�")} highlight={!!r.studentNumber} />
+                    <ResultField label="Student Name (parsed)" value={String(r.studentName ?? "�")} highlight={!!r.studentName} />
                   </>
                 )}
                 {isDebit && (
                   <>
-                    <ResultField label="Payee Name" value={String(r.payeeName ?? "—")} highlight={!!r.payeeName} />
-                    <ResultField label="Purpose" value={String(r.purpose ?? "—")} />
-                    <ResultField label="Expense Category" value={String(r.expenseCategory ?? "—")} />
+                    <ResultField label="Payee Name" value={String(r.payeeName ?? "�")} highlight={!!r.payeeName} />
+                    <ResultField label="Purpose" value={String(r.purpose ?? "�")} />
+                    <ResultField label="Expense Category" value={String(r.expenseCategory ?? "�")} />
                   </>
                 )}
               </div>
@@ -2960,7 +2974,7 @@ function ResultField({ label, value, highlight }: { label: string; value: string
     <div className="bg-white border border-gray-100 rounded-lg p-2.5">
       <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">{label}</div>
       <div className={cn("text-sm font-semibold truncate", highlight ? "text-[#0F2A47]" : "text-gray-700")}>
-        {String(value ?? "—")}
+        {String(value ?? "�")}
       </div>
     </div>
   );

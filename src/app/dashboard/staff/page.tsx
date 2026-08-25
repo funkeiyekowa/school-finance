@@ -171,7 +171,12 @@ export default function StaffPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
                 <select value={form.department_id} onChange={e => setForm(f => ({ ...f, department_id: e.target.value }))} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white">
                   <option value="">None</option>
-                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  {departments.length > 0
+                    ? departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)
+                    : ["Science", "Arts", "Commercial", "Primary", "Junior Secondary", "Senior Secondary", "Administration", "Support Staff"].map(n => (
+                      <option key={n} value={n}>{n}</option>
+                    ))
+                  }
                 </select>
               </div>
               <Input label="Date Joined" type="date" value={form.date_joined} onChange={e => setForm(f => ({ ...f, date_joined: e.target.value }))} />
