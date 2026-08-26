@@ -506,16 +506,21 @@ function RenderSectionBody({
       const img = str(c, "image_url");
       const heroVariant = str(s, "variant") || ctx.heroStyle || "image-right";
       const hidePanel = heroVariant === "centered" || heroVariant === "gradient";
-      const isCentered = hidePanel || !img;
+      const isCentered = hidePanel || (!img && heroVariant !== "badge-ring");
+      const showBadgeRing = heroVariant === "badge-ring" && !img;
+      const trustChips = list(c, "trust_chips").map(i => str(i, "label")).filter(Boolean);
+      const stats = list(c, "stats");
 
       return (
-        <section className={`hero${isCentered && heroVariant !== "full-bleed" ? " hero--centered" : ""}`}>
-          <div className="hero-inner">
+        <section className={`hero${isCentered ? " hero--centered" : ""}`} id={anchor}>
+          <div className="container hero-inner">
             <div className="hero-content">
-              {str(c, "eyebrow") && (
-                <span className="eyebrow on-dark">{str(c, "eyebrow")}</span>
+              {eyebrow && (
+                <p className="eyebrow on-dark reveal">{eyebrow}</p>
               )}
               <h1
+                className="reveal"
+                style={{ ["--reveal-delay" as string]: ".06s" }}
                 dangerouslySetInnerHTML={{
                   __html: str(c, "heading").replace(
                     /\*(.*?)\*/g,
@@ -524,55 +529,81 @@ function RenderSectionBody({
                 }}
               />
               {str(c, "subheading") && (
-                <p className="hero-sub">{str(c, "subheading")}</p>
+                <p className="hero-sub reveal" style={{ ["--reveal-delay" as string]: ".14s" }}>
+                  {str(c, "subheading")}
+                </p>
               )}
-              <div className="hero-ctas">
+              <div className="hero-ctas reveal" style={{ ["--reveal-delay" as string]: ".2s" }}>
                 {str(c, "primary_cta_label") && (
-                  <a
-                    href={link(str(c, "primary_cta_href", "/admissions"))}
-                    className="btn btn-primary"
-                  >
+                  <a href={link(str(c, "primary_cta_href", "/admissions"))} className="btn btn-gold">
                     {str(c, "primary_cta_label")}
                   </a>
                 )}
                 {str(c, "secondary_cta_label") && (
-                  <a
-                    href={link(str(c, "secondary_cta_href", "/contact"))}
-                    className="btn btn-outline-light"
-                  >
+                  <a href={link(str(c, "secondary_cta_href", "/contact"))} className="btn btn-outline-light">
                     {str(c, "secondary_cta_label")}
                   </a>
                 )}
               </div>
-              {list(c, "stats").length > 0 && (
-                <div className="hero-stats">
-                  {list(c, "stats").map((stat, i) => (
-                    <div key={i} className="hero-stat">
-                      <b>{str(stat, "value")}</b>
-                      <span>{str(stat, "label")}</span>
-                    </div>
+              {trustChips.length > 0 && (
+                <div className="trust-strip reveal" style={{ ["--reveal-delay" as string]: ".26s" }}>
+                  {trustChips.map((chip, i) => (
+                    <span key={i} className="trust-chip">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M20 6L9 17l-5-5" />
+                      </svg>
+                      {chip}
+                    </span>
                   ))}
+                </div>
+              )}
+              {stats.length > 0 && (
+                <div className="hero-stats reveal" style={{ ["--reveal-delay" as string]: ".32s" }}>
+                  {stats.map((stat, i) => {
+                    const val = str(stat, "value");
+                    const numericVal = val.replace(/[^0-9]/g, "");
+                    const suffix = val.replace(/[0-9,]/g, "");
+                    return (
+                      <div key={i} className="hero-stat">
+                        <b data-count={numericVal} data-suffix={suffix}>{val}</b>
+                        <span>{str(stat, "label")}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
 
+            {showBadgeRing && (
+              <div className="hero-panel reveal" style={{ ["--reveal-delay" as string]: ".2s" }} aria-hidden="true">
+                <div className="badge-ring">
+                  <strong>{str(c, "badge_initials") || "GS"}</strong>
+                  <span>{str(c, "badge_caption") || "Est. tradition"}</span>
+                </div>
+              </div>
+            )}
+
             {img && !hidePanel && (
-              <div className="hero-panel">
+              <div className="hero-panel reveal" style={{ ["--reveal-delay" as string]: ".2s" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={img}
                   alt={str(c, "image_alt", "")}
                   style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                    position: "relative",
-                    zIndex: 1,
+                    width: "100%", height: "100%", objectFit: "cover",
+                    position: "relative", zIndex: 1,
                   }}
                 />
               </div>
             )}
           </div>
+          <a href="#" className="scroll-cue" aria-label="Scroll to learn more">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </a>
         </section>
       );
     }

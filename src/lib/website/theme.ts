@@ -413,9 +413,8 @@ ${S} .hero{
 }
 ${S} .hero::before{
   content:'';position:absolute;inset:0;pointer-events:none;
-  background-image:
-    repeating-linear-gradient(45deg, rgba(255,255,255,.04) 0 2px, transparent 2px 30px),
-    repeating-linear-gradient(-45deg, rgba(255,255,255,.04) 0 2px, transparent 2px 30px);
+  background-image:var(--motif-image);
+  background-size:var(--motif-size);
 }
 ${S} .hero-inner{
   position:relative;z-index:1;max-width:var(--container);margin:0 auto;padding:0 24px;
@@ -797,9 +796,9 @@ ${S} .grain-overlay{
 ${theme.animations ? `
 ${S} .reveal{opacity:0;transform:translateY(20px);
   transition:opacity .75s var(--ease) var(--reveal-delay,0s),transform .75s var(--ease) var(--reveal-delay,0s);}
-${S} .reveal.is-in{opacity:1;transform:none;}
+${S} .reveal.is-visible,${S} .reveal.is-in{opacity:1;transform:none;}
 @media (prefers-reduced-motion:reduce){
-  ${S} .reveal{opacity:1 !important;transform:none !important;transition:none !important;}
+  ${S} .reveal,.reveal.is-visible{opacity:1 !important;transform:none !important;transition:none !important;}
 }` : `${S} .reveal{opacity:1;transform:none;}`}
 
 /* ============ CURVE / ANGLE DIVIDERS ============ */
@@ -878,6 +877,13 @@ ${S} .badge-ring strong{
 ${S} .badge-ring span{
   font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
   color:rgba(255,255,255,.72);
+}
+
+/* ============ SCROLL PROGRESS BAR ============ */
+${S} .scroll-progress{
+  position:fixed;top:0;left:0;height:3px;width:0%;z-index:999;
+  background:linear-gradient(90deg, var(--c-accent), var(--c-accent-soft, var(--c-accent)));
+  transition:width .08s linear;pointer-events:none;
 }
 
 /* ============ SCROLL CUE ============ */

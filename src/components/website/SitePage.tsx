@@ -186,6 +186,12 @@ export function SiteShell({
       <style dangerouslySetInnerHTML={{ __html: css }} />
 
       <div className="site-root" data-header-style={theme.headerStyle} data-hero-style={theme.heroStyle}>
+        {/* Scroll progress bar */}
+        <div className="scroll-progress" aria-hidden="true" />
+
+        {/* Grain overlay for textured themes */}
+        {theme.grain && <div className="grain-overlay" aria-hidden="true" />}
+
         {/* Skip link */}
         <a className="skip-link" href="#site-main">
           Skip to main content
