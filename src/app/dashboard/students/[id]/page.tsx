@@ -206,7 +206,7 @@ export default function StudentDetailPage() {
               <div className="flex items-center justify-between">
                 <CardTitle>Academic History</CardTitle>
                 <Link href="/dashboard/students/promotion">
-                  <Button size="sm" variant="gold">Promote Student</Button>
+                  <Button size="sm" variant="gold">Promote / Demote Student</Button>
                 </Link>
               </div>
             </CardHeader>
@@ -239,6 +239,7 @@ export default function StudentDetailPage() {
                         e.status === "completed" ? "bg-blue-100 text-blue-600" :
                         e.status === "graduated" ? "bg-purple-100 text-purple-700" :
                         e.status === "repeated" ? "bg-amber-100 text-amber-700" :
+                        e.status === "demoted" ? "bg-orange-100 text-orange-700" :
                         "bg-gray-100 text-gray-500"
                       )}>{e.status}</span>
                     </div>

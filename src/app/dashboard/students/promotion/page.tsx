@@ -8,19 +8,20 @@ import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { CheckCircle2, AlertTriangle, GraduationCap, ArrowRight, RotateCcw, Users } from "lucide-react";
+import { CheckCircle2, AlertTriangle, GraduationCap, ArrowRight, ArrowDown, RotateCcw, Users } from "lucide-react";
 
 interface ClassRow { id: string; name: string; short_code: string; sequence: number; next_class_id: string | null; is_terminal: boolean; }
 interface YearRow { id: string; name: string; status: string; }
 interface StudentRow { id: string; student_code: string; full_name: string; grade: string | null; status: string; }
 interface EnrollmentRow { id: string; student_id: string; class_id: string; academic_year_id: string; status: string; }
 
-type PromotionAction = "promote" | "repeat" | "graduate" | "skip";
+type PromotionAction = "promote" | "repeat" | "graduate" | "demote" | "skip";
 interface StudentEligibility {
   student: StudentRow;
   currentEnrollment: EnrollmentRow | null;
   currentClass: ClassRow | null;
   nextClass: ClassRow | null;
+  prevClass: ClassRow | null;
   status: "ready" | "already_promoted" | "graduating" | "no_next_class" | "inactive" | "no_enrollment";
   recommendedAction: PromotionAction;
   selectedAction: PromotionAction | null;
@@ -44,7 +45,8 @@ export default function PromotionPage() {
 
   const [showConfirm, setShowConfirm] = useState(false);
   const [executing, setExecuting] = useState(false);
-  const [result, setResult] = useState<{ promoted: number; repeated: number; graduated: number; failed: number } | null>(null);
+  const [result, setResult] = useState<{ promoted: number; repeated: number; graduated: number; demoted: number; failed: number } | null>(null);
+  const [demotionReason, setDemotionReason] = useState("");
 
   const load = useCallback(async () => {
     const [clsRes, yrRes, stuRes, enrRes] = await Promise.all([
@@ -98,6 +100,12 @@ export default function PromotionPage() {
           ? classes.filter(c => c.sequence > currentClass.sequence).sort((a, b) => a.sequence - b.sequence)[0] || null
           : null;
 
+      // One step down by sequence — the default suggestion when demoting.
+      // Any class with a lower sequence can still be picked explicitly (multi-step demotion).
+      const prevClass = currentClass
+        ? classes.filter(c => c.sequence < currentClass.sequence).sort((a, b) => b.sequence - a.sequence)[0] || null
+        : null;
+
       let status: StudentEligibility["status"] = "ready";
       let recommendedAction: PromotionAction = "promote";
 
@@ -123,6 +131,7 @@ export default function PromotionPage() {
         currentEnrollment,
         currentClass,
         nextClass,
+        prevClass,
         status,
         recommendedAction,
         selectedAction: null,
@@ -147,6 +156,25 @@ export default function PromotionPage() {
   const actionableStudents = eligibility.filter(
     e => selectedIds.has(e.student.id) && e.status !== "already_promoted" && e.status !== "inactive"
   );
+
+  function setItemAction(studentId: string, action: PromotionAction) {
+    setEligibility(prev => prev.map(item => {
+      if (item.student.id !== studentId) return item;
+      const destClass =
+        action === "promote" ? item.nextClass :
+        action === "demote" ? item.prevClass :
+        action === "repeat" ? item.currentClass :
+        null; // graduate / skip carry no destination class
+      return { ...item, selectedAction: action, selectedDestClass: destClass };
+    }));
+  }
+
+  function setItemDestClass(studentId: string, classId: string) {
+    const cls = classes.find(c => c.id === classId) || null;
+    setEligibility(prev => prev.map(item =>
+      item.student.id === studentId ? { ...item, selectedDestClass: cls } : item
+    ));
+  }
 
   function toggleAll(checked: boolean) {
     if (checked) {
@@ -177,7 +205,7 @@ export default function PromotionPage() {
 
     if (!batch) { setExecuting(false); return; }
 
-    let promoted = 0, repeated = 0, graduated = 0, failed = 0;
+    let promoted = 0, repeated = 0, graduated = 0, demoted = 0, failed = 0;
 
     for (const item of actionableStudents) {
       const action = item.selectedAction || item.recommendedAction;
@@ -185,7 +213,9 @@ export default function PromotionPage() {
         ? item.currentClass
         : action === "graduate"
           ? null
-          : item.selectedDestClass || item.nextClass;
+          : action === "demote"
+            ? item.selectedDestClass || item.prevClass
+            : item.selectedDestClass || item.nextClass;
 
       try {
         // Create enrollment for destination year
@@ -202,9 +232,13 @@ export default function PromotionPage() {
           toEnrollmentId = newEnrollment?.id || null;
         }
 
-        // Mark current enrollment as completed/repeated/graduated
+        // Mark current enrollment as completed/repeated/graduated/demoted
         if (item.currentEnrollment) {
-          const newStatus = action === "repeat" ? "repeated" : action === "graduate" ? "graduated" : "completed";
+          const newStatus =
+            action === "repeat" ? "repeated" :
+            action === "graduate" ? "graduated" :
+            action === "demote" ? "demoted" :
+            "completed";
           await supabase.from("student_enrollments")
             .update({ status: newStatus, updated_at: new Date().toISOString() })
             .eq("id", item.currentEnrollment.id);
@@ -231,7 +265,12 @@ export default function PromotionPage() {
           to_class_id: destClass?.id || null,
           from_year_id: fromYearId,
           to_year_id: toYearId,
-          action: action === "promote" ? "promoted" : action === "repeat" ? "repeated" : "graduated",
+          action:
+            action === "promote" ? "promoted" :
+            action === "repeat" ? "repeated" :
+            action === "demote" ? "demoted" :
+            "graduated",
+          reason: action === "demote" ? (demotionReason.trim() || "Demoted by administrator") : null,
           status: "completed",
           created_by_email: profile?.email,
           created_by_name: profile?.full_name,
@@ -241,28 +280,34 @@ export default function PromotionPage() {
         if (action === "promote" || action === "skip") promoted++;
         else if (action === "repeat") repeated++;
         else if (action === "graduate") graduated++;
+        else if (action === "demote") demoted++;
       } catch {
         failed++;
       }
     }
 
-    // Update batch summary
+    // Update batch summary. promotion_batches has no dedicated "demoted"
+    // column (this feature was added without a schema migration), so the
+    // demoted count is recorded in notes for the audit trail; the
+    // per-student truth lives in promotion_events (action='demoted').
     await supabase.from("promotion_batches").update({
       status: "completed",
       promoted, repeated, graduated, failed,
+      notes: demoted > 0 ? `${demoted} student(s) demoted` : null,
       updated_at: new Date().toISOString(),
     }).eq("id", batch.id);
 
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,
       action: "Bulk Promotion",
-      details: `${batchCode}: ${promoted} promoted, ${repeated} repeated, ${graduated} graduated, ${failed} failed`,
+      details: `${batchCode}: ${promoted} promoted, ${repeated} repeated, ${graduated} graduated, ${demoted} demoted, ${failed} failed`,
       organization_id: orgId,
     });
 
-    setResult({ promoted, repeated, graduated, failed });
+    setResult({ promoted, repeated, graduated, demoted, failed });
     setShowConfirm(false);
     setExecuting(false);
+    setDemotionReason("");
     load();
   }
 
@@ -335,7 +380,7 @@ export default function PromotionPage() {
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">{selectedIds.size} selected</span>
                 <Button size="sm" variant="gold" disabled={actionableStudents.length === 0} onClick={() => setShowConfirm(true)}>
-                  <GraduationCap size={14} /> Promote {actionableStudents.length} Students
+                  <ArrowRight size={14} /> Apply to {actionableStudents.length} Students
                 </Button>
               </div>
             </div>
@@ -355,14 +400,16 @@ export default function PromotionPage() {
                     <th className="text-left px-3 py-2 font-semibold text-gray-600">Code</th>
                     <th className="text-left px-3 py-2 font-semibold text-gray-600">Name</th>
                     <th className="text-left px-3 py-2 font-semibold text-gray-600">Current Class</th>
-                    <th className="text-left px-3 py-2 font-semibold text-gray-600">→ Destination</th>
                     <th className="text-left px-3 py-2 font-semibold text-gray-600">Status</th>
                     <th className="text-left px-3 py-2 font-semibold text-gray-600">Action</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">→ Destination</th>
                   </tr>
                 </thead>
                 <tbody>
                   {eligibility.map(item => {
                     const disabled = item.status === "already_promoted" || item.status === "inactive";
+                    const action = item.selectedAction || item.recommendedAction;
+                    const needsDestPicker = action === "promote" || action === "demote";
                     return (
                       <tr key={item.student.id} className={cn("border-b", disabled && "opacity-50")}>
                         <td className="px-2 py-2">
@@ -379,11 +426,6 @@ export default function PromotionPage() {
                         <td className="px-3 py-2 font-mono text-xs text-gray-500">{item.student.student_code}</td>
                         <td className="px-3 py-2 font-medium">{item.student.full_name}</td>
                         <td className="px-3 py-2 text-gray-600">{item.currentClass?.name || item.student.grade || "—"}</td>
-                        <td className="px-3 py-2 text-gray-600">
-                          {item.status === "graduating" ? <span className="text-purple-700 font-medium">Graduation</span> :
-                           item.status === "already_promoted" ? <span className="text-blue-600">Already done</span> :
-                           item.nextClass?.name || "—"}
-                        </td>
                         <td className="px-3 py-2">
                           <span className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase",
                             item.status === "ready" ? "bg-green-100 text-green-700" :
@@ -393,8 +435,48 @@ export default function PromotionPage() {
                             "bg-gray-100 text-gray-500"
                           )}>{item.status.replace(/_/g, " ")}</span>
                         </td>
-                        <td className="px-3 py-2 text-xs text-gray-500">
-                          {item.recommendedAction}
+                        <td className="px-3 py-2">
+                          <select
+                            disabled={disabled}
+                            value={action}
+                            onChange={e => setItemAction(item.student.id, e.target.value as PromotionAction)}
+                            className="text-xs px-2 py-1 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C9A227] disabled:bg-gray-50"
+                          >
+                            <option value="promote">Promote</option>
+                            <option value="repeat">Repeat class</option>
+                            <option value="demote">Demote</option>
+                            {item.currentClass?.is_terminal && <option value="graduate">Graduate</option>}
+                            <option value="skip">Skip (no change)</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-2">
+                          {action === "graduate" ? (
+                            <span className="text-purple-700 font-medium text-xs">Graduation</span>
+                          ) : action === "skip" ? (
+                            <span className="text-gray-400 text-xs">—</span>
+                          ) : action === "repeat" ? (
+                            <span className="text-amber-700 text-xs">{item.currentClass?.name || "same class"}</span>
+                          ) : needsDestPicker ? (
+                            <select
+                              disabled={disabled}
+                              value={item.selectedDestClass?.id || ""}
+                              onChange={e => setItemDestClass(item.student.id, e.target.value)}
+                              className={cn(
+                                "text-xs px-2 py-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C9A227] disabled:bg-gray-50",
+                                action === "demote" ? "border-amber-300" : "border-gray-300"
+                              )}
+                            >
+                              <option value="">Select class…</option>
+                              {classes
+                                .filter(c => action === "demote"
+                                  ? (!item.currentClass || c.sequence < item.currentClass.sequence)
+                                  : (!item.currentClass || c.sequence > item.currentClass.sequence))
+                                .sort((a, b) => action === "demote" ? b.sequence - a.sequence : a.sequence - b.sequence)
+                                .map(c => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                            </select>
+                          ) : "—"}
                         </td>
                       </tr>
                     );
@@ -411,9 +493,9 @@ export default function PromotionPage() {
         <div className="p-4 bg-green-50 border border-green-200 rounded-xl flex items-start gap-3">
           <CheckCircle2 size={20} className="text-green-600 shrink-0 mt-0.5" />
           <div>
-            <div className="font-semibold text-green-800">Promotion Complete</div>
+            <div className="font-semibold text-green-800">Batch Complete</div>
             <p className="text-sm text-green-700 mt-1">
-              {result.promoted} promoted, {result.repeated} repeated, {result.graduated} graduated
+              {result.promoted} promoted, {result.repeated} repeated, {result.demoted} demoted, {result.graduated} graduated
               {result.failed > 0 && <span className="text-red-600">, {result.failed} failed</span>}
             </p>
           </div>
@@ -421,8 +503,17 @@ export default function PromotionPage() {
       )}
 
       {/* Confirmation modal */}
-      {showConfirm && (
-        <Modal open onClose={() => setShowConfirm(false)} title="Confirm Promotion" size="lg">
+      {showConfirm && (() => {
+        const promotingCount = actionableStudents.filter(s => (s.selectedAction || s.recommendedAction) === "promote").length;
+        const repeatingCount = actionableStudents.filter(s => (s.selectedAction || s.recommendedAction) === "repeat").length;
+        const demotingCount = actionableStudents.filter(s => (s.selectedAction || s.recommendedAction) === "demote").length;
+        const graduatingCount = actionableStudents.filter(s => (s.selectedAction || s.recommendedAction) === "graduate").length;
+        const missingDest = actionableStudents.filter(s => {
+          const a = s.selectedAction || s.recommendedAction;
+          return (a === "promote" || a === "demote") && !s.selectedDestClass;
+        });
+        return (
+        <Modal open onClose={() => setShowConfirm(false)} title="Confirm Batch" size="lg">
           <div className="space-y-4">
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
               <p className="text-sm text-amber-800">
@@ -435,36 +526,57 @@ export default function PromotionPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 text-center">
+            {missingDest.length > 0 && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                {missingDest.length} student(s) have &quot;Promote&quot; or &quot;Demote&quot; selected but no destination
+                class chosen. Pick a destination class for each before continuing.
+              </div>
+            )}
+
+            <div className="grid grid-cols-4 gap-3 text-center">
               <div className="bg-green-50 rounded-lg p-3">
-                <div className="text-xl font-bold text-green-700">
-                  {actionableStudents.filter(s => (s.selectedAction || s.recommendedAction) === "promote").length}
-                </div>
+                <div className="text-xl font-bold text-green-700">{promotingCount}</div>
                 <div className="text-xs text-green-600">Promoting</div>
               </div>
               <div className="bg-amber-50 rounded-lg p-3">
-                <div className="text-xl font-bold text-amber-700">
-                  {actionableStudents.filter(s => (s.selectedAction || s.recommendedAction) === "repeat").length}
-                </div>
+                <div className="text-xl font-bold text-amber-700">{repeatingCount}</div>
                 <div className="text-xs text-amber-600">Repeating</div>
               </div>
+              <div className="bg-orange-50 rounded-lg p-3">
+                <div className="text-xl font-bold text-orange-700">{demotingCount}</div>
+                <div className="text-xs text-orange-600 flex items-center justify-center gap-1"><ArrowDown size={11} /> Demoting</div>
+              </div>
               <div className="bg-purple-50 rounded-lg p-3">
-                <div className="text-xl font-bold text-purple-700">
-                  {actionableStudents.filter(s => (s.selectedAction || s.recommendedAction) === "graduate").length}
-                </div>
+                <div className="text-xl font-bold text-purple-700">{graduatingCount}</div>
                 <div className="text-xs text-purple-600">Graduating</div>
               </div>
             </div>
 
+            {demotingCount > 0 && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">
+                  Reason for demotion <span className="text-gray-400">(applies to all demotions in this batch, recorded in the audit trail)</span>
+                </label>
+                <input
+                  type="text"
+                  value={demotionReason}
+                  onChange={e => setDemotionReason(e.target.value)}
+                  placeholder="e.g. Did not meet promotion criteria at end-of-year assessment"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]"
+                />
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setShowConfirm(false)}>Cancel</Button>
-              <Button variant="gold" loading={executing} onClick={executePromotion}>
-                <GraduationCap size={14} /> Confirm Promotion
+              <Button variant="gold" loading={executing} disabled={missingDest.length > 0} onClick={executePromotion}>
+                <GraduationCap size={14} /> Confirm & Apply
               </Button>
             </div>
           </div>
         </Modal>
-      )}
+        );
+      })()}
     </div>
   );
 }
