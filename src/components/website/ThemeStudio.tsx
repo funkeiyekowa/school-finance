@@ -19,7 +19,7 @@ import { ThemeGallery } from "@/components/website/ThemeGallery";
 import {
   Palette, Type, Undo2, Upload as UploadIcon, Rocket,
   Monitor, RefreshCw, Download,
-  Circle, Square, Layers, SlidersHorizontal,
+  Circle, Square, Layers, SlidersHorizontal, Info, LayoutTemplate,
 } from "lucide-react";
 
 interface SiteRow {
@@ -56,6 +56,28 @@ const PANELS: { id: Panel; label: string; icon: React.ReactNode }[] = [
 ];
 
 const AUTOSAVE_DELAY = 1500;
+
+/**
+ * Strip empty token groups so a stored value compares equal to freshly
+ * built editor state. Without this, {} and {colors:{}} look different.
+ */
+function normaliseTokens(raw: unknown): ThemeTokens {
+  const t = (raw ?? {}) as Record<string, unknown>;
+  const out: ThemeTokens = {};
+  const groups = ["colors", "scale", "radius", "spacing", "button", "shadow"] as const;
+  for (const g of groups) {
+    const v = t[g] as Record<string, string> | undefined;
+    if (v && Object.keys(v).some(k => v[k])) {
+      out[g] = Object.fromEntries(Object.entries(v).filter(([, x]) => x)) as Record<string, string>;
+    }
+  }
+  if (typeof t.headerStyle === "string" && t.headerStyle) out.headerStyle = t.headerStyle;
+  if (typeof t.heroStyle === "string" && t.heroStyle) out.heroStyle = t.heroStyle;
+  if (typeof t.motif === "string" && t.motif) out.motif = t.motif;
+  if (typeof t.divider === "string" && t.divider) out.divider = t.divider;
+  if (typeof t.cardStyle === "string" && t.cardStyle) out.cardStyle = t.cardStyle;
+  return out;
+}
 
 export function ThemeStudio({
   supabase, site, themes, customThemes, previewPath, isAdmin, onSiteUpdate, flash, setError,
@@ -135,36 +157,60 @@ export function ThemeStudio({
     return { ...base, ...Object.fromEntries(Object.entries(colors).filter(([, v]) => v)) };
   }, [activeTheme, colors]);
 
-  // Debounced autosave
-  const scheduleSave = useCallback(() => {
-    dirtyRef.current = true;
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-    autosaveTimer.current = setTimeout(() => {
-      doSave();
-    }, AUTOSAVE_DELAY);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  /**
+   * Autosave needs the CURRENT editor state, not the state from the render
+   * that created the callback. A ref mirrors state every render so the
+   * debounced timer always reads live values.
+   *
+   * This previously used useCallback with an empty dependency array, which
+   * captured the first render — before the mount effect had hydrated
+   * anything. Every autosave therefore wrote nulls and empty objects, so a
+   * theme selection never survived, and Publish promoted an empty draft.
+   */
+  const stateRef = useRef({
+    themeKey, customThemeId, colors, fonts, scale, radius,
+    spacing, button, shadow, headerStyle, heroStyle, draftLoaded,
+  });
+  useEffect(() => {
+    stateRef.current = {
+      themeKey, customThemeId, colors, fonts, scale, radius,
+      spacing, button, shadow, headerStyle, heroStyle, draftLoaded,
+    };
+  }, [themeKey, customThemeId, colors, fonts, scale, radius,
+      spacing, button, shadow, headerStyle, heroStyle, draftLoaded]);
 
-  async function doSave() {
-    if (saving) return;
+  /** Guards re-entrancy without relying on the `saving` state closure. */
+  const savingRef = useRef(false);
+
+  const doSave = useCallback(async () => {
+    // Never write before the mount effect has loaded real values, otherwise
+    // we would overwrite a good draft with blanks.
+    if (!stateRef.current.draftLoaded) return;
+    if (savingRef.current) return;
+
+    savingRef.current = true;
     setSaving(true);
+
+    const s = stateRef.current;
     const brand: ThemeTokens = {};
-    if (Object.keys(colors).some(k => colors[k])) brand.colors = colors;
-    if (Object.keys(scale).some(k => scale[k])) brand.scale = scale;
-    if (Object.keys(radius).some(k => radius[k])) brand.radius = radius;
-    if (Object.keys(spacing).some(k => spacing[k])) brand.spacing = spacing;
-    if (Object.keys(button).some(k => button[k])) brand.button = button;
-    if (Object.keys(shadow).some(k => shadow[k])) brand.shadow = shadow;
-    if (headerStyle) brand.headerStyle = headerStyle;
-    if (heroStyle) brand.heroStyle = heroStyle;
+    if (Object.keys(s.colors).some(k => s.colors[k])) brand.colors = s.colors;
+    if (Object.keys(s.scale).some(k => s.scale[k])) brand.scale = s.scale;
+    if (Object.keys(s.radius).some(k => s.radius[k])) brand.radius = s.radius;
+    if (Object.keys(s.spacing).some(k => s.spacing[k])) brand.spacing = s.spacing;
+    if (Object.keys(s.button).some(k => s.button[k])) brand.button = s.button;
+    if (Object.keys(s.shadow).some(k => s.shadow[k])) brand.shadow = s.shadow;
+    if (s.headerStyle) brand.headerStyle = s.headerStyle;
+    if (s.heroStyle) brand.heroStyle = s.heroStyle;
 
     const params: SaveDraftParams = {
-      themeKey: themeKey ?? undefined,
-      customThemeId: customThemeId ?? undefined,
+      themeKey: s.themeKey ?? undefined,
+      customThemeId: s.customThemeId ?? undefined,
       brand,
-      typography: fonts,
+      typography: s.fonts,
     };
 
     const result = await saveDraft(supabase, params);
+    savingRef.current = false;
     setSaving(false);
     if (result.ok) {
       dirtyRef.current = false;
@@ -172,7 +218,29 @@ export function ThemeStudio({
     } else {
       setError(result.error ?? "Failed to save draft");
     }
-  }
+  }, [supabase, setError]);
+
+  const scheduleSave = useCallback(() => {
+    dirtyRef.current = true;
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => { doSave(); }, AUTOSAVE_DELAY);
+  }, [doSave]);
+
+  /** Write immediately, used before previewing so the iframe sees the change. */
+  const saveNow = useCallback(async () => {
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    await doSave();
+  }, [doSave]);
+
+  // Flush any pending autosave when leaving the tab.
+  useEffect(() => {
+    return () => {
+      if (autosaveTimer.current) {
+        clearTimeout(autosaveTimer.current);
+        if (dirtyRef.current) doSave();
+      }
+    };
+  }, [doSave]);
 
   function updateColor(key: string, value: string) {
     setColors(c => ({ ...c, [key]: value }));
@@ -260,15 +328,38 @@ export function ThemeStudio({
     }
   }
 
-  // Check if draft differs from published
+  /**
+   * Does the editor state differ from what is published?
+   *
+   * The brand object MUST be assembled exactly as doSave assembles it —
+   * omitting empty groups. Building it with every key always present made
+   * the comparison asymmetric against the stored value, so the badge read
+   * "Unpublished changes" permanently.
+   */
   const hasUnpublished = useMemo(() => {
     if (!draftLoaded) return false;
+
+    const brand: ThemeTokens = {};
+    if (Object.keys(colors).some(k => colors[k])) brand.colors = colors;
+    if (Object.keys(scale).some(k => scale[k])) brand.scale = scale;
+    if (Object.keys(radius).some(k => radius[k])) brand.radius = radius;
+    if (Object.keys(spacing).some(k => spacing[k])) brand.spacing = spacing;
+    if (Object.keys(button).some(k => button[k])) brand.button = button;
+    if (Object.keys(shadow).some(k => shadow[k])) brand.shadow = shadow;
+    if (headerStyle) brand.headerStyle = headerStyle;
+    if (heroStyle) brand.heroStyle = heroStyle;
+
+    // Typography: drop empty slots so {} and {heading:""} compare equal.
+    const typo = Object.fromEntries(
+      Object.entries(fonts).filter(([, v]) => v)
+    ) as Record<string, string>;
+
     return draftDiffersFromPublished(
       {
         theme_key: themeKey,
         custom_theme_id: customThemeId,
-        brand: { colors, scale, radius, spacing, button, shadow, headerStyle, heroStyle } as ThemeTokens,
-        typography: fonts,
+        brand,
+        typography: typo,
         last_saved_at: null,
         saved_by: null,
         published_at: null,
@@ -276,8 +367,10 @@ export function ThemeStudio({
       {
         theme_key: site.theme_key,
         custom_theme_id: site.custom_theme_id ?? null,
-        brand: site.brand,
-        typography: site.typography,
+        brand: normaliseTokens(site.brand),
+        typography: Object.fromEntries(
+          Object.entries(site.typography ?? {}).filter(([, v]) => v)
+        ) as Record<string, string>,
       }
     );
   }, [draftLoaded, themeKey, customThemeId, colors, fonts, scale, radius, spacing, button, shadow, headerStyle, heroStyle, site]);
@@ -338,22 +431,31 @@ export function ThemeStudio({
 
   return (
     <div className="space-y-4">
-      {/* Status bar */}
+      {/*
+        Theme-scoped action bar. Everything here acts on the THEME DRAFT.
+        Site-level actions (take live / take offline) are in the page header
+        so the two publishes are never confused.
+      */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {hasUnpublished ? (
-            <Badge variant="amber">Unpublished changes</Badge>
+            <Badge variant="amber">Draft not yet live</Badge>
           ) : (
-            <Badge variant="green">In sync</Badge>
+            <Badge variant="green">Matches live site</Badge>
           )}
           {saving && <span className="text-xs text-gray-500">Saving…</span>}
           {lastSaved && !saving && (
-            <span className="text-xs text-gray-400">Saved at {lastSaved}</span>
+            <span className="text-xs text-gray-400">Saved {lastSaved}</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="secondary" onClick={() => setShowPreview(true)}>
-            <Monitor size={13} /> Preview
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={async () => { await saveNow(); setShowPreview(true); }}
+            title="See the theme you are editing, before publishing"
+          >
+            <Monitor size={13} /> Preview draft
           </Button>
           <Button size="sm" variant="secondary" onClick={exportTheme}>
             <Download size={13} /> Export
@@ -378,8 +480,9 @@ export function ThemeStudio({
                 onClick={() => setShowPublishConfirm(true)}
                 disabled={!isAdmin}
                 loading={publishing}
+                title="Apply this theme to the public site"
               >
-                <Rocket size={13} /> Publish
+                <Rocket size={13} /> Apply to live site
               </Button>
             </>
           )}
@@ -411,6 +514,17 @@ export function ThemeStudio({
           customThemes={customThemes}
           onSelectTheme={selectTheme}
           onSelectCustom={selectCustomTheme}
+          onApplyLayout={async (key) => {
+            const { data, error } = await supabase.rpc("apply_theme_layout", {
+              p_theme_key: key, p_page_slug: "", p_mode: "append",
+            });
+            if (error) { setError(error.message); return; }
+            const result = data as { ok?: boolean; sections_added?: number; message?: string } | null;
+            if (result?.ok) {
+              flash(`Added ${result.sections_added ?? 0} section(s) from the theme layout.`);
+              await onSiteUpdate();
+            }
+          }}
         />
       )}
 
@@ -474,7 +588,12 @@ export function ThemeStudio({
 
       {/* Device preview overlay */}
       {showPreview && (
-        <DevicePreview previewUrl={previewPath} onClose={() => setShowPreview(false)} />
+        <DevicePreview
+          previewUrl="/dashboard/website/preview"
+          label="Draft theme"
+          isDraft
+          onClose={() => setShowPreview(false)}
+        />
       )}
 
       {/* Publish confirmation */}
@@ -501,7 +620,7 @@ export function ThemeStudio({
 /* ------------------------------------------------------------------ */
 
 function GalleryPanel({
-  themes, selectedKey, selectedCustomId, customThemes, onSelectTheme, onSelectCustom,
+  themes, selectedKey, selectedCustomId, customThemes, onSelectTheme, onSelectCustom, onApplyLayout,
 }: {
   themes: WebsiteTheme[];
   selectedKey: string | null;
@@ -509,6 +628,7 @@ function GalleryPanel({
   customThemes: CustomTheme[];
   onSelectTheme: (key: string) => void;
   onSelectCustom: (id: string) => void;
+  onApplyLayout?: (themeKey: string) => void;
 }) {
   return (
     <div className="space-y-5">
@@ -518,12 +638,30 @@ function GalleryPanel({
           <p className="text-sm text-gray-600 mb-4">
             Switching theme changes your base colours, type and spacing. Your content and overrides stay intact.
           </p>
+          <div className="flex items-start gap-2 p-3 mb-4 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900">
+            <Info size={14} className="mt-px shrink-0" />
+            <div>
+              <strong>Picking a theme changes colour, type and texture — not your page layout.</strong>{" "}
+              Your sections stay exactly as they are, which is deliberate: your
+              content is never rewritten behind your back. To also adopt the
+              theme&apos;s recommended section order, use{" "}
+              <strong>Apply recommended layout</strong> below the gallery.
+            </div>
+          </div>
+
           <ThemeGallery
             themes={themes}
             activeKey={selectedCustomId ? undefined : selectedKey}
             onSelect={onSelectTheme}
             actionLabel="Apply theme"
           />
+
+          {selectedKey && !selectedCustomId && onApplyLayout && (
+            <ApplyLayoutPanel
+              theme={themes.find(t => t.key === selectedKey)}
+              onApply={onApplyLayout}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -877,6 +1015,47 @@ function TokenField({
       {value && (
         <button onClick={() => onChange("")} className="text-[10px] text-gray-400 hover:text-red-500">×</button>
       )}
+    </div>
+  );
+}
+
+
+function ApplyLayoutPanel({
+  theme, onApply,
+}: {
+  theme: WebsiteTheme | undefined;
+  onApply: (key: string) => void;
+}) {
+  if (!theme || !theme.default_sections || theme.default_sections.length === 0) return null;
+  return (
+    <div className="mt-4 p-4 rounded-lg border border-dashed border-[#C9A227] bg-[#FBF6E8]">
+      <div className="flex items-start gap-3">
+        <LayoutTemplate size={18} className="text-[#C9A227] mt-0.5 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-[#0F2A47]">
+            Also adopt this theme&apos;s recommended page layout?
+          </p>
+          <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+            This adds the sections <strong>{theme.name}</strong> was designed around to your
+            home page (without removing what you already have). It is undoable from History.
+          </p>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {theme.default_sections.map(s => (
+              <span key={s} className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-gray-200 text-gray-600">
+                {s.replace(/_/g, " ")}
+              </span>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            variant="gold"
+            className="mt-3"
+            onClick={() => onApply(theme.key)}
+          >
+            <LayoutTemplate size={13} /> Apply recommended layout
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

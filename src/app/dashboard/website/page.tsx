@@ -348,24 +348,35 @@ export default function WebsiteStudioPage() {
 
   return (
     <div className="p-6 space-y-5">
+      {/*
+        Header actions are about the SITE as a whole: is it reachable by the
+        public, and what does the public currently see. Theme-specific
+        actions (preview draft, publish theme changes) live inside the
+        Theme & Brand tab, next to the controls that create them.
+      */}
       <PageHeader title="Website Studio" subtitle={site.site_name}>
         <Button size="sm" variant="secondary" onClick={() => setShowPreview(true)}>
-          <Monitor size={14} /> Device preview
+          <Monitor size={14} /> View live site
         </Button>
-        <a href={previewPath} target="_blank" rel="noopener noreferrer">
-          <Button size="sm" variant="secondary">
-            <Eye size={14} /> Open site
-          </Button>
-        </a>
+        {site.status === "published" && (
+          <a href={previewPath} target="_blank" rel="noopener noreferrer">
+            <Button size="sm" variant="secondary">
+              <ExternalLink size={14} /> Open
+            </Button>
+          </a>
+        )}
         <Button
           size="sm"
           variant={site.status === "published" ? "secondary" : "gold"}
           onClick={togglePublish}
           loading={saving}
           disabled={!isOrgAdmin}
+          title={site.status === "published"
+            ? "Take the site offline for the public"
+            : "Make the site reachable by the public"}
         >
-          <Rocket size={14} />
-          {site.status === "published" ? "Unpublish" : "Publish site"}
+          {site.status === "published" ? <EyeOff size={14} /> : <Rocket size={14} />}
+          {site.status === "published" ? "Take offline" : "Take site live"}
         </Button>
       </PageHeader>
 
@@ -522,6 +533,7 @@ export default function WebsiteStudioPage() {
       {showPreview && (
         <DevicePreview
           previewUrl={previewPath}
+          label="Live site"
           onClose={() => setShowPreview(false)}
         />
       )}
