@@ -432,17 +432,17 @@ BEGIN
 
   -- Work out what genuinely differs before writing.
   IF v_draft.custom_theme_id IS DISTINCT FROM v_site.custom_theme_id THEN
-    v_changed := v_changed || 'custom theme';
+    v_changed := array_append(v_changed, 'custom theme');
   END IF;
   IF v_draft.theme_key IS NOT NULL
      AND v_draft.theme_key IS DISTINCT FROM v_site.theme_key THEN
-    v_changed := v_changed || 'theme';
+    v_changed := array_append(v_changed, 'theme');
   END IF;
   IF COALESCE(v_draft.brand, '{}'::jsonb) IS DISTINCT FROM COALESCE(v_site.brand, '{}'::jsonb) THEN
-    v_changed := v_changed || 'brand overrides';
+    v_changed := array_append(v_changed, 'brand overrides');
   END IF;
   IF COALESCE(v_draft.typography, '{}'::jsonb) IS DISTINCT FROM COALESCE(v_site.typography, '{}'::jsonb) THEN
-    v_changed := v_changed || 'typography';
+    v_changed := array_append(v_changed, 'typography');
   END IF;
 
   IF array_length(v_changed, 1) IS NULL THEN

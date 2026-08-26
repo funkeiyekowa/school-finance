@@ -589,7 +589,7 @@ export function ThemeStudio({
       {/* Device preview overlay */}
       {showPreview && (
         <DevicePreview
-          previewUrl="/dashboard/website/preview"
+          previewUrl="/preview-draft"
           label="Draft theme"
           isDraft
           onClose={() => setShowPreview(false)}

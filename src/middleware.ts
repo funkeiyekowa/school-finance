@@ -25,6 +25,7 @@ const APP_PREFIXES = [
   "/api",
   "/s/",          // slug-addressed public sites
   "/site/",       // internal rewrite target
+  "/preview-draft", // studio draft preview (no sidebar)
   "/_next",
   "/favicon.ico",
 ];

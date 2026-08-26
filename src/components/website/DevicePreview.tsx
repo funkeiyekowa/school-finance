@@ -140,7 +140,7 @@ export function DevicePreview({ previewUrl, onClose, label, isDraft }: DevicePre
           <iframe
             key={reloadKey}
             ref={iframeRef}
-            src={previewUrl}
+            src={`${previewUrl}${previewUrl.includes("?") ? "&" : "?"}t=${reloadKey}`}
             title={isDraft ? "Draft site preview" : "Live site preview"}
             sandbox="allow-same-origin allow-scripts allow-forms"
             className="border-0"
