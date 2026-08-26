@@ -36,22 +36,28 @@ export function SiteInteractive() {
     }
 
     // --- Scroll reveal (skip if user prefers reduced motion) ---
+    // IMPORTANT: this must never `return` out of the effect early — doing so
+    // previously skipped every piece of setup below it (count-up stats,
+    // preloader auto-hide, parallax, cursor glow, magnetic buttons, and the
+    // testimonial carousel), because a `return` inside a useEffect callback
+    // exits the whole callback, not just this block. The observer's cleanup
+    // is collected instead and returned once, at the very end of the effect.
+    let revealObserver: IntersectionObserver | null = null;
     if (!prefersReduced) {
       const reveals = document.querySelectorAll<HTMLElement>(".reveal");
       if (reveals.length > 0 && "IntersectionObserver" in window) {
-        const observer = new IntersectionObserver(
+        revealObserver = new IntersectionObserver(
           (entries) => {
             entries.forEach((entry) => {
               if (entry.isIntersecting) {
                 entry.target.classList.add("is-visible");
-                observer.unobserve(entry.target);
+                revealObserver?.unobserve(entry.target);
               }
             });
           },
           { rootMargin: "0px 0px -60px 0px", threshold: 0.1 }
         );
-        reveals.forEach((el) => observer.observe(el));
-        return () => observer.disconnect();
+        reveals.forEach((el) => revealObserver!.observe(el));
       }
     } else {
       // Immediately show all reveal elements
@@ -233,6 +239,11 @@ export function SiteInteractive() {
       root.addEventListener("focusout", resetTimer);
       resetTimer();
     });
+
+    return () => {
+      revealObserver?.disconnect();
+      carouselTimers.forEach((t) => window.clearInterval(t));
+    };
   }, []);
 
   return null;
