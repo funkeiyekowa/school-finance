@@ -318,8 +318,8 @@ ${S} .btn{
 ${S} .btn:hover{transform:translateY(-2px);}
 ${S} .btn:active{transform:translateY(0);}
 ${S} .btn[disabled]{opacity:.6;cursor:default;transform:none;}
-${S} .btn-primary{background:var(--c-accent);color:var(--c-text);box-shadow:var(--shadow-soft);}
-${S} .btn-primary:hover{box-shadow:var(--shadow-lift);filter:brightness(1.08);}
+${S} .btn-primary,${S} .btn-gold{background:var(--c-accent);color:var(--c-text);box-shadow:var(--shadow-soft);}
+${S} .btn-primary:hover,${S} .btn-gold:hover{box-shadow:var(--shadow-lift);filter:brightness(1.08);}
 ${S} .btn-outline{background:transparent;border-color:currentColor;color:inherit;}
 ${S} .btn-outline:hover{background:rgba(255,255,255,.08);border-color:currentColor;}
 ${S} .btn-accent{background:var(--c-primary);color:#fff;box-shadow:var(--shadow-soft);}
@@ -328,6 +328,10 @@ ${S} .btn-ghost{background:transparent;color:var(--c-primary);padding:.9em 1.2em
 ${S} .btn-ghost:hover{background:var(--c-surface);}
 ${S} .btn-outline-light{background:transparent;border-color:rgba(255,255,255,.55);color:#fff;}
 ${S} .btn-outline-light:hover{background:rgba(255,255,255,.1);border-color:#fff;}
+${S} .btn-terracotta{background:var(--c-secondary,var(--c-primary-dark,var(--c-primary)));color:#fff;box-shadow:var(--shadow-soft);}
+${S} .btn-terracotta:hover{box-shadow:var(--shadow-lift);filter:brightness(1.12);}
+${S} .btn-outline-ink{background:transparent;border-color:var(--c-text);color:var(--c-text);}
+${S} .btn-outline-ink:hover{background:var(--c-text);color:#fff;}
 ${S} .btn-sm{padding:.6em 1.1em;font-size:.85rem;}
 
 /* ============ HEADER ============ */
@@ -923,15 +927,18 @@ ${S} .trust-strip.on-light .trust-chip{
 ${S} .hero-panel{display:none;}
 @media (min-width:1024px){${S} .hero-panel{display:grid;place-items:center;}}
 ${S} .badge-ring{
-  width:min(300px,80%);aspect-ratio:1;border-radius:50%;
+  width:min(340px,86%);aspect-ratio:1;border-radius:50%;
   display:grid;place-content:center;text-align:center;gap:6px;
   border:2px solid var(--c-accent);
-  background:
-    radial-gradient(circle at 50% 40%,rgba(255,255,255,.10),transparent 65%),
-    var(--motif-image);
-  background-size:auto,var(--motif-size);
+  /* Solid fill — the woven/motif texture belongs on the outer .hero-panel
+     behind it (via ::before), not on the badge face itself. A textured
+     badge reads as muddy and makes the initials harder to see. */
+  background:var(--c-primary-dark,var(--c-primary));
   box-shadow:0 0 0 12px rgba(255,255,255,.05),var(--shadow-premium);
+  animation:heroFloatY 5.5s ease-in-out infinite;
 }
+@keyframes heroFloatY{0%,100%{transform:translateY(0);}50%{transform:translateY(-10px);}}
+@media (prefers-reduced-motion:reduce){${S} .badge-ring{animation:none;}}
 ${S} .badge-ring strong{
   font-family:var(--font-heading);font-size:3.4rem;line-height:1;
   color:var(--c-accent);letter-spacing:.02em;
