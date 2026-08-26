@@ -802,6 +802,54 @@ function RenderSectionBody({
     /* ============================================================ */
     case "testimonials": {
       const items = list(c, "items");
+      if (items.length === 0) return null;
+      const useCarousel = bool(c, "carousel", items.length > 1) && items.length > 1;
+
+      if (useCarousel) {
+        return (
+          <section className="section alt reveal">
+            <div className="wrap">
+              <div className="testimonial-carousel" data-testimonial-carousel>
+                <span className="quote-mark" aria-hidden="true">&ldquo;</span>
+                <div className="testimonial-viewport" aria-live="polite">
+                  {items.map((it, i) => (
+                    <div key={i} className={`testimonial-slide${i === 0 ? " is-active" : ""}`}>
+                      <blockquote>{str(it, "quote")}</blockquote>
+                      <cite>
+                        &mdash; {str(it, "author") || "A parent"}
+                        {str(it, "role") ? `, ${str(it, "role")}` : ""}
+                      </cite>
+                    </div>
+                  ))}
+                </div>
+                <div className="carousel-controls">
+                  <button type="button" className="carousel-arrow" data-carousel-prev aria-label="Previous testimonial">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+                      strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
+                  </button>
+                  <div className="carousel-dots" data-carousel-dots role="tablist" aria-label="Choose testimonial">
+                    {items.map((_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className={`carousel-dot${i === 0 ? " is-active" : ""}`}
+                        role="tab"
+                        aria-label={`Show testimonial ${i + 1} of ${items.length}`}
+                        data-carousel-dot={i}
+                      />
+                    ))}
+                  </div>
+                  <button type="button" className="carousel-arrow" data-carousel-next aria-label="Next testimonial">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+                      strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        );
+      }
+
       return (
         <section className="section alt reveal">
           <div className="wrap">
@@ -889,9 +937,26 @@ function RenderSectionBody({
               <h2>{str(c, "heading")}</h2>
             </div>
             {images.length === 0 ? (
-              <p style={{ color: "var(--c-text-muted)", textAlign: "center" }}>
-                No photographs have been added yet.
-              </p>
+              <>
+                <div className="gallery-grid">
+                  {["Early Years", "Sport day", "In class", "Campus"].map((season, i) => (
+                    <div key={i} className={`gallery-tile is-placeholder t${i + 1} reveal`} aria-hidden="true">
+                      <span className="gallery-season">{season}</span>
+                      <span className="tile-caption">
+                        {["Early Years", "Assembly & sport", "Classrooms", "Campus grounds"][i]} · photos coming soon
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="gallery-note">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+                    strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="9" /><path d="M12 8v4l3 2" />
+                  </svg>
+                  Check back soon, or{" "}
+                  <a href={link(str(c, "tour_href", "/contact"))}>book a tour</a> to see the campus in person.
+                </p>
+              </>
             ) : (
               <div className="gallery-grid">
                 {images.map((im, i) =>
@@ -958,7 +1023,31 @@ function RenderSectionBody({
     /* ============================================================ */
     case "news": {
       const items = ctx.news.slice(0, num(c, "limit", 3));
-      if (items.length === 0) return null;
+      if (items.length === 0) {
+        return (
+          <section className={`section${alt ? " alt" : ""} reveal`}>
+            <div className="wrap">
+              <div className="section-head">
+                {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+                <h2>{str(c, "heading", "Latest news")}</h2>
+              </div>
+              <div className="news-card news-card--empty">
+                <div className="icon-badge">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+                    strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" />
+                  </svg>
+                </div>
+                <h3>Updates are coming soon</h3>
+                <p>
+                  Term dates, admissions news and upcoming events will be posted here.
+                  In the meantime, reach out directly and we&apos;ll keep you posted.
+                </p>
+              </div>
+            </div>
+          </section>
+        );
+      }
       return (
         <section className={`section${alt ? " alt" : ""} reveal`}>
           <div className="wrap">

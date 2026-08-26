@@ -118,6 +118,44 @@ export function SiteInteractive() {
       };
       window.addEventListener("scroll", hideCue, { passive: true });
     }
+
+    // --- Testimonial carousel(s) ---
+    const carousels = document.querySelectorAll<HTMLElement>("[data-testimonial-carousel]");
+    const carouselTimers: number[] = [];
+    carousels.forEach((root) => {
+      const slides = root.querySelectorAll<HTMLElement>(".testimonial-slide");
+      const dots = root.querySelectorAll<HTMLButtonElement>("[data-carousel-dot]");
+      const prevBtn = root.querySelector<HTMLButtonElement>("[data-carousel-prev]");
+      const nextBtn = root.querySelector<HTMLButtonElement>("[data-carousel-next]");
+      if (slides.length === 0) return;
+      let current = 0;
+      let timer: number | null = null;
+
+      const goTo = (i: number) => {
+        slides[current]?.classList.remove("is-active");
+        dots[current]?.classList.remove("is-active");
+        current = (i + slides.length) % slides.length;
+        slides[current]?.classList.add("is-active");
+        dots[current]?.classList.add("is-active");
+      };
+      const resetTimer = () => {
+        if (timer) window.clearInterval(timer);
+        if (prefersReduced) return;
+        timer = window.setInterval(() => goTo(current + 1), 6500);
+        carouselTimers.push(timer);
+      };
+
+      dots.forEach((dot, i) => {
+        dot.addEventListener("click", () => { goTo(i); resetTimer(); });
+      });
+      prevBtn?.addEventListener("click", () => { goTo(current - 1); resetTimer(); });
+      nextBtn?.addEventListener("click", () => { goTo(current + 1); resetTimer(); });
+      root.addEventListener("mouseenter", () => { if (timer) window.clearInterval(timer); });
+      root.addEventListener("mouseleave", resetTimer);
+      root.addEventListener("focusin", () => { if (timer) window.clearInterval(timer); });
+      root.addEventListener("focusout", resetTimer);
+      resetTimer();
+    });
   }, []);
 
   return null;

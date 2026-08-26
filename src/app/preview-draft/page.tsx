@@ -13,7 +13,7 @@
  * route reads only the published websites row.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { resolveTheme, themeToCss, googleFontsHref } from "@/lib/website/theme";
@@ -22,6 +22,14 @@ import type { PagePayload } from "@/lib/website/types";
 import { AlertTriangle, Loader2 } from "lucide-react";
 
 export default function DraftPreviewPage() {
+  return (
+    <Suspense fallback={null}>
+      <DraftPreviewInner />
+    </Suspense>
+  );
+}
+
+function DraftPreviewInner() {
   const params = useSearchParams();
   const slug = params.get("page") ?? "";
   const supabase = useMemo(() => createClient(), []);
