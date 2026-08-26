@@ -580,8 +580,15 @@ function RenderSectionBody({
             {showBadgeRing && (
               <div className="hero-panel reveal" style={{ ["--reveal-delay" as string]: ".2s" }} aria-hidden="true">
                 <div className="badge-ring">
-                  <strong>{str(c, "badge_initials") || "GS"}</strong>
-                  <span>{str(c, "badge_caption") || "Est. tradition"}</span>
+                  {str(c, "badge_image_url") ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={str(c, "badge_image_url")} alt="" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}} />
+                  ) : (
+                    <>
+                      <strong>{str(c, "badge_initials") || "GS"}</strong>
+                      <span>{str(c, "badge_caption") || "Est. tradition"}</span>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -711,16 +718,32 @@ function RenderSectionBody({
     case "why_choose_us":
     case "values": {
       const items = list(c, "items");
+      const WHY_ICONS = [
+        // Graduation cap
+        (<svg key="i0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l9 4.5-9 4.5-9-4.5L12 3z"/><path d="M7 10.5V16c0 1.5 2.5 3 5 3s5-1.5 5-3v-5.5"/></svg>),
+        // Trophy
+        (<svg key="i1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M17 5h3a4 4 0 0 1-3 4M7 5H4a4 4 0 0 0 3 4"/></svg>),
+        // Shield check
+        (<svg key="i2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l8 3.5v5c0 4.7-3.2 8.7-8 9.5-4.8-.8-8-4.8-8-9.5v-5L12 3z"/><path d="M9 12l2 2 4-4"/></svg>),
+        // Star
+        (<svg key="i3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15 9 22 10 17 15 18 22 12 18 6 22 7 15 2 10 9 9 12 2"/></svg>),
+        // Book
+        (<svg key="i4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2z"/><path d="M4 5v14"/></svg>),
+        // Heart
+        (<svg key="i5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>),
+      ];
       return (
-        <section className={`section${alt ? " alt" : ""} reveal`}>
+        <section className={`section${alt ? " alt" : ""} reveal`} id={anchor}>
           <div className="wrap">
             <div className="section-head center">
+              {eyebrow && <p className="eyebrow">{eyebrow}</p>}
               <h2>{str(c, "heading")}</h2>
               {str(c, "subheading") && <p>{str(c, "subheading")}</p>}
             </div>
             <div className="grid-3 reveal-stagger">
               {items.map((it, i) => (
-                <div key={i} className="card" style={{ "--i": i } as React.CSSProperties}>
+                <div key={i} className="card why-card" style={{ ["--i" as string]: i } as React.CSSProperties}>
+                  <div className="icon-badge" aria-hidden="true">{WHY_ICONS[i % WHY_ICONS.length]}</div>
                   <h3>{str(it, "title")}</h3>
                   <p>{str(it, "body")}</p>
                 </div>
@@ -795,12 +818,17 @@ function RenderSectionBody({
               </div>
             )}
             <div className="stats-grid">
-              {items.map((it, i) => (
-                <div key={i}>
-                  <span className="stat-value">{str(it, "value")}</span>
-                  <span className="stat-label">{str(it, "label")}</span>
-                </div>
-              ))}
+              {items.map((it, i) => {
+                const val = str(it, "value");
+                const numeric = val.replace(/[^0-9]/g, "");
+                const suffix = val.replace(/[0-9,]/g, "");
+                return (
+                  <div key={i}>
+                    <span className="stat-value" data-count={numeric || undefined} data-suffix={suffix || undefined}>{val}</span>
+                    <span className="stat-label">{str(it, "label")}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
           {showCurves && (
@@ -1159,8 +1187,8 @@ function RenderSectionBody({
             <div style={{ maxWidth: 720, margin: "0 auto" }}>
               {items.map((it, i) => (
                 <details key={i} className="faq-item">
-                  <summary>{str(it, "q")}</summary>
-                  <div className="faq-body">{str(it, "a")}</div>
+                  <summary>{str(it, "question") || str(it, "q")}</summary>
+                  <div className="faq-body">{str(it, "answer") || str(it, "a")}</div>
                 </details>
               ))}
             </div>

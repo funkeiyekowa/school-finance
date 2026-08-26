@@ -352,7 +352,7 @@ ${S} .brand-text{display:flex;flex-direction:column;line-height:1.15;min-width:0
 ${S} .brand-name{
   font-family:var(--font-heading);font-weight:700;font-size:1.08rem;white-space:nowrap;
 }
-${S} .brand-tag{font-size:.72rem;opacity:.72;white-space:nowrap;}
+${S} .brand-tag{font-size:.72rem;color:var(--c-accent-soft, var(--c-accent));white-space:nowrap;opacity:.95;}
 
 ${S} .main-nav{display:none;}
 ${S} .main-nav ul{display:flex;align-items:center;gap:30px;list-style:none;padding:0;margin:0;}
@@ -524,6 +524,19 @@ ${S} .card-icon{width:44px;height:44px;color:var(--c-primary);margin-bottom:18px
 
 /* ============ GRID LAYOUTS ============ */
 ${S} .grid-2{display:grid;gap:26px;grid-template-columns:1fr;}
+${S} .why-card{
+  background:var(--c-background);border:1px solid var(--c-border);border-radius:var(--r-md);
+  padding:32px 28px;transition:transform .25s var(--ease),box-shadow .25s var(--ease),border-color .25s var(--ease);
+}
+${S} .why-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lift);border-color:var(--c-secondary,var(--c-primary));}
+${S} .why-card > .icon-badge{
+  width:52px;height:52px;border-radius:var(--r-sm);
+  background:var(--c-surface-alt);color:var(--c-secondary,var(--c-primary-dark,var(--c-primary)));
+  display:grid;place-items:center;margin-bottom:18px;
+}
+${S} .why-card > .icon-badge svg{width:26px;height:26px;}
+${S} .why-card h3{font-size:1.2rem;margin-bottom:.4em;color:var(--c-text);}
+${S} .why-card p{color:var(--c-text-muted);margin:0;font-size:.98rem;line-height:1.6;}
 ${S} .grid-3{display:grid;gap:26px;grid-template-columns:1fr;}
 ${S} .grid-4{display:grid;gap:26px;grid-template-columns:1fr;}
 @media (min-width:640px){
@@ -563,9 +576,14 @@ ${S} .stats-grid .stat-value{
   font-size:clamp(2rem,4.4vw,3.25rem);color:var(--c-accent);line-height:1;margin-bottom:10px;
 }
 ${S} .stats-grid .stat-label{font-size:.78rem;letter-spacing:.1em;text-transform:uppercase;opacity:.78;}
-@media (min-width:768px){
-  ${S} .stats-grid{grid-template-columns:repeat(4,1fr);}
+@media (min-width:640px){
+  ${S} .stats-grid{grid-template-columns:repeat(3,1fr);}
 }
+@media (min-width:900px){
+  ${S} .stats-grid{grid-template-columns:repeat(5,1fr);}
+}
+${S} .stats-grid > div{min-width:0;}
+${S} .stats-grid .stat-label{white-space:normal;line-height:1.35;}
 
 /* ============ TESTIMONIALS ============ */
 ${S} .testimonial{position:relative;text-align:center;max-width:720px;margin:0 auto;padding:0 20px;}
@@ -935,9 +953,10 @@ ${S} .trust-strip.on-light .trust-chip{
 
 /* ============ HERO BADGE RING ============ */
 ${S} .hero-panel{display:none;}
-@media (min-width:1024px){${S} .hero-panel{display:grid;place-items:center;}}
+@media (min-width:1024px){${S} .hero-panel{display:grid;place-items:center;min-height:520px;}}
+${S} .hero-panel img.hero-image{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;z-index:1;}
 ${S} .badge-ring{
-  width:min(340px,86%);aspect-ratio:1;border-radius:50%;
+  width:min(440px,92%);aspect-ratio:1;border-radius:50%;
   display:grid;place-content:center;text-align:center;gap:6px;
   border:2px solid var(--c-accent);
   /* Solid fill — the woven/motif texture belongs on the outer .hero-panel
@@ -1025,12 +1044,19 @@ ${S} .house-grid{display:grid;gap:22px;grid-template-columns:repeat(2,1fr);}
 @media (min-width:900px){${S} .house-grid{grid-template-columns:repeat(4,1fr);}}
 ${S} .house-card{text-align:center;}
 ${S} .house-roundel{
-  width:96px;height:96px;margin:0 auto 16px;border-radius:50%;
-  display:grid;place-items:center;color:#fff;
+  position:relative;width:96px;height:96px;margin:0 auto 16px;border-radius:50%;
+  display:grid;place-items:center;color:#fff;overflow:hidden;
   font-family:var(--font-heading);font-weight:800;font-size:.62rem;
   letter-spacing:.1em;box-shadow:var(--shadow-lift);
   border:3px solid var(--c-background);
 }
+${S} .house-roundel::before{
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.32) 0 2px, transparent 2px 12px),
+    repeating-linear-gradient(-45deg, rgba(255,255,255,.32) 0 2px, transparent 2px 12px);
+}
+${S} .house-roundel > *{position:relative;z-index:1;}
 ${S} .house-card h3{font-size:1.1rem;margin-bottom:.25em;}
 ${S} .house-card p{font-size:.85rem;color:var(--c-text-muted);margin:0;}
 

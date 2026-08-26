@@ -260,8 +260,8 @@ export function SiteShell({
 
             {/* Header actions */}
             <div className="header-actions">
-              <a href={resolveHref("/admissions")} className="btn btn-accent btn-sm">
-                Apply
+              <a href={resolveHref("/admissions")} className="btn btn-gold btn-sm js-apply-cta" data-subject="Admission Enquiry">
+                Apply Now
               </a>
               <button
                 className="nav-toggle"
