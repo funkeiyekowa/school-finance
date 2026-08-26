@@ -29,21 +29,32 @@ export default function LoginPage() {
     setError("");
     try {
       let loginEmail = email;
-      // For students, look up email by student_code
+      // For students: verify code via RPC (bypasses RLS safely) and get login email
       if (persona === "student" && studentCode) {
-        const { data: stu } = await supabase
-          .from("students")
-          .select("guardian_email, student_code")
-          .eq("student_code", studentCode.trim().toUpperCase())
-          .maybeSingle();
-        const record = stu as { guardian_email: string | null } | null;
-        if (record?.guardian_email) {
-          loginEmail = record.guardian_email;
-        } else {
+        const code = studentCode.trim().toUpperCase();
+        const { data: verify, error: verifyErr } = await supabase.rpc("verify_student_code", { p_code: code });
+        if (verifyErr) {
+          setError("Login system error. Contact your school.");
+          setLoading(false);
+          return;
+        }
+        const result = verify as { exists: boolean; active: boolean; login_email: string; has_auth: boolean } | null;
+        if (!result || !result.exists) {
           setError("Student code not found. Check with your school.");
           setLoading(false);
           return;
         }
+        if (!result.active) {
+          setError("This student account is not active. Contact your school.");
+          setLoading(false);
+          return;
+        }
+        if (!result.has_auth) {
+          setError("Login not set up for this student. Contact your school.");
+          setLoading(false);
+          return;
+        }
+        loginEmail = result.login_email;
       }
       const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
       if (error) {
