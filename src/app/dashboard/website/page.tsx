@@ -27,6 +27,8 @@ import {
   SECTION_CATALOGUE, SECTION_META, type SectionFieldMeta,
 } from "@/components/website/sections";
 import type { WebsiteTheme } from "@/lib/website/types";
+import { motifBackground, motifSize } from "@/lib/website/theme";
+import { ThemeGallery } from "@/components/website/ThemeGallery";
 import {
   Globe, Palette, FileText, Newspaper, CalendarDays, Image as ImageIcon,
   Search, Link2, History, Rocket, Plus, Trash2, ChevronUp, ChevronDown,
@@ -81,6 +83,8 @@ interface SectionRow {
   visible: boolean;
   content: Record<string, unknown>;
   style: Record<string, unknown>;
+  eyebrow: string | null;
+  anchor_id: string | null;
 }
 
 interface NewsRow {
@@ -324,17 +328,12 @@ export default function WebsiteStudioPage() {
               at any time, and override anything afterwards — your content is never lost
               when you switch.
             </p>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {themes.map(t => (
-                <ThemeCard
-                  key={t.key}
-                  theme={t}
-                  onSelect={() => createSite(t.key)}
-                  disabled={saving || !isOrgAdmin}
-                  actionLabel="Start with this"
-                />
-              ))}
-            </div>
+            <ThemeGallery
+              themes={themes}
+              onSelect={key => createSite(key)}
+              disabled={saving || !isOrgAdmin}
+              actionLabel="Start with this"
+            />
           </CardContent>
         </Card>
       </div>
@@ -574,12 +573,7 @@ function ThemeCard({
       "rounded-xl border overflow-hidden flex flex-col",
       active ? "border-[#C9A227] ring-2 ring-[#C9A227]/30" : "border-gray-200"
     )}>
-      {/* Token swatch preview */}
-      <div className="h-24 flex" aria-hidden="true">
-        {["primary", "secondary", "accent", "surface", "background"].map(k => (
-          <div key={k} className="flex-1" style={{ background: colors[k] ?? "#eee" }} />
-        ))}
-      </div>
+      <ThemePreview theme={theme} />
       <div className="p-4 flex-1 flex flex-col">
         <div className="flex items-start justify-between gap-2">
           <h3 className="font-bold text-sm text-[#0F2A47]">{theme.name}</h3>
@@ -601,6 +595,114 @@ function ThemeCard({
       </div>
     </div>
   );
+}
+
+/**
+ * Miniature rendering of a theme: header bar, hero with the theme's own
+ * motif and hero style, a button and two cards. Enough to judge a theme
+ * without leaving the studio.
+ */
+function ThemePreview({ theme, height = 132 }: { theme: WebsiteTheme; height?: number }) {
+  const t = theme.tokens ?? {};
+  const c = t.colors ?? {};
+  const primary = c.primary ?? "#0F2A47";
+  const accent = c.accent ?? "#C9A227";
+  const bg = c.background ?? "#fff";
+  const surface = c.surface ?? "#f8fafc";
+  const border = c.border ?? "#e2e8f0";
+  const text = c.text ?? "#0f172a";
+  const radius = t.radius?.md ?? "12px";
+  const motifImage = motifBackground(t.motif ?? "none", withPreviewAlpha(accent));
+  const heroDark = ["badge-ring", "gradient", "centered", "full-bleed"].includes(t.heroStyle ?? "");
+
+  return (
+    <div aria-hidden="true" style={{ height, background: bg, overflow: "hidden", position: "relative" }}>
+      {/* Header */}
+      <div style={{
+        height: 18, background: t.headerStyle === "dark" ? primary : bg,
+        borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center",
+        gap: 4, padding: "0 8px",
+      }}>
+        <div style={{ width: 8, height: 8, borderRadius: 2, background: accent }} />
+        <div style={{ width: 26, height: 3, borderRadius: 2, background: t.headerStyle === "dark" ? "rgba(255,255,255,.6)" : text, opacity: 0.7 }} />
+        <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{ width: 10, height: 2, borderRadius: 1, background: t.headerStyle === "dark" ? "rgba(255,255,255,.45)" : text, opacity: 0.5 }} />
+          ))}
+        </div>
+      </div>
+
+      {/* Hero */}
+      <div style={{
+        height: 58, position: "relative",
+        background: heroDark
+          ? (t.heroStyle === "gradient"
+            ? `radial-gradient(circle at 70% 20%, ${accent}44, transparent 60%), ${primary}`
+            : primary)
+          : surface,
+        backgroundImage: motifImage !== "none" ? motifImage : undefined,
+        backgroundSize: motifSize(t.motif ?? "none"),
+        padding: "8px 10px",
+        display: "flex", alignItems: "center",
+        justifyContent: t.heroStyle === "centered" ? "center" : "flex-start",
+        textAlign: t.heroStyle === "centered" ? "center" : "left",
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ width: 22, height: 2, background: accent, marginBottom: 4, marginInline: t.heroStyle === "centered" ? "auto" : undefined }} />
+          <div style={{ width: "72%", height: 6, borderRadius: 2, background: heroDark ? "#fff" : text, opacity: 0.9, marginBottom: 3, marginInline: t.heroStyle === "centered" ? "auto" : undefined }} />
+          <div style={{ width: "48%", height: 4, borderRadius: 2, background: heroDark ? "rgba(255,255,255,.6)" : text, opacity: 0.5, marginBottom: 6, marginInline: t.heroStyle === "centered" ? "auto" : undefined }} />
+          <div style={{
+            display: "inline-block", padding: "3px 10px", background: accent,
+            borderRadius: t.button?.radius ?? radius, height: 12,
+          }} />
+        </div>
+        {t.heroStyle === "badge-ring" && (
+          <div style={{
+            width: 38, height: 38, borderRadius: "50%", border: `2px solid ${accent}`,
+            flexShrink: 0, display: "grid", placeItems: "center",
+            fontSize: 11, fontWeight: 800, color: accent,
+          }}>GS</div>
+        )}
+        {t.heroStyle === "image-right" && (
+          <div style={{ width: 52, height: 40, borderRadius: radius, background: `${accent}33`, flexShrink: 0, marginLeft: 8 }} />
+        )}
+      </div>
+
+      {/* Curve divider hint */}
+      {t.divider === "curve" && (
+        <svg viewBox="0 0 100 8" preserveAspectRatio="none" style={{ display: "block", width: "100%", height: 8, marginTop: -1 }}>
+          <path d="M0,0 L100,0 L100,3 Q50,8 0,3 Z" fill={heroDark ? primary : surface} />
+        </svg>
+      )}
+
+      {/* Cards */}
+      <div style={{ display: "flex", gap: 5, padding: "8px 10px" }}>
+        {[0, 1, 2].map(i => (
+          <div key={i} style={{
+            flex: 1, height: 30, borderRadius: radius,
+            background: bg,
+            border: t.cardStyle === "flat" ? "none" : `1px solid ${border}`,
+            boxShadow: t.cardStyle === "elevated" ? "0 2px 6px rgba(0,0,0,.10)"
+              : t.cardStyle === "glass" ? `0 0 0 1px ${accent}44` : "none",
+            padding: 4,
+          }}>
+            <div style={{ width: 10, height: 10, borderRadius: 3, background: `${primary}22`, marginBottom: 3 }} />
+            <div style={{ width: "80%", height: 2, background: text, opacity: 0.35, borderRadius: 1 }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function withPreviewAlpha(hex: string): string {
+  const c = hex.replace("#", "");
+  const full = c.length === 3 ? c.split("").map(x => x + x).join("") : c;
+  if (full.length !== 6) return "rgba(0,0,0,.12)";
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},0.16)`;
 }
 
 /** Small labelled text field that writes into a jsonb column. */
@@ -1212,14 +1314,26 @@ function SectionEditor({
 }) {
   const meta = SECTION_META[section.section_type];
   const [content, setContent] = useState<Record<string, unknown>>(section.content ?? {});
+  const [style, setStyle] = useState<Record<string, unknown>>(section.style ?? {});
+  const [eyebrow, setEyebrow] = useState(section.eyebrow ?? "");
+  const [anchorId, setAnchorId] = useState(section.anchor_id ?? "");
+  const [pane, setPane] = useState<"content" | "style">("content");
   const [saving, setSaving] = useState(false);
 
   const set = (k: string, v: unknown) => setContent(c => ({ ...c, [k]: v }));
+  const setSty = (k: string, v: unknown) => setStyle(s => ({ ...s, [k]: v }));
 
   async function save() {
     setSaving(true);
     const { error } = await supabase.from("website_sections")
-      .update({ content }).eq("id", section.id);
+      .update({
+        content,
+        style,
+        eyebrow: eyebrow.trim() || null,
+        // Anchors must be URL-safe so they work as #fragments.
+        anchor_id: anchorId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-") || null,
+      })
+      .eq("id", section.id);
     setSaving(false);
     if (error) { setError(error.message); return; }
     await onSaved();
@@ -1238,18 +1352,51 @@ function SectionEditor({
 
   return (
     <Modal open onClose={onClose} title={`Edit: ${meta.label}`} size="xl">
-      <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
-        <p className="text-xs text-gray-500">{meta.description}</p>
-
-        {meta.fields.map(field => (
-          <FieldEditor
-            key={field.name}
-            field={field}
-            value={content[field.name]}
-            onChange={v => set(field.name, v)}
-            media={media}
-          />
+      {/* Content / Style panes */}
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-lg mb-4" role="tablist">
+        {([
+          { id: "content", label: "Content", icon: <FileText size={13} /> },
+          { id: "style", label: "Appearance", icon: <Palette size={13} /> },
+        ] as const).map(p => (
+          <button
+            key={p.id}
+            role="tab"
+            aria-selected={pane === p.id}
+            onClick={() => setPane(p.id)}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors",
+              pane === p.id ? "bg-white shadow-sm text-[#0F2A47]" : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            {p.icon} {p.label}
+          </button>
         ))}
+      </div>
+
+      <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+        {pane === "content" ? (
+          <>
+            <p className="text-xs text-gray-500">{meta.description}</p>
+            {meta.fields.map(field => (
+              <FieldEditor
+                key={field.name}
+                field={field}
+                value={content[field.name]}
+                onChange={v => set(field.name, v)}
+                media={media}
+              />
+            ))}
+          </>
+        ) : (
+          <SectionStyleEditor
+            style={style}
+            setStyle={setSty}
+            eyebrow={eyebrow}
+            setEyebrow={setEyebrow}
+            anchorId={anchorId}
+            setAnchorId={setAnchorId}
+          />
+        )}
       </div>
 
       <div className="flex justify-end gap-2 pt-4 border-t border-gray-100 mt-4">
@@ -1259,6 +1406,229 @@ function SectionEditor({
         </Button>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * Per-section appearance controls.
+ *
+ * Everything here is an override on top of the theme. Left on "Theme
+ * default" a section simply inherits, which is what most sections should
+ * do — the controls exist for the one or two blocks a school wants to
+ * make stand out.
+ */
+function SectionStyleEditor({
+  style, setStyle, eyebrow, setEyebrow, anchorId, setAnchorId,
+}: {
+  style: Record<string, unknown>;
+  setStyle: (k: string, v: unknown) => void;
+  eyebrow: string;
+  setEyebrow: (v: string) => void;
+  anchorId: string;
+  setAnchorId: (v: string) => void;
+}) {
+  const strv = (k: string) => (typeof style[k] === "string" ? style[k] as string : "");
+  const boolv = (k: string) => style[k] === true;
+
+  return (
+    <div className="space-y-5">
+      <fieldset className="space-y-3 p-3 border border-gray-200 rounded-xl">
+        <legend className="text-xs font-bold uppercase tracking-wider text-gray-500 px-1">
+          Band
+        </legend>
+
+        <SelectRow
+          label="Background tone"
+          help="Which theme surface this section sits on."
+          value={strv("tone")}
+          onChange={v => setStyle("tone", v || undefined)}
+          options={[
+            { value: "", label: "Theme default (alternating)" },
+            { value: "background", label: "Page background" },
+            { value: "surface", label: "Surface" },
+            { value: "surfaceAlt", label: "Surface (alternate)" },
+            { value: "primary", label: "Primary — light text" },
+            { value: "primaryDark", label: "Primary dark — light text" },
+            { value: "ink", label: "Ink — maximum contrast" },
+          ]}
+        />
+
+        <div>
+          <label htmlFor="sec-bg" className="block text-sm font-medium text-gray-700 mb-1">
+            Custom background
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id="sec-bg"
+              type="color"
+              value={strv("background") || "#ffffff"}
+              onChange={e => setStyle("background", e.target.value)}
+              className="w-9 h-9 rounded border border-gray-300 cursor-pointer shrink-0"
+              aria-label="Custom background colour"
+            />
+            <input
+              type="text"
+              value={strv("background")}
+              onChange={e => setStyle("background", e.target.value || undefined)}
+              placeholder="Leave blank to use the tone above"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+            />
+            {strv("background") && (
+              <button
+                onClick={() => setStyle("background", undefined)}
+                className="text-xs text-gray-500 hover:text-red-600 underline shrink-0"
+              >
+                clear
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Overrides the tone. Check contrast if you set a dark colour — text does not
+            invert automatically.
+          </p>
+        </div>
+
+        <SelectRow
+          label="Vertical padding"
+          value={strv("padding")}
+          onChange={v => setStyle("padding", v || undefined)}
+          options={[
+            { value: "", label: "Theme default" },
+            { value: "none", label: "None" },
+            { value: "tight", label: "Tight" },
+            { value: "normal", label: "Normal" },
+            { value: "loose", label: "Loose" },
+          ]}
+        />
+
+        <SelectRow
+          label="Content alignment"
+          value={strv("align")}
+          onChange={v => setStyle("align", v || undefined)}
+          options={[
+            { value: "", label: "Theme default" },
+            { value: "left", label: "Left" },
+            { value: "center", label: "Centred" },
+          ]}
+        />
+      </fieldset>
+
+      <fieldset className="space-y-3 p-3 border border-gray-200 rounded-xl">
+        <legend className="text-xs font-bold uppercase tracking-wider text-gray-500 px-1">
+          Texture &amp; edges
+        </legend>
+
+        <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={boolv("motif")}
+            onChange={e => setStyle("motif", e.target.checked || undefined)}
+            className="mt-0.5 w-4 h-4 rounded border-gray-300 text-[#C9A227] focus:ring-[#C9A227]"
+          />
+          <span>
+            Overlay the theme texture
+            <span className="block text-xs text-gray-500">
+              Uses whichever motif the active theme defines — weave, dots, grid or rules.
+            </span>
+          </span>
+        </label>
+
+        <SelectRow
+          label="Divider"
+          help="Shape of the transition into the next section."
+          value={strv("divider")}
+          onChange={v => setStyle("divider", v || undefined)}
+          options={[
+            { value: "", label: "Theme default" },
+            { value: "none", label: "None — hard edge" },
+            { value: "curve", label: "Curve" },
+            { value: "angle", label: "Angle" },
+            { value: "weave", label: "Weave strip" },
+            { value: "rule", label: "Rule with ornament" },
+          ]}
+        />
+
+        <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={boolv("fullBleed")}
+            onChange={e => setStyle("fullBleed", e.target.checked || undefined)}
+            className="mt-0.5 w-4 h-4 rounded border-gray-300 text-[#C9A227] focus:ring-[#C9A227]"
+          />
+          <span>
+            Full bleed
+            <span className="block text-xs text-gray-500">
+              Ignore the container and run edge to edge.
+            </span>
+          </span>
+        </label>
+      </fieldset>
+
+      <fieldset className="space-y-3 p-3 border border-gray-200 rounded-xl">
+        <legend className="text-xs font-bold uppercase tracking-wider text-gray-500 px-1">
+          Labelling
+        </legend>
+
+        <div>
+          <label htmlFor="sec-eyebrow" className="block text-sm font-medium text-gray-700 mb-1">
+            Eyebrow
+          </label>
+          <input
+            id="sec-eyebrow"
+            value={eyebrow}
+            onChange={e => setEyebrow(e.target.value)}
+            placeholder="e.g. Why us"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Small uppercase label above the heading.
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="sec-anchor" className="block text-sm font-medium text-gray-700 mb-1">
+            Anchor id
+          </label>
+          <input
+            id="sec-anchor"
+            value={anchorId}
+            onChange={e => setAnchorId(e.target.value)}
+            placeholder="admissions"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Lets you link straight here with <code>#{anchorId || "your-anchor"}</code> from a
+            menu item or button.
+          </p>
+        </div>
+      </fieldset>
+    </div>
+  );
+}
+
+function SelectRow({
+  label, value, onChange, options, help,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  help?: string;
+}) {
+  const id = `sr-${label.replace(/\s+/g, "-").toLowerCase()}`;
+  return (
+    <div>
+      <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <select
+        id={id}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+      >
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {help && <p className="text-xs text-gray-500 mt-1">{help}</p>}
+    </div>
   );
 }
 

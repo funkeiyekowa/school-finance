@@ -48,20 +48,62 @@ export const COLOR_ROLES = [
 /** Safety net so a half-configured theme still renders legibly. */
 const FALLBACK: Required<Pick<ThemeTokens, "colors" | "fonts" | "scale" | "radius" | "spacing" | "button" | "shadow">> = {
   colors: {
-    primary: "#0F2A47", primaryDark: "#0A1D33", secondary: "#1B3E63",
-    accent: "#C9A227", background: "#FFFFFF", surface: "#F8FAFC",
-    surfaceAlt: "#F1F5F9", text: "#0F172A", textMuted: "#64748B",
+    primary: "#0F2A47", primaryDark: "#0A1D33", primaryDeeper: "#05101D",
+    secondary: "#1B3E63", accent: "#C9A227", accentDeep: "#96760F", accentSoft: "#F4E9C7",
+    background: "#FFFFFF", surface: "#F8FAFC",
+    surfaceAlt: "#F1F5F9", text: "#0F172A", textMuted: "#64748B", textFaint: "#94A3B8",
+    ink: "#0F172A", inkDeep: "#020617",
     border: "#E2E8F0", headerBg: "#FFFFFF", headerText: "#0F172A",
     footerBg: "#0F2A47", footerText: "#CBD5E1",
     success: "#16A34A", warning: "#D97706", error: "#DC2626",
   },
   fonts: { heading: "Poppins", body: "Inter", accent: "Inter" },
-  scale: { h1: "3rem", h2: "2.125rem", h3: "1.5rem", body: "1rem" },
-  radius: { sm: "0.375rem", md: "0.75rem", lg: "1.25rem", pill: "9999px" },
-  spacing: { section: "5rem", gap: "1.5rem" },
-  button: { radius: "0.75rem", weight: "600", transform: "none" },
-  shadow: { card: "0 1px 3px rgba(15,23,42,.08)" },
+  scale: { h1: "3rem", h2: "2.125rem", h3: "1.5rem", body: "1rem", eyebrow: "0.75rem" },
+  radius: { sm: "0.375rem", md: "0.75rem", lg: "1.25rem", xl: "1.75rem", pill: "9999px" },
+  spacing: { section: "5rem", gap: "1.5rem", container: "1180px" },
+  button: { radius: "0.75rem", weight: "600", transform: "none", borderWidth: "2px" },
+  shadow: {
+    soft: "0 1px 3px rgba(15,23,42,.08)",
+    lift: "0 8px 24px rgba(15,23,42,.10)",
+    premium: "0 20px 50px rgba(15,23,42,.16)",
+    card: "0 1px 3px rgba(15,23,42,.08)",
+  },
 };
+
+/** Structural options a theme can express beyond colour and type. */
+export const MOTIF_OPTIONS = [
+  { value: "none", label: "None", hint: "Flat surfaces" },
+  { value: "weave", label: "Woven lattice", hint: "Diagonal diamond weave" },
+  { value: "dots", label: "Dot grid", hint: "Subtle dotted texture" },
+  { value: "grid", label: "Line grid", hint: "Technical grid lines" },
+  { value: "rules", label: "Fine rules", hint: "Classic horizontal rules" },
+  { value: "rings", label: "Concentric rings", hint: "Soft radial rings" },
+] as const;
+
+export const DIVIDER_OPTIONS = [
+  { value: "none", label: "None", hint: "Hard edges" },
+  { value: "curve", label: "Curve", hint: "Sweeping curved edge" },
+  { value: "angle", label: "Angle", hint: "Diagonal slice" },
+  { value: "weave", label: "Weave strip", hint: "Patterned band" },
+  { value: "rule", label: "Rule", hint: "Thin line with ornament" },
+] as const;
+
+export const HERO_STYLE_OPTIONS = [
+  { value: "badge-ring", label: "Badge ring", hint: "Crest medallion panel" },
+  { value: "image-right", label: "Image right", hint: "Copy left, photo right" },
+  { value: "centered", label: "Centred", hint: "Symmetrical, formal" },
+  { value: "gradient", label: "Gradient glow", hint: "Dark with colour bloom" },
+  { value: "full-bleed", label: "Full bleed", hint: "Edge-to-edge image" },
+  { value: "split-diagonal", label: "Split diagonal", hint: "Angled two-tone split" },
+] as const;
+
+export const CARD_STYLE_OPTIONS = [
+  { value: "soft", label: "Soft", hint: "Rounded with gentle shadow" },
+  { value: "flat", label: "Flat", hint: "No shadow, no border" },
+  { value: "bordered", label: "Bordered", hint: "Hairline outline" },
+  { value: "elevated", label: "Elevated", hint: "Pronounced lift" },
+  { value: "glass", label: "Glass", hint: "Translucent with glow ring" },
+] as const;
 
 /** camelCase token key -> kebab-case CSS variable name. */
 function kebab(key: string): string {
@@ -78,6 +120,18 @@ export interface ResolvedTheme {
   shadow: Record<string, string>;
   headerStyle: string;
   heroStyle: string;
+  /** Background texture applied to motif-enabled sections. */
+  motif: string;
+  /** Shape of the transition between section bands. */
+  divider: string;
+  /** How cards are treated across the site. */
+  cardStyle: string;
+  /** Film-grain overlay for warmth. */
+  grain: boolean;
+  /** Whether reveal / count-up animations run. */
+  animations: boolean;
+  /** Whether the scrolling marquee band is available. */
+  marquee: boolean;
 }
 
 /**
@@ -109,6 +163,13 @@ export function resolveTheme(
     accent: pick(typo.accent, brand.fonts?.accent, t.fonts?.accent, FALLBACK.fonts.accent!),
   };
 
+  /** Booleans need explicit undefined checks — false is a real value. */
+  const flag = (override: unknown, base: unknown, dflt: boolean): boolean => {
+    if (typeof override === "boolean") return override;
+    if (typeof base === "boolean") return base;
+    return dflt;
+  };
+
   return {
     colors: mergeGroup("colors"),
     fonts,
@@ -119,7 +180,44 @@ export function resolveTheme(
     shadow: mergeGroup("shadow"),
     headerStyle: pick(brand.headerStyle, t.headerStyle, "light"),
     heroStyle: pick(brand.heroStyle, t.heroStyle, "image-right"),
+    motif: pick(brand.motif, t.motif, "none"),
+    divider: pick(brand.divider, t.divider, "none"),
+    cardStyle: pick(brand.cardStyle, t.cardStyle, "soft"),
+    grain: flag(brand.grain, t.grain, false),
+    animations: flag(brand.animations, t.animations, true),
+    marquee: flag(brand.marquee, t.marquee, false),
   };
+}
+
+/**
+ * CSS for a motif texture. Returned as a background-image value so it can
+ * be layered onto any section without extra markup.
+ */
+export function motifBackground(motif: string, color: string): string {
+  switch (motif) {
+    case "weave":
+      return `repeating-linear-gradient(45deg, ${color} 0 2px, transparent 2px 26px), repeating-linear-gradient(-45deg, ${color} 0 2px, transparent 2px 26px)`;
+    case "dots":
+      return `radial-gradient(${color} 1.5px, transparent 1.5px)`;
+    case "grid":
+      return `linear-gradient(${color} 1px, transparent 1px), linear-gradient(90deg, ${color} 1px, transparent 1px)`;
+    case "rules":
+      return `repeating-linear-gradient(0deg, ${color} 0 1px, transparent 1px 8px)`;
+    case "rings":
+      return `repeating-radial-gradient(circle at 50% 50%, ${color} 0 1px, transparent 1px 22px)`;
+    default:
+      return "none";
+  }
+}
+
+/** Matching background-size for each motif. */
+export function motifSize(motif: string): string {
+  switch (motif) {
+    case "dots": return "22px 22px";
+    case "grid": return "44px 44px";
+    case "rings": return "180px 180px";
+    default: return "auto";
+  }
 }
 
 function pick(...vals: (string | undefined)[]): string {
@@ -148,11 +246,17 @@ export function themeToCss(theme: ResolvedTheme, selector = ".site-root"): strin
   vars.push(`--font-accent: ${cssFontStack(theme.fonts.accent)};`);
 
   // Derived tokens
-  vars.push(`--sp-section-y: clamp(64px, 9vw, 128px);`);
-  vars.push(`--container: 1180px;`);
+  vars.push(`--sp-section-y: ${theme.spacing.section ?? "clamp(64px, 9vw, 128px)"};`);
+  vars.push(`--container: ${theme.spacing.container ?? "1180px"};`);
   vars.push(`--ease: cubic-bezier(.22,.61,.32,1);`);
-  vars.push(`--shadow-soft: 0 1px 2px rgba(15,23,42,.06), 0 14px 32px rgba(15,23,42,.10);`);
-  vars.push(`--shadow-lift: 0 10px 20px rgba(15,23,42,.14), 0 28px 52px rgba(15,23,42,.14);`);
+  vars.push(`--shadow-soft: ${theme.shadow.soft ?? "0 1px 2px rgba(15,23,42,.06), 0 14px 32px rgba(15,23,42,.10)"};`);
+  vars.push(`--shadow-lift: ${theme.shadow.lift ?? "0 10px 20px rgba(15,23,42,.14), 0 28px 52px rgba(15,23,42,.14)"};`);
+  vars.push(`--shadow-premium: ${theme.shadow.premium ?? "0 20px 50px rgba(15,23,42,.20)"};`);
+
+  // Motif texture, ready to layer onto any section
+  const motifColor = withAlpha(theme.colors.accent ?? "#000000", 0.13);
+  vars.push(`--motif-image: ${motifBackground(theme.motif, motifColor)};`);
+  vars.push(`--motif-size: ${motifSize(theme.motif)};`);
 
   const S = selector; // shorthand
 
@@ -658,7 +762,265 @@ ${S} .video-wrap{
   border:1px solid var(--c-border);
 }
 ${S} .video-wrap iframe{width:100%;height:100%;border:0;}
+
+/* ============ MOTIF / TEXTURE ============ */
+${S} .has-motif{
+  background-image:var(--motif-image);
+  background-size:var(--motif-size);
+}
+
+/* ============ PER-SECTION OVERRIDES ============ */
+/* When a school overrides a section's band, the wrapper owns the padding
+   and background so the inner <section> must not paint its own. */
+${S} .section-override{position:relative;}
+${S} .section-override>.section{background:transparent !important;padding-top:0;padding-bottom:0;}
+${S} .section-override[data-tone="primary"] h1,
+${S} .section-override[data-tone="primary"] h2,
+${S} .section-override[data-tone="primary"] h3,
+${S} .section-override[data-tone="primaryDark"] h1,
+${S} .section-override[data-tone="primaryDark"] h2,
+${S} .section-override[data-tone="primaryDark"] h3,
+${S} .section-override[data-tone="ink"] h1,
+${S} .section-override[data-tone="ink"] h2,
+${S} .section-override[data-tone="ink"] h3{color:#fff;}
+${S} .section-override[data-tone="primary"] p,
+${S} .section-override[data-tone="primaryDark"] p,
+${S} .section-override[data-tone="ink"] p{color:rgba(255,255,255,.82);}
+${S} .section-override.full-bleed>.section>.wrap{max-width:none;padding-inline:0;}
+${theme.grain ? `
+${S} .grain-overlay{
+  position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.04;mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}` : ""}
+
+/* ============ REVEAL ANIMATIONS ============ */
+${theme.animations ? `
+${S} .reveal{opacity:0;transform:translateY(20px);
+  transition:opacity .75s var(--ease) var(--reveal-delay,0s),transform .75s var(--ease) var(--reveal-delay,0s);}
+${S} .reveal.is-in{opacity:1;transform:none;}
+@media (prefers-reduced-motion:reduce){
+  ${S} .reveal{opacity:1 !important;transform:none !important;transition:none !important;}
+}` : `${S} .reveal{opacity:1;transform:none;}`}
+
+/* ============ CURVE / ANGLE DIVIDERS ============ */
+${S} .divider-curve{position:relative;}
+${S} .divider-curve>svg{display:block;width:100%;height:70px;}
+${S} .divider-curve.top>svg{margin-bottom:-1px;}
+${S} .divider-curve.bottom>svg{margin-top:-1px;}
+${S} .divider-angle{clip-path:polygon(0 0,100% 3.5vw,100% 100%,0 calc(100% - 3.5vw));}
+${S} .divider-rule{
+  height:1px;background:var(--c-border);position:relative;
+}
+${S} .divider-rule::after{
+  content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(45deg);
+  width:9px;height:9px;background:var(--c-accent);
+}
+${S} .weave-divider{
+  height:34px;border-top:1px solid var(--c-border);border-bottom:1px solid var(--c-border);
+  background-color:var(--c-background);background-size:40px 40px;
+  background-image:
+    repeating-linear-gradient(45deg,var(--c-primary) 0 3px,transparent 3px 20px),
+    repeating-linear-gradient(-45deg,var(--c-primary) 0 3px,transparent 3px 20px);
+  opacity:.35;
+}
+
+/* ============ MARQUEE BAND ============ */
+@keyframes site-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+${S} .marquee-band{
+  overflow:hidden;background:var(--c-primary-dark,var(--c-primary));
+  color:var(--c-accent-soft,#fff);padding:14px 0;
+  border-top:1px solid rgba(255,255,255,.10);border-bottom:1px solid rgba(255,255,255,.10);
+}
+${S} .marquee-track{
+  display:flex;gap:2.5rem;width:max-content;
+  animation:site-marquee var(--marquee-speed,30s) linear infinite;
+}
+${S} .marquee-item{
+  display:inline-flex;align-items:center;gap:.6em;white-space:nowrap;
+  font-family:var(--font-heading);font-weight:700;font-size:.82rem;
+  letter-spacing:.12em;text-transform:uppercase;
+}
+${S} .marquee-item::before{
+  content:'';width:6px;height:6px;border-radius:50%;background:var(--c-accent);flex-shrink:0;
+}
+@media (prefers-reduced-motion:reduce){${S} .marquee-track{animation:none;}}
+
+/* ============ TRUST STRIP ============ */
+${S} .trust-strip{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px;}
+${S} .trust-chip{
+  display:inline-flex;align-items:center;gap:.5em;
+  padding:.45em 1em;border-radius:var(--r-pill);
+  background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.20);
+  font-size:.8rem;font-weight:600;
+}
+${S} .trust-chip svg{width:14px;height:14px;flex-shrink:0;color:var(--c-accent);}
+${S} .trust-strip.on-light .trust-chip{
+  background:var(--c-surface);border-color:var(--c-border);color:var(--c-text);
+}
+
+/* ============ HERO BADGE RING ============ */
+${S} .hero-panel{display:none;}
+@media (min-width:1024px){${S} .hero-panel{display:grid;place-items:center;}}
+${S} .badge-ring{
+  width:min(300px,80%);aspect-ratio:1;border-radius:50%;
+  display:grid;place-content:center;text-align:center;gap:6px;
+  border:2px solid var(--c-accent);
+  background:
+    radial-gradient(circle at 50% 40%,rgba(255,255,255,.10),transparent 65%),
+    var(--motif-image);
+  background-size:auto,var(--motif-size);
+  box-shadow:0 0 0 12px rgba(255,255,255,.05),var(--shadow-premium);
+}
+${S} .badge-ring strong{
+  font-family:var(--font-heading);font-size:3.4rem;line-height:1;
+  color:var(--c-accent);letter-spacing:.02em;
+}
+${S} .badge-ring span{
+  font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
+  color:rgba(255,255,255,.72);
+}
+
+/* ============ SCROLL CUE ============ */
+@keyframes cue-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+${S} .scroll-cue{
+  position:absolute;left:50%;bottom:22px;transform:translateX(-50%);
+  width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
+  border:1px solid rgba(255,255,255,.3);color:#fff;text-decoration:none;
+  animation:cue-bob 2.2s ease-in-out infinite;
+}
+${S} .scroll-cue svg{width:18px;height:18px;}
+@media (prefers-reduced-motion:reduce){${S} .scroll-cue{animation:none;}}
+
+/* ============ PROGRAMME TRACK (numbered) ============ */
+${S} .programme-track{display:grid;gap:20px;}
+@media (min-width:768px){${S} .programme-track{grid-template-columns:repeat(3,1fr);}}
+${S} .programme-card{
+  position:relative;padding:32px 26px 26px;border-radius:var(--r-lg);
+  background:var(--c-background);border:1px solid var(--c-border);
+  box-shadow:var(--sh-card);
+}
+${S} .programme-stage{
+  position:absolute;top:-18px;left:26px;
+  width:44px;height:44px;border-radius:50%;display:grid;place-items:center;
+  background:var(--c-accent);color:var(--c-primary-deeper,var(--c-primary));
+  font-family:var(--font-heading);font-weight:800;font-size:1.15rem;
+  box-shadow:var(--shadow-soft);
+}
+${S} .programme-card h3{margin-top:12px;font-size:1.2rem;}
+${S} .programme-card p{color:var(--c-text-muted);font-size:.95rem;margin:0;}
+${S} .programme-arrow{
+  position:absolute;top:50%;right:-24px;transform:translateY(-50%);
+  color:var(--c-accent);display:none;
+}
+@media (min-width:768px){${S} .programme-arrow{display:block;}}
+${S} .programme-arrow svg{width:22px;height:22px;}
+
+/* ============ JOURNEY (admissions steps) ============ */
+${S} .journey-track{display:grid;gap:26px;position:relative;}
+@media (min-width:900px){
+  ${S} .journey-track{grid-template-columns:repeat(5,1fr);}
+  ${S} .journey-track::before{
+    content:'';position:absolute;top:22px;left:8%;right:8%;height:2px;
+    background:linear-gradient(90deg,var(--c-accent),var(--c-border));
+  }
+}
+${S} .journey-step{position:relative;text-align:center;}
+${S} .journey-num{
+  width:46px;height:46px;margin:0 auto 16px;border-radius:50%;
+  display:grid;place-items:center;position:relative;z-index:1;
+  background:var(--c-primary);color:#fff;
+  font-family:var(--font-heading);font-weight:800;font-size:1.1rem;
+  border:3px solid var(--c-background);box-shadow:var(--shadow-soft);
+}
+${S} .journey-step h3{font-size:1.05rem;margin-bottom:.35em;}
+${S} .journey-step p{font-size:.88rem;color:var(--c-text-muted);margin:0;}
+
+/* ============ HOUSES ============ */
+${S} .house-grid{display:grid;gap:22px;grid-template-columns:repeat(2,1fr);}
+@media (min-width:900px){${S} .house-grid{grid-template-columns:repeat(4,1fr);}}
+${S} .house-card{text-align:center;}
+${S} .house-roundel{
+  width:96px;height:96px;margin:0 auto 16px;border-radius:50%;
+  display:grid;place-items:center;color:#fff;
+  font-family:var(--font-heading);font-weight:800;font-size:.62rem;
+  letter-spacing:.1em;box-shadow:var(--shadow-lift);
+  border:3px solid var(--c-background);
+}
+${S} .house-card h3{font-size:1.1rem;margin-bottom:.25em;}
+${S} .house-card p{font-size:.85rem;color:var(--c-text-muted);margin:0;}
+
+/* ============ LEADERSHIP ============ */
+${S} .leader-grid{display:grid;gap:24px;grid-template-columns:repeat(2,1fr);}
+@media (min-width:900px){${S} .leader-grid{grid-template-columns:repeat(4,1fr);}}
+${S} .leader-card{text-align:center;}
+${S} .leader-avatar{
+  width:100%;aspect-ratio:3/4;border-radius:var(--r-md);overflow:hidden;
+  background:var(--c-surface-alt);margin-bottom:14px;
+  display:grid;place-items:center;
+  border:1px solid var(--c-border);
+}
+${S} .leader-avatar img{width:100%;height:100%;object-fit:cover;}
+${S} .leader-avatar .initials{
+  font-family:var(--font-heading);font-size:2rem;font-weight:700;color:var(--c-accent);
+}
+${S} .leader-card h3{font-size:1rem;margin-bottom:.15em;}
+${S} .leader-role{font-size:.82rem;color:var(--c-text-muted);}
+
+/* ============ KEY DATES ============ */
+${S} .key-dates{display:grid;gap:14px;}
+${S} .key-date{
+  display:flex;align-items:center;gap:18px;padding:16px 20px;
+  border-radius:var(--r-md);background:var(--c-background);
+  border:1px solid var(--c-border);
+}
+${S} .key-date-day{
+  flex-shrink:0;width:60px;text-align:center;padding:8px 0;
+  border-radius:var(--r-sm);background:var(--c-primary);color:#fff;
+}
+${S} .key-date-day b{display:block;font-family:var(--font-heading);font-size:1.4rem;line-height:1;}
+${S} .key-date-day span{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;margin-top:3px;}
+${S} .key-date-body h3{font-size:1rem;margin-bottom:.15em;}
+${S} .key-date-body p{font-size:.85rem;color:var(--c-text-muted);margin:0;}
+
+/* ============ NEWSLETTER BAND ============ */
+${S} .newsletter-band{
+  border-radius:var(--r-lg);padding:38px 32px;
+  background:var(--c-primary);color:#fff;text-align:center;
+  background-image:var(--motif-image);background-size:var(--motif-size);
+}
+${S} .newsletter-band h2{color:#fff;}
+${S} .newsletter-band p{color:rgba(255,255,255,.82);max-width:46ch;margin:0 auto 22px;}
+${S} .newsletter-form{
+  display:flex;gap:10px;max-width:440px;margin:0 auto;flex-wrap:wrap;
+}
+${S} .newsletter-form input{
+  flex:1;min-width:200px;padding:.85em 1.1em;border-radius:var(--btn-radius);
+  border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);
+  color:#fff;font:inherit;
+}
+${S} .newsletter-form input::placeholder{color:rgba(255,255,255,.60);}
+
+/* ============ COUNT-UP STATS ============ */
+${S} .stat-item b{
+  display:block;font-family:var(--font-heading);font-weight:700;
+  font-size:clamp(2rem,4.4vw,3.25rem);line-height:1;
+  color:var(--c-accent);margin-bottom:8px;font-variant-numeric:tabular-nums;
+}
+${S} .stat-item span{
+  font-size:.82rem;text-transform:uppercase;letter-spacing:.08em;opacity:.82;
+}
 `.trim();
+}
+
+/** Add an alpha channel to a hex colour. */
+function withAlpha(hex: string, alpha: number): string {
+  const c = hex.replace("#", "");
+  const full = c.length === 3 ? c.split("").map(x => x + x).join("") : c;
+  if (full.length !== 6) return `rgba(0,0,0,${alpha})`;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 /** Quote font families that contain spaces and append a sane fallback. */

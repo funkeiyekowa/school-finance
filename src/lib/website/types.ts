@@ -18,6 +18,18 @@ export interface ThemeTokens {
   shadow?: Record<string, string>;
   headerStyle?: string;
   heroStyle?: string;
+  /** Background texture: none | weave | dots | grid | rules | rings */
+  motif?: string;
+  /** Section transition shape: none | curve | angle | weave | rule */
+  divider?: string;
+  /** Card treatment: soft | flat | bordered | elevated | glass */
+  cardStyle?: string;
+  /** Film-grain overlay. */
+  grain?: boolean;
+  /** Reveal and count-up animations. */
+  animations?: boolean;
+  /** Scrolling marquee band availability. */
+  marquee?: boolean;
 }
 
 export interface WebsiteTheme {
@@ -29,6 +41,28 @@ export interface WebsiteTheme {
   default_sections?: string[];
   is_premium?: boolean;
   sort_order?: number;
+  /** Grouping: several variants share one family. */
+  family?: string | null;
+  family_label?: string | null;
+  variant_label?: string | null;
+  variant_order?: number | null;
+  /** Section types this theme is designed around. */
+  signature_sections?: string[];
+  /** AI image prompts a school can use to generate on-brand photography. */
+  lifestyle_prompts?: LifestylePrompt[];
+}
+
+export interface LifestylePrompt {
+  slot: string;
+  prompt: string;
+}
+
+/** A family with its variants, as returned by list_theme_families(). */
+export interface ThemeFamily {
+  family: string;
+  label: string;
+  sort_order: number;
+  variants: WebsiteTheme[];
 }
 
 export interface SiteContact {
@@ -95,6 +129,10 @@ export interface PublicSection {
   section_type: string;
   content: JsonObject;
   style: JsonObject;
+  /** Small label above the heading. */
+  eyebrow?: string | null;
+  /** Optional id so the section can be deep-linked from navigation. */
+  anchor_id?: string | null;
 }
 
 export interface NavEntry {

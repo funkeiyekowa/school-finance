@@ -15,6 +15,7 @@ import { validateThemeTokens } from "@/lib/website/theme-validator";
 import { loadDraft, saveDraft, publishDraft, discardDraft, draftDiffersFromPublished } from "@/lib/website/draft";
 import type { DraftState, SaveDraftParams } from "@/lib/website/draft";
 import type { CustomTheme, WebsiteTheme, ThemeTokens } from "@/lib/website/types";
+import { ThemeGallery } from "@/components/website/ThemeGallery";
 import {
   Palette, Type, Undo2, Upload as UploadIcon, Rocket,
   Monitor, RefreshCw, Download,
@@ -512,41 +513,17 @@ function GalleryPanel({
   return (
     <div className="space-y-5">
       <Card>
-        <CardHeader><CardTitle>Platform themes</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Theme library</CardTitle></CardHeader>
         <CardContent>
           <p className="text-sm text-gray-600 mb-4">
             Switching theme changes your base colours, type and spacing. Your content and overrides stay intact.
           </p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {themes.map(t => {
-              const colors = t.tokens?.colors ?? {};
-              const isActive = !selectedCustomId && selectedKey === t.key;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => onSelectTheme(t.key)}
-                  className={cn(
-                    "text-left rounded-xl border overflow-hidden transition-all",
-                    isActive ? "border-[#C9A227] ring-2 ring-[#C9A227]/30" : "border-gray-200 hover:border-gray-300"
-                  )}
-                >
-                  <div className="h-16 flex" aria-hidden="true">
-                    {["primary", "secondary", "accent", "surface", "background"].map(k => (
-                      <div key={k} className="flex-1" style={{ background: colors[k] ?? "#eee" }} />
-                    ))}
-                  </div>
-                  <div className="p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-sm text-[#0F2A47]">{t.name}</span>
-                      {isActive && <Badge variant="amber">Active</Badge>}
-                      {t.is_premium && <Badge variant="purple">premium</Badge>}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-0.5">{t.description}</p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          <ThemeGallery
+            themes={themes}
+            activeKey={selectedCustomId ? undefined : selectedKey}
+            onSelect={onSelectTheme}
+            actionLabel="Apply theme"
+          />
         </CardContent>
       </Card>
 

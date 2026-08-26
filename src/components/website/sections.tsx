@@ -37,6 +37,10 @@ export interface SectionFieldMeta {
 }
 
 const F = {
+  eyebrow: {
+    name: "eyebrow", label: "Eyebrow", type: "text",
+    help: "Small label above the heading, e.g. \"Why us\".",
+  } as SectionFieldMeta,
   heading: { name: "heading", label: "Heading", type: "text" } as SectionFieldMeta,
   subheading: { name: "subheading", label: "Sub-heading", type: "textarea" } as SectionFieldMeta,
   body: { name: "body", label: "Body copy", type: "textarea" } as SectionFieldMeta,
@@ -52,18 +56,46 @@ export const SECTION_CATALOGUE: SectionMeta[] = [
     type: "hero", label: "Hero", group: "Header",
     description: "Full-width opening statement with calls to action.",
     fields: [
-      F.heading, F.subheading,
+      F.eyebrow, F.heading, F.subheading,
       { name: "primary_cta_label", label: "Primary button label", type: "text" },
       { name: "primary_cta_href", label: "Primary button link", type: "url" },
       { name: "secondary_cta_label", label: "Secondary button label", type: "text" },
       { name: "secondary_cta_href", label: "Secondary button link", type: "url" },
       F.image, F.imageAlt,
+      { name: "badge_initials", label: "Crest initials", type: "text",
+        help: "Shown in the medallion when the theme uses the badge-ring hero." },
+      { name: "badge_caption", label: "Crest caption", type: "text" },
+      { name: "trust_chips", label: "Trust chips", type: "list",
+        itemFields: [{ name: "label", label: "Chip text", type: "text" }] },
+      { name: "stats", label: "Hero statistics", type: "list",
+        itemFields: [
+          { name: "value", label: "Figure", type: "text" },
+          { name: "label", label: "Label", type: "text" },
+        ] },
     ],
   },
   {
     type: "page_header", label: "Page header", group: "Header",
     description: "Compact title band for interior pages.",
-    fields: [F.heading, F.subheading],
+    fields: [F.eyebrow, F.heading, F.subheading],
+  },
+  {
+    type: "marquee_band", label: "Marquee band", group: "Header",
+    description: "A slow scrolling strip of short claims. Sits directly under the hero.",
+    fields: [
+      { name: "items", label: "Scrolling items", type: "list",
+        itemFields: [{ name: "label", label: "Text", type: "text" }] },
+      { name: "speed", label: "Seconds per loop", type: "number",
+        help: "Higher is slower. 30 is a comfortable default." },
+    ],
+  },
+  {
+    type: "trust_strip", label: "Trust chips", group: "Header",
+    description: "A row of short credibility chips.",
+    fields: [
+      { name: "items", label: "Chips", type: "list",
+        itemFields: [{ name: "label", label: "Chip text", type: "text" }] },
+    ],
   },
   {
     type: "about", label: "About", group: "Story",
@@ -247,6 +279,64 @@ export const SECTION_CATALOGUE: SectionMeta[] = [
     ],
   },
   {
+    type: "journey", label: "Admissions journey", group: "Action",
+    description: "Numbered steps from first enquiry to enrolment, joined by a connecting line.",
+    fields: [
+      F.eyebrow, F.heading, F.body,
+      { name: "items", label: "Steps", type: "list", itemFields: [
+        { name: "title", label: "Step name", type: "text" },
+        { name: "body", label: "What happens", type: "textarea" },
+      ]},
+    ],
+  },
+  {
+    type: "houses", label: "Houses", group: "Proof",
+    description: "House or team roundels with mottos. Each house carries its own colour.",
+    fields: [
+      F.eyebrow, F.heading, F.body,
+      { name: "items", label: "Houses", type: "list", itemFields: [
+        { name: "name", label: "House name", type: "text" },
+        { name: "motto", label: "Motto", type: "text" },
+        { name: "color", label: "House colour (hex)", type: "text" },
+      ]},
+    ],
+  },
+  {
+    type: "leadership", label: "Leadership team", group: "Proof",
+    description: "Portrait cards for the senior team. Falls back to initials when no photo is set.",
+    fields: [
+      F.eyebrow, F.heading,
+      { name: "items", label: "People", type: "list", itemFields: [
+        { name: "name", label: "Name", type: "text" },
+        { name: "role", label: "Role", type: "text" },
+        { name: "image_url", label: "Photograph", type: "image" },
+      ]},
+    ],
+  },
+  {
+    type: "key_dates", label: "Key dates", group: "Dynamic",
+    description: "A diary strip of upcoming dates, entered by hand.",
+    fields: [
+      F.eyebrow, F.heading,
+      { name: "items", label: "Dates", type: "list", itemFields: [
+        { name: "day", label: "Day", type: "text" },
+        { name: "month", label: "Month", type: "text" },
+        { name: "title", label: "What", type: "text" },
+        { name: "detail", label: "Detail", type: "text" },
+      ]},
+    ],
+  },
+  {
+    type: "newsletter", label: "Newsletter signup", group: "Action",
+    description: "Email capture band. Submissions land in Enquiries.",
+    fields: [
+      F.heading, F.body,
+      { name: "cta_label", label: "Button label", type: "text" },
+      { name: "form_key", label: "Form to use", type: "text",
+        help: "Defaults to the built-in \"newsletter\" form." },
+    ],
+  },
+  {
     type: "contact", label: "Contact", group: "Action",
     description: "Contact details, an enquiry form and an optional map.",
     fields: [
@@ -305,7 +395,91 @@ export interface SectionContext {
   headerStyle?: string;
 }
 
-export function RenderSection({
+/**
+ * Renders one section, then applies any per-section appearance overrides
+ * the school set in Website Studio.
+ *
+ * Overrides are deliberately additive: a section with an empty style object
+ * inherits everything from the theme, which is what most sections do. The
+ * wrapper only appears when there is something to override.
+ */
+export function RenderSection(props: {
+  section: PublicSection;
+  ctx: SectionContext;
+  index: number;
+}) {
+  const inner = <RenderSectionBody {...props} />;
+  const s = props.section.style ?? {};
+
+  const tone = typeof s.tone === "string" ? s.tone : "";
+  const bg = typeof s.background === "string" ? s.background : "";
+  const padding = typeof s.padding === "string" ? s.padding : "";
+  const align = typeof s.align === "string" ? s.align : "";
+  const divider = typeof s.divider === "string" ? s.divider : "";
+  const motif = s.motif === true;
+  const fullBleed = s.fullBleed === true;
+
+  const hasOverride = !!(tone || bg || padding || align || divider !== "" || motif || fullBleed);
+  if (!hasOverride) return inner;
+
+  /* Tone maps onto the theme's own custom properties, so an override still
+     tracks the palette rather than hard-coding a colour. */
+  const toneBg: Record<string, string> = {
+    background: "var(--c-background)",
+    surface: "var(--c-surface)",
+    surfaceAlt: "var(--c-surface-alt)",
+    primary: "var(--c-primary)",
+    primaryDark: "var(--c-primary-dark)",
+    ink: "var(--c-ink-deep, var(--c-ink))",
+  };
+  const lightText = ["primary", "primaryDark", "ink"].includes(tone);
+
+  const padMap: Record<string, string> = {
+    none: "0",
+    tight: "clamp(28px,4vw,48px)",
+    normal: "var(--sp-section-y)",
+    loose: "calc(var(--sp-section-y) * 1.35)",
+  };
+
+  const wrapStyle: React.CSSProperties = {
+    background: bg || (tone ? toneBg[tone] : undefined),
+    color: lightText && !bg ? "#fff" : undefined,
+    paddingTop: padding ? padMap[padding] : undefined,
+    paddingBottom: padding ? padMap[padding] : undefined,
+    textAlign: align === "center" ? "center" : align === "left" ? "left" : undefined,
+    backgroundImage: motif ? "var(--motif-image)" : undefined,
+    backgroundSize: motif ? "var(--motif-size)" : undefined,
+    clipPath: divider === "angle" ? "polygon(0 0,100% 0,100% calc(100% - 3vw),0 100%)" : undefined,
+  };
+
+  const fillColor = bg || (tone ? toneBg[tone] : "var(--c-background)");
+
+  return (
+    <div
+      className={cx("section-override", fullBleed && "full-bleed", motif && "has-motif")}
+      style={wrapStyle}
+      data-tone={tone || undefined}
+    >
+      {inner}
+      {divider === "curve" && (
+        <div className="divider-curve bottom" aria-hidden="true">
+          <svg viewBox="0 0 1200 120" preserveAspectRatio="none">
+            <path d="M0,120 L1200,120 L1200,80 Q600,0 0,80 Z" fill={fillColor} />
+          </svg>
+        </div>
+      )}
+      {divider === "weave" && <div className="weave-divider" aria-hidden="true" />}
+      {divider === "rule" && <div className="divider-rule" aria-hidden="true" />}
+    </div>
+  );
+}
+
+/** Tiny local classnames helper so this file has no extra dependency. */
+function cx(...parts: (string | false | undefined)[]): string {
+  return parts.filter(Boolean).join(" ");
+}
+
+function RenderSectionBody({
   section, ctx, index,
 }: {
   section: PublicSection;
@@ -315,6 +489,10 @@ export function RenderSection({
   const c = section.content ?? {};
   const s = section.style ?? {};
   const alt = index % 2 === 1;
+  /* Eyebrow and anchor are first-class: they live on the section row so a
+     school can label and deep-link a block without editing content JSON. */
+  const eyebrow = section.eyebrow ?? str(c, "eyebrow");
+  const anchor = section.anchor_id || undefined;
   const link = (href: string) =>
     href.startsWith("http") || href.startsWith("#") || href.startsWith("mailto:")
       ? href
@@ -972,9 +1150,245 @@ export function RenderSection({
       );
     }
 
+    /* ============================================================ */
+    /* MARQUEE BAND — slow scrolling claims strip                    */
+    /* ============================================================ */
+    case "marquee_band": {
+      const items = list(c, "items").map(i => str(i, "label")).filter(Boolean);
+      if (items.length === 0) return null;
+      // Duplicated so the CSS translateX(-50%) loop is seamless.
+      const doubled = [...items, ...items];
+      return (
+        <div
+          className="marquee-band"
+          aria-hidden="true"
+          style={{ ["--marquee-speed" as string]: `${num(c, "speed", 30)}s` }}
+        >
+          <div className="marquee-track">
+            {doubled.map((label, i) => (
+              <span key={i} className="marquee-item">{label}</span>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================ */
+    /* TRUST STRIP                                                   */
+    /* ============================================================ */
+    case "trust_strip": {
+      const items = list(c, "items").map(i => str(i, "label")).filter(Boolean);
+      if (items.length === 0) return null;
+      return (
+        <section className="section tight reveal">
+          <div className="wrap">
+            <div className="trust-strip on-light" style={{ marginTop: 0, justifyContent: "center" }}>
+              {items.map((label, i) => (
+                <span key={i} className="trust-chip">
+                  <TickIcon />
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    /* ============================================================ */
+    /* JOURNEY — numbered admissions steps                           */
+    /* ============================================================ */
+    case "journey": {
+      const items = list(c, "items");
+      if (items.length === 0) return null;
+      return (
+        <section className={`section${alt ? " alt" : ""} reveal`} id={anchor}>
+          <div className="wrap">
+            <div className="section-head center">
+              {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+              <h2>{str(c, "heading")}</h2>
+              {str(c, "body") && <p>{str(c, "body")}</p>}
+            </div>
+            <ol className="journey-track" style={{ listStyle: "none", padding: 0 }}>
+              {items.map((it, i) => (
+                <li
+                  key={i}
+                  className="journey-step reveal"
+                  style={{ ["--reveal-delay" as string]: `${i * 0.08}s` }}
+                >
+                  <span className="journey-num" aria-hidden="true">{i + 1}</span>
+                  <h3>{str(it, "title")}</h3>
+                  <p>{str(it, "body")}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+      );
+    }
+
+    /* ============================================================ */
+    /* HOUSES — coloured roundels                                    */
+    /* ============================================================ */
+    case "houses": {
+      const items = list(c, "items");
+      if (items.length === 0) return null;
+      return (
+        <section className={`section${alt ? " alt" : ""} reveal`} id={anchor}>
+          <div className="wrap">
+            <div className="section-head center">
+              {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+              <h2>{str(c, "heading")}</h2>
+              {str(c, "body") && <p>{str(c, "body")}</p>}
+            </div>
+            <ul className="house-grid">
+              {items.map((it, i) => {
+                const name = str(it, "name");
+                const color = str(it, "color") || "var(--c-primary)";
+                return (
+                  <li
+                    key={i}
+                    className="house-card reveal"
+                    style={{ ["--reveal-delay" as string]: `${i * 0.08}s` }}
+                  >
+                    <div className="house-roundel" style={{ background: color }} aria-hidden="true">
+                      <span>{name.toUpperCase()}</span>
+                    </div>
+                    <h3>{name}</h3>
+                    <p>{str(it, "motto")}</p>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </section>
+      );
+    }
+
+    /* ============================================================ */
+    /* LEADERSHIP — portrait cards                                   */
+    /* ============================================================ */
+    case "leadership": {
+      const items = list(c, "items").filter(it => str(it, "name") || str(it, "role"));
+      if (items.length === 0) return null;
+      return (
+        <section className={`section${alt ? " alt" : ""} reveal`} id={anchor}>
+          <div className="wrap">
+            <div className="section-head center">
+              {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+              <h2>{str(c, "heading")}</h2>
+            </div>
+            <ul className="leader-grid">
+              {items.map((it, i) => {
+                const name = str(it, "name");
+                const img = str(it, "image_url");
+                const initials = name
+                  .split(/\s+/).filter(Boolean).slice(0, 2)
+                  .map(w => w[0]?.toUpperCase() ?? "").join("");
+                return (
+                  <li
+                    key={i}
+                    className="leader-card reveal"
+                    style={{ ["--reveal-delay" as string]: `${i * 0.07}s` }}
+                  >
+                    <div className="leader-avatar">
+                      {img ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={img} alt={name ? `${name}, ${str(it, "role")}` : ""} loading="lazy" />
+                      ) : (
+                        <span className="initials" aria-hidden="true">{initials || "—"}</span>
+                      )}
+                    </div>
+                    <h3>{name || "Name to follow"}</h3>
+                    <p className="leader-role">{str(it, "role")}</p>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </section>
+      );
+    }
+
+    /* ============================================================ */
+    /* KEY DATES — hand-entered diary strip                          */
+    /* ============================================================ */
+    case "key_dates": {
+      const items = list(c, "items");
+      if (items.length === 0) return null;
+      return (
+        <section className={`section${alt ? " alt" : ""} reveal`} id={anchor}>
+          <div className="wrap">
+            <div className="section-head">
+              {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+              <h2>{str(c, "heading")}</h2>
+            </div>
+            <ul className="key-dates">
+              {items.map((it, i) => (
+                <li
+                  key={i}
+                  className="key-date reveal"
+                  style={{ ["--reveal-delay" as string]: `${i * 0.06}s` }}
+                >
+                  <div className="key-date-day" aria-hidden="true">
+                    <b>{str(it, "day")}</b>
+                    <span>{str(it, "month")}</span>
+                  </div>
+                  <div className="key-date-body">
+                    <h3>{str(it, "title")}</h3>
+                    {str(it, "detail") && <p>{str(it, "detail")}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      );
+    }
+
+    /* ============================================================ */
+    /* NEWSLETTER — email capture band                               */
+    /* ============================================================ */
+    case "newsletter": {
+      const formKey = str(c, "form_key", "newsletter");
+      const form = ctx.forms.find(f => f.key === formKey);
+      return (
+        <section className="section reveal" id={anchor}>
+          <div className="wrap">
+            <div className="newsletter-band">
+              <h2>{str(c, "heading", "Stay in the loop")}</h2>
+              {str(c, "body") && <p>{str(c, "body")}</p>}
+              {form ? (
+                <SiteForm
+                  form={form}
+                  websiteId={ctx.site.id}
+                  sourcePage={ctx.currentPath}
+                  variant="inline"
+                  submitLabel={str(c, "cta_label", "Subscribe")}
+                />
+              ) : (
+                <p style={{ opacity: 0.8, fontSize: ".9rem" }}>
+                  No newsletter form is configured yet.
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
     default:
       return null;
   }
+}
+
+function TickIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
 }
 
 /* ------------------------------------------------------------------ */

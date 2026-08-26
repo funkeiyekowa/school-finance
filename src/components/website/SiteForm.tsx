@@ -14,11 +14,14 @@ import { createClient } from "@/lib/supabase/client";
 import type { PublicForm, FormField } from "@/lib/website/types";
 
 export function SiteForm({
-  form, websiteId, sourcePage,
+  form, websiteId, sourcePage, variant = "stacked", submitLabel,
 }: {
   form: PublicForm;
   websiteId: string;
   sourcePage?: string;
+  /** "inline" renders a single-row email capture, used by the newsletter band. */
+  variant?: "stacked" | "inline";
+  submitLabel?: string;
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -63,11 +66,49 @@ export function SiteForm({
     return (
       <div
         role="status"
-        className="rounded-[var(--r-md)] p-6 text-center"
-        style={{ background: "var(--c-surface-alt)", color: "var(--c-text)" }}
+        className={variant === "inline" ? "text-center" : "rounded-[var(--r-md)] p-6 text-center"}
+        style={variant === "inline"
+          ? { color: "inherit" }
+          : { background: "var(--c-surface-alt)", color: "var(--c-text)" }}
       >
         <p className="font-semibold">{message}</p>
       </div>
+    );
+  }
+
+  /* Inline variant: a single row, used inside the newsletter band where the
+     surrounding surface is already dark and the label is implied. */
+  if (variant === "inline") {
+    const emailField = fields.find(f => f.type === "email") ?? fields[0];
+    if (!emailField) return null;
+    const id = `${form.key}-${emailField.name}`;
+    return (
+      <form onSubmit={submit} className="newsletter-form">
+        <label htmlFor={id} className="sr-only">{emailField.label}</label>
+        <input
+          id={id}
+          name={emailField.name}
+          type={emailField.type || "email"}
+          required
+          placeholder={emailField.placeholder ?? emailField.label}
+          value={values[emailField.name] ?? ""}
+          onChange={e => setValues(v => ({ ...v, [emailField.name]: e.target.value }))}
+        />
+        {/* Honeypot */}
+        <div aria-hidden="true" className="absolute -left-[9999px] w-px h-px overflow-hidden">
+          <label htmlFor={`${form.key}-company-inline`}>Company</label>
+          <input id={`${form.key}-company-inline`} tabIndex={-1} autoComplete="off"
+            value={honeypot} onChange={e => setHoneypot(e.target.value)} />
+        </div>
+        <button type="submit" disabled={state === "sending"} className="btn btn-gold">
+          {state === "sending" ? "Sending…" : (submitLabel ?? "Subscribe")}
+        </button>
+        {state === "error" && (
+          <p role="alert" className="w-full text-sm font-medium" style={{ color: "var(--c-error)" }}>
+            {message}
+          </p>
+        )}
+      </form>
     );
   }
 
