@@ -74,11 +74,13 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Students & Academics",
     icon: <GraduationCap size={16} />,
     items: [
+      { href: "/dashboard/students/overview", label: "Overview", icon: <LayoutDashboard size={17} />, module: "academics" },
       { href: "/dashboard/students", label: "Students", icon: <GraduationCap size={17} />, feature: "students", module: "students" },
       { href: "/dashboard/attendance", label: "Attendance", icon: <Clock size={17} />, module: "attendance" },
       { href: "/dashboard/timetable", label: "Timetable", icon: <Clock size={17} />, module: "timetable" },
       { href: "/dashboard/assessments", label: "Assessments", icon: <FileBarChart size={17} />, module: "assessments" },
       { href: "/dashboard/cbt", label: "CBT / Exams", icon: <BookOpen size={17} />, module: "cbt" },
+      { href: "/dashboard/report-cards", label: "Report Cards", icon: <FileBarChart size={17} />, module: "academics" },
       { href: "/dashboard/students/promotion", label: "Promotion", icon: <ArrowLeftRight size={17} />, feature: "students", module: "academics", adminOnly: true },
     ],
   },
@@ -87,6 +89,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Finance",
     icon: <Wallet size={16} />,
     items: [
+      { href: "/dashboard/finance", label: "Overview", icon: <LayoutDashboard size={17} />, module: "finance" },
       { href: "/dashboard/student-finance", label: "Student Finance", icon: <TrendingUp size={17} />, feature: "students", module: "finance" },
       { href: "/dashboard/income", label: "Income", icon: <TrendingUp size={17} />, feature: "income", module: "finance" },
       { href: "/dashboard/expenses", label: "Expenses", icon: <TrendingDown size={17} />, feature: "expenses", module: "finance" },
