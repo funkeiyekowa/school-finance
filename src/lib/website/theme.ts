@@ -419,6 +419,7 @@ ${S} .hero::before{
   content:'';position:absolute;inset:0;pointer-events:none;
   background-image:var(--motif-image);
   background-size:var(--motif-size);
+  transform:translateY(var(--hero-parallax,0px));
 }
 ${S} .hero-inner{
   position:relative;z-index:1;max-width:var(--container);margin:0 auto;padding:0 24px;
@@ -534,6 +535,15 @@ ${S} .grid-4{display:grid;gap:26px;grid-template-columns:1fr;}
   ${S} .grid-3{grid-template-columns:repeat(3,1fr);}
   ${S} .grid-4{grid-template-columns:repeat(4,1fr);}
 }
+
+/* ============ CURVE DIVIDERS (stats band top/bottom) ============ */
+${S} .curve-divider{position:absolute;left:0;width:100%;height:56px;line-height:0;z-index:2;pointer-events:none;}
+${S} .curve-divider.top{top:-1px;}
+${S} .curve-divider.bottom{bottom:-1px;transform:scaleY(-1);}
+${S} .curve-divider svg{width:100%;height:100%;display:block;}
+${S} .curve-fill-background{fill:var(--c-background);}
+${S} .curve-fill-surface{fill:var(--c-surface);}
+@media (min-width:720px){${S} .curve-divider{height:80px;}}
 
 /* ============ STATS BAND ============ */
 ${S} .stats-band{
@@ -1074,6 +1084,44 @@ ${S} .newsletter-form input{
   color:#fff;font:inherit;
 }
 ${S} .newsletter-form input::placeholder{color:rgba(255,255,255,.60);}
+
+${theme.animations ? `
+/* ============ PRELOADER ============ */
+${S} .site-preloader{
+  position:fixed;inset:0;z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+  background:radial-gradient(120% 120% at 50% 28%, var(--c-primary) 0%, var(--c-primary-deeper,var(--c-primary-dark,var(--c-primary))) 100%);
+  transition:opacity .5s var(--ease), visibility 0s linear .5s;
+}
+${S} .site-preloader.is-hidden{opacity:0;visibility:hidden;pointer-events:none;}
+${S} .preloader-mark{
+  position:relative;width:80px;height:80px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:var(--c-primary-dark,var(--c-primary));border:2px solid var(--c-accent);
+  animation:preloaderPulse 1.7s ease-in-out infinite;
+}
+${S} .preloader-mark::before{content:'';position:absolute;inset:-12px;border-radius:50%;border:1px dashed rgba(255,255,255,.35);animation:preloaderSpin 9s linear infinite;}
+${S} .preloader-mark strong{font-family:var(--font-heading);font-size:1.7rem;color:var(--c-accent);}
+${S} .preloader-word{font-family:var(--font-heading);font-weight:700;letter-spacing:.1em;text-transform:uppercase;font-size:.72rem;color:rgba(255,255,255,.72);}
+${S} .preloader-bar{width:110px;height:2px;background:rgba(255,255,255,.18);border-radius:2px;overflow:hidden;}
+${S} .preloader-bar::after{content:'';display:block;height:100%;width:40%;background:var(--c-accent);animation:preloaderBar 1.1s ease-in-out infinite;}
+@keyframes preloaderPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.05);}}
+@keyframes preloaderSpin{to{transform:rotate(360deg);}}
+@keyframes preloaderBar{0%{transform:translateX(-120%);}100%{transform:translateX(340%);}}
+@media (prefers-reduced-motion:reduce){${S} .site-preloader{display:none;}}
+
+/* ============ CURSOR GLOW (desktop, fine pointer only) ============ */
+${S} .cursor-glow{
+  position:fixed;top:0;left:0;width:400px;height:400px;border-radius:50%;
+  background:radial-gradient(circle, color-mix(in srgb, var(--c-accent) 22%, transparent) 0%, transparent 70%);
+  transform:translate(-50%,-50%);pointer-events:none;z-index:40;opacity:0;
+  transition:opacity .4s var(--ease), width .35s var(--ease), height .35s var(--ease);
+}
+${S} .cursor-glow.is-active{opacity:1;}
+${S} .cursor-glow.is-hovering{width:540px;height:540px;}
+@media (hover:none),(pointer:coarse),(prefers-reduced-motion:reduce){${S} .cursor-glow{display:none;}}
+
+/* ============ MAGNETIC BUTTONS (desktop, fine pointer only) ============ */
+${S} .js-magnetic{will-change:transform;}
+` : ""}
 
 /* ============ COUNT-UP STATS ============ */
 ${S} .stat-item b{

@@ -155,6 +155,7 @@ export function SiteShell({
     currentPath,
     heroStyle: theme.heroStyle,
     headerStyle: theme.headerStyle,
+    divider: theme.divider,
   };
 
   const navPages = (payload.pages ?? []).filter(p => p.slug !== "");
@@ -186,8 +187,22 @@ export function SiteShell({
       <style dangerouslySetInnerHTML={{ __html: css }} />
 
       <div className="site-root" data-header-style={theme.headerStyle} data-hero-style={theme.heroStyle}>
+        {/* Preloader */}
+        {theme.animations && (
+          <div className="site-preloader" data-site-preloader aria-hidden="true">
+            <div className="preloader-mark">
+              <strong>{(payload.site.site_name || "S").split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase()}</strong>
+            </div>
+            <span className="preloader-word">{payload.site.site_name}</span>
+            <span className="preloader-bar" />
+          </div>
+        )}
+
         {/* Scroll progress bar */}
         <div className="scroll-progress" aria-hidden="true" />
+
+        {/* Cursor glow (desktop only, added via JS to avoid SSR/CSR mismatch on touch devices) */}
+        {theme.animations && <div className="cursor-glow" data-cursor-glow aria-hidden="true" />}
 
         {/* Grain overlay for textured themes */}
         {theme.grain && <div className="grain-overlay" aria-hidden="true" />}

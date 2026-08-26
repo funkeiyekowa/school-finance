@@ -119,6 +119,83 @@ export function SiteInteractive() {
       window.addEventListener("scroll", hideCue, { passive: true });
     }
 
+    // --- Preloader auto-hide ---
+    const preloader = document.querySelector<HTMLElement>("[data-site-preloader]");
+    if (preloader) {
+      const hidePreloader = () => preloader.classList.add("is-hidden");
+      if (prefersReduced) {
+        hidePreloader();
+      } else if (document.readyState === "complete") {
+        window.setTimeout(hidePreloader, 300);
+      } else {
+        window.addEventListener("load", () => window.setTimeout(hidePreloader, 450), { once: true });
+      }
+    }
+
+    // --- Hero parallax weave ---
+    const heroEl = document.querySelector<HTMLElement>(".hero");
+    if (heroEl && !prefersReduced) {
+      const updateParallax = () => {
+        const offset = Math.min(window.scrollY * 0.15, 60);
+        heroEl.style.setProperty("--hero-parallax", `${offset}px`);
+      };
+      window.addEventListener("scroll", updateParallax, { passive: true });
+      updateParallax();
+    }
+
+    const supportsFinePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+
+    // --- Cursor glow (desktop pointer only) ---
+    const cursorGlow = document.querySelector<HTMLElement>("[data-cursor-glow]");
+    if (cursorGlow && supportsFinePointer && !prefersReduced) {
+      let glowX = 0, glowY = 0, targetX = 0, targetY = 0, active = false, rafId: number | null = null;
+      const tick = () => {
+        glowX += (targetX - glowX) * 0.18;
+        glowY += (targetY - glowY) * 0.18;
+        cursorGlow.style.transform = `translate(${glowX}px,${glowY}px) translate(-50%,-50%)`;
+        if (Math.abs(targetX - glowX) > 0.4 || Math.abs(targetY - glowY) > 0.4) {
+          rafId = requestAnimationFrame(tick);
+        } else {
+          rafId = null;
+        }
+      };
+      document.addEventListener("mousemove", (e) => {
+        targetX = e.clientX; targetY = e.clientY;
+        if (!active) {
+          active = true; glowX = targetX; glowY = targetY;
+          cursorGlow.classList.add("is-active");
+        }
+        if (!rafId) rafId = requestAnimationFrame(tick);
+      }, { passive: true });
+      document.addEventListener("mouseleave", () => cursorGlow.classList.remove("is-active"));
+      document.addEventListener("mouseover", (e) => {
+        const t = e.target as HTMLElement;
+        if (t.closest?.("a,button,.btn")) cursorGlow.classList.add("is-hovering");
+      });
+      document.addEventListener("mouseout", (e) => {
+        const t = e.target as HTMLElement;
+        if (t.closest?.("a,button,.btn")) cursorGlow.classList.remove("is-hovering");
+      });
+    }
+
+    // --- Magnetic buttons (desktop pointer only) ---
+    if (supportsFinePointer && !prefersReduced) {
+      document.querySelectorAll<HTMLElement>(".js-magnetic").forEach((btn) => {
+        const strength = 16;
+        btn.addEventListener("mousemove", (e) => {
+          const rect = btn.getBoundingClientRect();
+          const relX = e.clientX - rect.left - rect.width / 2;
+          const relY = e.clientY - rect.top - rect.height / 2;
+          btn.style.transition = "transform .06s linear";
+          btn.style.transform = `translate(${(relX / rect.width) * strength}px,${(relY / rect.height) * strength}px)`;
+        });
+        btn.addEventListener("mouseleave", () => {
+          btn.style.transition = "transform .35s cubic-bezier(.22,.61,.32,1)";
+          btn.style.transform = "translate(0,0)";
+        });
+      });
+    }
+
     // --- Testimonial carousel(s) ---
     const carousels = document.querySelectorAll<HTMLElement>("[data-testimonial-carousel]");
     const carouselTimers: number[] = [];

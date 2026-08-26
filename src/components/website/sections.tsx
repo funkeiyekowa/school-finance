@@ -393,6 +393,8 @@ export interface SectionContext {
   currentPath?: string;
   heroStyle?: string;
   headerStyle?: string;
+  /** Section transition shape the active theme prefers: none | curve | angle | weave | rule. */
+  divider?: string;
 }
 
 /**
@@ -535,12 +537,12 @@ function RenderSectionBody({
               )}
               <div className="hero-ctas reveal" style={{ ["--reveal-delay" as string]: ".2s" }}>
                 {str(c, "primary_cta_label") && (
-                  <a href={link(str(c, "primary_cta_href", "/admissions"))} className="btn btn-gold">
+                  <a href={link(str(c, "primary_cta_href", "/admissions"))} className="btn btn-gold js-magnetic">
                     {str(c, "primary_cta_label")}
                   </a>
                 )}
                 {str(c, "secondary_cta_label") && (
-                  <a href={link(str(c, "secondary_cta_href", "/contact"))} className="btn btn-outline-light">
+                  <a href={link(str(c, "secondary_cta_href", "/contact"))} className="btn btn-outline-light js-magnetic">
                     {str(c, "secondary_cta_label")}
                   </a>
                 )}
@@ -776,8 +778,16 @@ function RenderSectionBody({
     /* ============================================================ */
     case "stats": {
       const items = list(c, "items");
+      const showCurves = ctx.divider === "curve";
       return (
         <section className="stats-band reveal">
+          {showCurves && (
+            <div className="curve-divider top" aria-hidden="true">
+              <svg viewBox="0 0 1200 120" preserveAspectRatio="none">
+                <path className="curve-fill-background" d="M0,0 L1200,0 L1200,40 Q600,120 0,40 Z" />
+              </svg>
+            </div>
+          )}
           <div className="wrap">
             {str(c, "heading") && (
               <div className="section-head center" style={{ marginBottom: 36 }}>
@@ -793,6 +803,13 @@ function RenderSectionBody({
               ))}
             </div>
           </div>
+          {showCurves && (
+            <div className="curve-divider bottom" aria-hidden="true">
+              <svg viewBox="0 0 1200 120" preserveAspectRatio="none">
+                <path className="curve-fill-surface" d="M0,0 L1200,0 L1200,40 Q600,120 0,40 Z" />
+              </svg>
+            </div>
+          )}
         </section>
       );
     }
