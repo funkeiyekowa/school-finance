@@ -2123,6 +2123,7 @@ function AcademicSetupTab() {
                 <thead>
                   <tr className="bg-gray-50 border-b">
                     <th className="text-left px-3 py-2 font-semibold text-gray-600">Year</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Term</th>
                     <th className="text-left px-3 py-2 font-semibold text-gray-600">Start</th>
                     <th className="text-left px-3 py-2 font-semibold text-gray-600">End</th>
                     <th className="text-left px-3 py-2 font-semibold text-gray-600">Status</th>
@@ -2133,8 +2134,15 @@ function AcademicSetupTab() {
                   {years.map(y => (
                     <tr key={String(y.id)} className="border-b hover:bg-gray-50">
                       <td className="px-3 py-2 font-medium">{String(y.name)}</td>
-                      <td className="px-3 py-2 text-gray-500">{y.start_date ? String(y.start_date) : "�"}</td>
-                      <td className="px-3 py-2 text-gray-500">{y.end_date ? String(y.end_date) : "�"}</td>
+                      <td className="px-3 py-2">
+                        {y.term ? (
+                          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-[#FBF6E8] text-[#8a6d1a]">{String(y.term)}</span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">Full year</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-gray-500">{y.start_date ? String(y.start_date) : "—"}</td>
+                      <td className="px-3 py-2 text-gray-500">{y.end_date ? String(y.end_date) : "—"}</td>
                       <td className="px-3 py-2">
                         <span className={cn("px-2 py-0.5 rounded text-xs font-bold",
                           y.status === "current" ? "bg-green-100 text-green-700" :
@@ -2149,7 +2157,7 @@ function AcademicSetupTab() {
                     </tr>
                   ))}
                   {years.length === 0 && (
-                    <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400">No academic years configured. Click &ldquo;Add Year&rdquo; to create one.</td></tr>
+                    <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">No academic years configured. Click &ldquo;Add Year&rdquo; to create one.</td></tr>
                   )}
                 </tbody>
               </table>
