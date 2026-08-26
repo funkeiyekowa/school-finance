@@ -56,12 +56,31 @@ export default function LoginPage() {
         }
         loginEmail = result.login_email;
       }
-      const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
+      const { data: authData, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
       if (error) {
         setError(error.message);
         setLoading(false);
       } else {
-        window.location.href = "/dashboard";
+        // Route to the right portal based on role
+        let redirectPath = "/dashboard";
+        if (authData?.user) {
+          // Prefer role from app_metadata (fast), fallback to profiles table
+          const metaRole = (authData.user.app_metadata as { role?: string })?.role;
+          let role = metaRole;
+          if (!role) {
+            const { data: prof } = await supabase
+              .from("profiles")
+              .select("role")
+              .eq("id", authData.user.id)
+              .maybeSingle();
+            role = (prof as { role?: string } | null)?.role;
+          }
+          if (role === "student") redirectPath = "/dashboard/student-portal";
+          else if (role === "parent") redirectPath = "/dashboard/parent-portal";
+          else if (role === "teacher") redirectPath = "/dashboard/teacher-portal";
+          // admin / others → main dashboard
+        }
+        window.location.href = redirectPath;
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Connection error — check your internet.";
