@@ -17,9 +17,13 @@ interface QuestionRow { id: string; question_text: string; question_type: string
 interface ExamRow { id: string; title: string; exam_type: string; status: string; duration_minutes: number; total_marks: number; pass_mark: number; max_attempts: number; class_id: string | null; subject_id: string | null; shuffle_questions: boolean; shuffle_options: boolean; show_results: boolean; show_answers: boolean; settings: Record<string, unknown>; created_at: string; }
 interface ExamQuestionRow { id: string; exam_id: string; question_id: string; sort_order: number; }
 
-const CSV_TEMPLATE = `question_text,option_a,option_b,option_c,option_d,correct_option,difficulty,marks,topic
-"What is 2+2?","3","4","5","6","B","easy","1","Arithmetic"
-"Capital of Nigeria?","Abuja","Lagos","Kano","Ibadan","A","medium","1","Geography"`;
+const CSV_TEMPLATE = `question_type,question_text,option_a,option_b,option_c,option_d,correct_option,answer_text,difficulty,marks,topic
+multiple_choice,"What is 2+2?","2","3","4","5","C","","easy","1","Math"
+true_false,"The sky is blue.","True","False","","","A","","easy","1","General"
+short_answer,"Capital of France?","","","","","","Paris","medium","2","Geography"
+fill_blank,"Water boils at ___ Celsius.","","","","","","100","medium","2","Science"
+numeric,"What is 5 * 3?","","","","","","15","easy","1","Math"
+essay,"Explain photosynthesis.","","","","","","","hard","10","Biology"`;
 
 export default function CbtPage() {
   const { canEdit, profile, orgId } = useAuth();
@@ -35,7 +39,7 @@ export default function CbtPage() {
   // Question form
   const [showQForm, setShowQForm] = useState(false);
   const [savingQ, setSavingQ] = useState(false);
-  const [qForm, setQForm] = useState({ question_text: "", question_type: "multiple_choice", subject_id: "", topic: "", difficulty: "medium", marks: "1", options: [{ id: "A", text: "", is_correct: true }, { id: "B", text: "", is_correct: false }, { id: "C", text: "", is_correct: false }, { id: "D", text: "", is_correct: false }] });
+  const [qForm, setQForm] = useState({ question_text: "", question_type: "multiple_choice", subject_id: "", topic: "", difficulty: "medium", marks: "1", answer_text: "", options: [{ id: "A", text: "", is_correct: true }, { id: "B", text: "", is_correct: false }, { id: "C", text: "", is_correct: false }, { id: "D", text: "", is_correct: false }] });
 
   // Bulk upload
   const [showBulkForm, setShowBulkForm] = useState(false);
@@ -48,7 +52,7 @@ export default function CbtPage() {
   const [showExamForm, setShowExamForm] = useState(false);
   const [savingExam, setSavingExam] = useState(false);
   const [editingExam, setEditingExam] = useState<ExamRow | null>(null);
-  const [examForm, setExamForm] = useState({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false });
+  const [examForm, setExamForm] = useState({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, available_from: "", available_to: "" });
 
   // Exam questions panel
   const [selectedExam, setSelectedExam] = useState<ExamRow | null>(null);
@@ -76,9 +80,9 @@ export default function CbtPage() {
   // --- Question CRUD ---
   async function saveQuestion() {
     setSavingQ(true);
-    await supabase.from("questions").insert({ question_text: qForm.question_text.trim(), question_type: qForm.question_type, subject_id: qForm.subject_id || null, topic: qForm.topic.trim() || null, difficulty: qForm.difficulty, marks: parseFloat(qForm.marks) || 1, options: qForm.options, organization_id: orgId, created_by: profile?.full_name });
+    await supabase.from("questions").insert({ question_text: qForm.question_text.trim(), question_type: qForm.question_type, subject_id: qForm.subject_id || null, topic: qForm.topic.trim() || null, difficulty: qForm.difficulty, marks: parseFloat(qForm.marks) || 1, options: qForm.options, answer_text: qForm.answer_text || null, organization_id: orgId, created_by: profile?.full_name });
     setSavingQ(false); setShowQForm(false);
-    setQForm({ question_text: "", question_type: "multiple_choice", subject_id: "", topic: "", difficulty: "medium", marks: "1", options: [{ id: "A", text: "", is_correct: true }, { id: "B", text: "", is_correct: false }, { id: "C", text: "", is_correct: false }, { id: "D", text: "", is_correct: false }] });
+    setQForm({ question_text: "", question_type: "multiple_choice", subject_id: "", topic: "", difficulty: "medium", marks: "1", answer_text: "", options: [{ id: "A", text: "", is_correct: true }, { id: "B", text: "", is_correct: false }, { id: "C", text: "", is_correct: false }, { id: "D", text: "", is_correct: false }] });
     load();
   }
 
@@ -94,18 +98,42 @@ export default function CbtPage() {
     setBulkUploading(true); setBulkResult(null);
     const lines = bulkCsv.trim().split("\n").slice(1); // Skip header
     let added = 0, failed = 0;
+    // CSV: question_type,question_text,option_a,option_b,option_c,option_d,correct_option,answer_text,difficulty,marks,topic
+    const parseCsvLine = (line: string): string[] => {
+      const out: string[] = []; let cur = ""; let q = false;
+      for (const ch of line) {
+        if (ch === '"') { q = !q; continue; }
+        if (ch === "," && !q) { out.push(cur.trim()); cur = ""; continue; }
+        cur += ch;
+      }
+      out.push(cur.trim());
+      return out;
+    };
     for (const line of lines) {
-      const cols = line.split(",").map(c => c.trim().replace(/^"|"$/g, ""));
-      if (cols.length < 6) { failed++; continue; }
-      const [qText, optA, optB, optC, optD, correct, diff, marks, topic] = cols;
-      const correctId = correct.toUpperCase();
-      const options = [
-        { id: "A", text: optA, is_correct: correctId === "A" },
-        { id: "B", text: optB, is_correct: correctId === "B" },
-        { id: "C", text: optC, is_correct: correctId === "C" },
-        { id: "D", text: optD, is_correct: correctId === "D" },
-      ];
-      const { error } = await supabase.from("questions").insert({ question_text: qText, question_type: "multiple_choice", options, difficulty: diff || "medium", marks: parseFloat(marks) || 1, topic: topic || null, subject_id: bulkSubjectId || null, organization_id: orgId, created_by: profile?.full_name });
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      // Backwards-compatible: if first col isn't a known type, assume multiple_choice legacy format
+      const knownTypes = new Set(["multiple_choice", "true_false", "short_answer", "fill_blank", "numeric", "essay"]);
+      let qType: string, qText: string, optA: string, optB: string, optC: string, optD: string, correct: string, answerText: string, diff: string, marks: string, topic: string;
+      if (knownTypes.has(cols[0])) {
+        [qType, qText, optA, optB, optC, optD, correct, answerText, diff, marks, topic] = cols;
+      } else {
+        // Legacy MCQ-only format
+        qType = "multiple_choice";
+        [qText, optA, optB, optC, optD, correct, diff, marks, topic] = cols;
+        answerText = "";
+      }
+      let options: unknown = null;
+      let answer: string | null = null;
+      if (qType === "multiple_choice" || qType === "true_false") {
+        const correctId = (correct || "A").toUpperCase();
+        options = qType === "true_false"
+          ? [{ id: "A", text: optA || "True", is_correct: correctId === "A" }, { id: "B", text: optB || "False", is_correct: correctId === "B" }]
+          : [{ id: "A", text: optA, is_correct: correctId === "A" }, { id: "B", text: optB, is_correct: correctId === "B" }, { id: "C", text: optC, is_correct: correctId === "C" }, { id: "D", text: optD, is_correct: correctId === "D" }];
+      } else {
+        answer = answerText || null;
+      }
+      const { error } = await supabase.from("questions").insert({ question_text: qText, question_type: qType, options, answer_text: answer, difficulty: diff || "medium", marks: parseFloat(marks) || 1, topic: topic || null, subject_id: bulkSubjectId || null, organization_id: orgId, created_by: profile?.full_name });
       if (error) failed++; else added++;
     }
     setBulkResult(`${added} questions added, ${failed} failed.`);
@@ -117,10 +145,10 @@ export default function CbtPage() {
     if (exam) {
       setEditingExam(exam);
       const s = (exam.settings || {}) as Record<string, unknown>;
-      setExamForm({ title: exam.title, exam_type: exam.exam_type, subject_id: exam.subject_id || "", class_id: exam.class_id || "", duration_minutes: String(exam.duration_minutes), max_attempts: String(exam.max_attempts), pass_mark: String(exam.pass_mark || 0), shuffle_questions: exam.shuffle_questions, shuffle_options: exam.shuffle_options, show_results: exam.show_results, show_answers: exam.show_answers, proctored: s.proctored === true });
+      setExamForm({ title: exam.title, exam_type: exam.exam_type, subject_id: exam.subject_id || "", class_id: exam.class_id || "", duration_minutes: String(exam.duration_minutes), max_attempts: String(exam.max_attempts), pass_mark: String(exam.pass_mark || 0), shuffle_questions: exam.shuffle_questions, shuffle_options: exam.shuffle_options, show_results: exam.show_results, show_answers: exam.show_answers, proctored: s.proctored === true, available_from: (exam as unknown as { available_from?: string | null }).available_from || "", available_to: (exam as unknown as { available_to?: string | null }).available_to || "" });
     } else {
       setEditingExam(null);
-      setExamForm({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false });
+      setExamForm({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, available_from: "", available_to: "" });
     }
     setShowExamForm(true);
   }
@@ -136,6 +164,8 @@ export default function CbtPage() {
       shuffle_questions: examForm.shuffle_questions, shuffle_options: examForm.shuffle_options,
       show_results: examForm.show_results, show_answers: examForm.show_answers,
       settings: { proctored: examForm.proctored },
+      available_from: examForm.available_from || null,
+      available_to: examForm.available_to || null,
       organization_id: orgId, updated_at: new Date().toISOString(),
     };
     if (editingExam) {
@@ -291,7 +321,7 @@ export default function CbtPage() {
           <div className="space-y-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Question</label><textarea rows={3} value={qForm.question_text} onChange={e => setQForm(f => ({ ...f, question_text: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]" placeholder="Enter question..." /></div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Type</label><select value={qForm.question_type} onChange={e => setQForm(f => ({ ...f, question_type: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="multiple_choice">Multiple Choice</option><option value="true_false">True / False</option><option value="short_answer">Short Answer</option></select></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Type</label><select value={qForm.question_type} onChange={e => setQForm(f => ({ ...f, question_type: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="multiple_choice">Multiple Choice</option><option value="true_false">True / False</option><option value="short_answer">Short Answer</option><option value="essay">Essay</option><option value="fill_blank">Fill in the Blank</option><option value="numeric">Numeric</option></select></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Subject</label><select value={qForm.subject_id} onChange={e => setQForm(f => ({ ...f, subject_id: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="">Any</option>{subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Difficulty</label><select value={qForm.difficulty} onChange={e => setQForm(f => ({ ...f, difficulty: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></div>
               <Input label="Marks" type="number" value={qForm.marks} onChange={e => setQForm(f => ({ ...f, marks: e.target.value }))} min="0.5" step="0.5" />
@@ -299,6 +329,12 @@ export default function CbtPage() {
             <Input label="Topic (optional)" value={qForm.topic} onChange={e => setQForm(f => ({ ...f, topic: e.target.value }))} placeholder="Algebra" />
             {(qForm.question_type === "multiple_choice" || qForm.question_type === "true_false") && (
               <div><label className="block text-sm font-medium text-gray-700 mb-2">Options (select correct)</label><div className="space-y-2">{qForm.options.map((opt, i) => (<div key={opt.id} className="flex items-center gap-2"><input type="radio" name="correct" checked={opt.is_correct} onChange={() => setQForm(f => ({ ...f, options: f.options.map((o, j) => ({ ...o, is_correct: j === i })) }))} className="w-4 h-4 text-[#C9A227]" /><span className="text-sm font-bold text-gray-500 w-5">{opt.id}.</span><input type="text" value={opt.text} placeholder={`Option ${opt.id}`} onChange={e => setQForm(f => ({ ...f, options: f.options.map((o, j) => j === i ? { ...o, text: e.target.value } : o) }))} className="flex-1 px-3 py-1.5 border border-gray-300 rounded text-sm" /></div>))}</div></div>
+            )}
+            {(qForm.question_type === "short_answer" || qForm.question_type === "fill_blank" || qForm.question_type === "numeric") && (
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Correct Answer</label><input type="text" value={qForm.answer_text} onChange={e => setQForm(f => ({ ...f, answer_text: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]" placeholder="Enter the expected answer (auto-graded)" /><p className="text-xs text-gray-500 mt-1">For fill-blank & short-answer, exact-match auto-grading (case-insensitive). Numeric matches value.</p></div>
+            )}
+            {qForm.question_type === "essay" && (
+              <div className="p-3 bg-blue-50 rounded-lg text-sm text-blue-800">Essay questions are graded manually by the teacher after submission.</div>
             )}
             <div className="flex justify-end gap-2 pt-2"><Button variant="secondary" onClick={() => setShowQForm(false)}>Cancel</Button><Button variant="gold" loading={savingQ} onClick={saveQuestion} disabled={!qForm.question_text.trim()}><Save size={14} /> Save</Button></div>
           </div>
@@ -331,6 +367,8 @@ export default function CbtPage() {
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Subject</label><select value={examForm.subject_id} onChange={e => setExamForm(f => ({ ...f, subject_id: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="">Any</option>{subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Assign to Class</label><select value={examForm.class_id} onChange={e => setExamForm(f => ({ ...f, class_id: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="">All Classes</option>{classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
               <Input label="Duration (min)" type="number" value={examForm.duration_minutes} onChange={e => setExamForm(f => ({ ...f, duration_minutes: e.target.value }))} />
+              <Input label="Available From" type="datetime-local" value={examForm.available_from} onChange={e => setExamForm(f => ({ ...f, available_from: e.target.value }))} />
+              <Input label="Available Until" type="datetime-local" value={examForm.available_to} onChange={e => setExamForm(f => ({ ...f, available_to: e.target.value }))} />
               <Input label="Max Attempts" type="number" value={examForm.max_attempts} onChange={e => setExamForm(f => ({ ...f, max_attempts: e.target.value }))} />
               <Input label="Pass Mark" type="number" value={examForm.pass_mark} onChange={e => setExamForm(f => ({ ...f, pass_mark: e.target.value }))} />
             </div>

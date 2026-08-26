@@ -63,6 +63,8 @@ const NAV_GROUPS: NavGroup[] = [
     label: "My Workspace",
     icon: <UserCircle size={16} />,
     items: [
+      { href: "/dashboard/student-portal", label: "Student Portal", icon: <GraduationCap size={17} />, module: "student_portal" },
+      { href: "/dashboard/parent-portal", label: "Parent Portal", icon: <Users size={17} />, module: "parent_portal" },
       { href: "/dashboard/teaching", label: "My Teaching", icon: <BookOpen size={17} />, module: "teacher_portal" },
       { href: "/dashboard/my-results", label: "My Results", icon: <FileBarChart size={17} />, module: "student_portal" },
       { href: "/dashboard/my-exams", label: "My Exams", icon: <BookOpen size={17} />, module: "student_portal" },
