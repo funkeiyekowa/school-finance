@@ -52,7 +52,7 @@ export default function CbtPage() {
   const [showExamForm, setShowExamForm] = useState(false);
   const [savingExam, setSavingExam] = useState(false);
   const [editingExam, setEditingExam] = useState<ExamRow | null>(null);
-  const [examForm, setExamForm] = useState({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, available_from: "", available_to: "" });
+  const [examForm, setExamForm] = useState({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, starts_at: "", ends_at: "" });
 
   // Exam questions panel
   const [selectedExam, setSelectedExam] = useState<ExamRow | null>(null);
@@ -79,9 +79,19 @@ export default function CbtPage() {
 
   // --- Question CRUD ---
   async function saveQuestion() {
+    if (!orgId) {
+      alert("No active organization. Please refresh or switch organization and try again.");
+      return;
+    }
     setSavingQ(true);
-    await supabase.from("questions").insert({ question_text: qForm.question_text.trim(), question_type: qForm.question_type, subject_id: qForm.subject_id || null, topic: qForm.topic.trim() || null, difficulty: qForm.difficulty, marks: parseFloat(qForm.marks) || 1, options: qForm.options, answer_text: qForm.answer_text || null, organization_id: orgId, created_by: profile?.full_name });
-    setSavingQ(false); setShowQForm(false);
+    const { error } = await supabase.from("questions").insert({ question_text: qForm.question_text.trim(), question_type: qForm.question_type, subject_id: qForm.subject_id || null, topic: qForm.topic.trim() || null, difficulty: qForm.difficulty, marks: parseFloat(qForm.marks) || 1, options: qForm.options, answer_text: qForm.answer_text || null, organization_id: orgId, created_by: profile?.full_name });
+    setSavingQ(false);
+    if (error) {
+      alert(`Failed to save question: ${error.message}${error.hint ? "\nHint: " + error.hint : ""}`);
+      console.error("saveQuestion error:", error);
+      return;
+    }
+    setShowQForm(false);
     setQForm({ question_text: "", question_type: "multiple_choice", subject_id: "", topic: "", difficulty: "medium", marks: "1", answer_text: "", options: [{ id: "A", text: "", is_correct: true }, { id: "B", text: "", is_correct: false }, { id: "C", text: "", is_correct: false }, { id: "D", text: "", is_correct: false }] });
     load();
   }
@@ -145,15 +155,19 @@ export default function CbtPage() {
     if (exam) {
       setEditingExam(exam);
       const s = (exam.settings || {}) as Record<string, unknown>;
-      setExamForm({ title: exam.title, exam_type: exam.exam_type, subject_id: exam.subject_id || "", class_id: exam.class_id || "", duration_minutes: String(exam.duration_minutes), max_attempts: String(exam.max_attempts), pass_mark: String(exam.pass_mark || 0), shuffle_questions: exam.shuffle_questions, shuffle_options: exam.shuffle_options, show_results: exam.show_results, show_answers: exam.show_answers, proctored: s.proctored === true, available_from: (exam as unknown as { available_from?: string | null }).available_from || "", available_to: (exam as unknown as { available_to?: string | null }).available_to || "" });
+      setExamForm({ title: exam.title, exam_type: exam.exam_type, subject_id: exam.subject_id || "", class_id: exam.class_id || "", duration_minutes: String(exam.duration_minutes), max_attempts: String(exam.max_attempts), pass_mark: String(exam.pass_mark || 0), shuffle_questions: exam.shuffle_questions, shuffle_options: exam.shuffle_options, show_results: exam.show_results, show_answers: exam.show_answers, proctored: s.proctored === true, starts_at: (exam as unknown as { starts_at?: string | null }).starts_at ? (exam as unknown as { starts_at?: string | null }).starts_at!.slice(0, 16) : "", ends_at: (exam as unknown as { ends_at?: string | null }).ends_at ? (exam as unknown as { ends_at?: string | null }).ends_at!.slice(0, 16) : "" });
     } else {
       setEditingExam(null);
-      setExamForm({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, available_from: "", available_to: "" });
+      setExamForm({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, starts_at: "", ends_at: "" });
     }
     setShowExamForm(true);
   }
 
   async function saveExam() {
+    if (!orgId) {
+      alert("No active organization. Please refresh or switch organization and try again.");
+      return;
+    }
     setSavingExam(true);
     const payload = {
       title: examForm.title.trim(), exam_type: examForm.exam_type,
@@ -164,16 +178,20 @@ export default function CbtPage() {
       shuffle_questions: examForm.shuffle_questions, shuffle_options: examForm.shuffle_options,
       show_results: examForm.show_results, show_answers: examForm.show_answers,
       settings: { proctored: examForm.proctored },
-      available_from: examForm.available_from || null,
-      available_to: examForm.available_to || null,
+      starts_at: examForm.starts_at ? new Date(examForm.starts_at).toISOString() : null,
+      ends_at: examForm.ends_at ? new Date(examForm.ends_at).toISOString() : null,
       organization_id: orgId, updated_at: new Date().toISOString(),
     };
-    if (editingExam) {
-      await supabase.from("exams").update(payload).eq("id", editingExam.id);
-    } else {
-      await supabase.from("exams").insert({ ...payload, status: "draft", created_by: profile?.full_name });
+    const { error } = editingExam
+      ? await supabase.from("exams").update(payload).eq("id", editingExam.id)
+      : await supabase.from("exams").insert({ ...payload, status: "draft", created_by: profile?.full_name });
+    setSavingExam(false);
+    if (error) {
+      alert(`Failed to save exam: ${error.message}${error.hint ? "\nHint: " + error.hint : ""}`);
+      console.error("saveExam error:", error);
+      return;
     }
-    setSavingExam(false); setShowExamForm(false); setEditingExam(null); load();
+    setShowExamForm(false); setEditingExam(null); load();
   }
 
   async function publishExam(examId: string) { await supabase.from("exams").update({ status: "published", updated_at: new Date().toISOString() }).eq("id", examId); load(); }
@@ -367,8 +385,8 @@ export default function CbtPage() {
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Subject</label><select value={examForm.subject_id} onChange={e => setExamForm(f => ({ ...f, subject_id: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="">Any</option>{subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Assign to Class</label><select value={examForm.class_id} onChange={e => setExamForm(f => ({ ...f, class_id: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="">All Classes</option>{classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
               <Input label="Duration (min)" type="number" value={examForm.duration_minutes} onChange={e => setExamForm(f => ({ ...f, duration_minutes: e.target.value }))} />
-              <Input label="Available From" type="datetime-local" value={examForm.available_from} onChange={e => setExamForm(f => ({ ...f, available_from: e.target.value }))} />
-              <Input label="Available Until" type="datetime-local" value={examForm.available_to} onChange={e => setExamForm(f => ({ ...f, available_to: e.target.value }))} />
+              <Input label="Available From" type="datetime-local" value={examForm.starts_at} onChange={e => setExamForm(f => ({ ...f, starts_at: e.target.value }))} />
+              <Input label="Available Until" type="datetime-local" value={examForm.ends_at} onChange={e => setExamForm(f => ({ ...f, ends_at: e.target.value }))} />
               <Input label="Max Attempts" type="number" value={examForm.max_attempts} onChange={e => setExamForm(f => ({ ...f, max_attempts: e.target.value }))} />
               <Input label="Pass Mark" type="number" value={examForm.pass_mark} onChange={e => setExamForm(f => ({ ...f, pass_mark: e.target.value }))} />
             </div>

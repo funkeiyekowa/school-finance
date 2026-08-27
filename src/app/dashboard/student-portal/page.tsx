@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { GraduationCap, BookOpen, FileBarChart, Clock, Award, Play, ChevronRight, User, Calendar } from "lucide-react";
 
 interface Student { id: string; student_code: string; full_name: string; grade: string | null; status: string; must_change_password: boolean; }
-interface Exam { id: string; title: string; exam_type: string; subject_id: string | null; class_id: string | null; duration_minutes: number; status: string; available_from: string | null; available_to: string | null; }
+interface Exam { id: string; title: string; exam_type: string; subject_id: string | null; class_id: string | null; duration_minutes: number; status: string; starts_at: string | null; ends_at: string | null; }
 interface ExamAssignment { id: string; exam_id: string; available_from: string | null; available_to: string | null; }
 interface Attempt { id: string; exam_id: string; total_score: number | null; status: string; }
 interface ReportCard { id: string; term: string; average_score: number; grade_overall: string | null; published: boolean; }
@@ -110,8 +110,8 @@ export default function StudentPortalPage() {
       const attempt = attempts.find(a => a.exam_id === e.id);
       if (attempt && attempt.status === "submitted") return false;
       const now = new Date();
-      if (e.available_from && new Date(e.available_from) > now) return false;
-      if (e.available_to && new Date(e.available_to) < now) return false;
+      if (e.starts_at && new Date(e.starts_at) > now) return false;
+      if (e.ends_at && new Date(e.ends_at) < now) return false;
       return true;
     });
     const completed = attempts.filter(a => a.status === "submitted");
@@ -187,8 +187,8 @@ export default function StudentPortalPage() {
                 {exams.map(exam => {
                   const attempt = attempts.find(a => a.exam_id === exam.id);
                   const now = new Date();
-                  const inWindow = (!exam.available_from || new Date(exam.available_from) <= now) &&
-                                   (!exam.available_to || new Date(exam.available_to) >= now);
+                  const inWindow = (!exam.starts_at || new Date(exam.starts_at) <= now) &&
+                                   (!exam.ends_at || new Date(exam.ends_at) >= now);
                   const isDone = attempt?.status === "submitted";
                   return (
                     <div key={exam.id} className={cn("p-3 border rounded-lg", isDone ? "bg-gray-50" : inWindow ? "bg-white hover:border-[#C9A227]" : "bg-amber-50")}>
@@ -198,8 +198,8 @@ export default function StudentPortalPage() {
                           <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
                             <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-semibold uppercase">{exam.exam_type}</span>
                             <span><Clock size={10} className="inline" /> {exam.duration_minutes} min</span>
-                            {exam.available_to && (
-                              <span><Calendar size={10} className="inline" /> Until {new Date(exam.available_to).toLocaleDateString()}</span>
+                            {exam.ends_at && (
+                              <span><Calendar size={10} className="inline" /> Until {new Date(exam.ends_at).toLocaleDateString()}</span>
                             )}
                           </div>
                         </div>
