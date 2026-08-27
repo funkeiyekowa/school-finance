@@ -417,6 +417,8 @@ export default function WebsiteStudioPage() {
 
       {tab === "overview" && (
         <OverviewTab
+          supabase={supabase}
+          orgId={site.organization_id}
           site={site}
           pages={pages}
           news={news}
@@ -762,8 +764,10 @@ function JsonField({
 /* ------------------------------------------------------------------ */
 
 function OverviewTab({
-  site, pages, news, events, domains, onPatch, previewPath, saving,
+  supabase, orgId, site, pages, news, events, domains, onPatch, previewPath, saving,
 }: {
+  supabase: Sb;
+  orgId: string;
   site: SiteRow;
   pages: PageRow[];
   news: NewsRow[];
@@ -777,6 +781,43 @@ function OverviewTab({
     site_name: site.site_name,
     tagline: site.tagline ?? "",
   });
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoUrlDraft, setLogoUrlDraft] = useState(site.logo_url ?? "");
+
+  async function uploadLogo(files: FileList | null) {
+    const file = files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Please choose an image file (PNG, JPG, SVG, or WEBP).");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Logo must be under 5 MB.");
+      return;
+    }
+    setUploadingLogo(true);
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const path = `${orgId}/logo-${Date.now()}-${safeName}`;
+
+    const { error: upErr } = await supabase.storage
+      .from("website-media")
+      .upload(path, file, { cacheControl: "31536000", upsert: false });
+
+    if (upErr) {
+      setUploadingLogo(false);
+      alert(
+        upErr.message.includes("Bucket not found")
+          ? "The website-media storage bucket is missing. Run supabase/website_module.sql."
+          : upErr.message
+      );
+      return;
+    }
+
+    const { data: pub } = supabase.storage.from("website-media").getPublicUrl(path);
+    setLogoUrlDraft(pub.publicUrl);
+    await onPatch({ logo_url: pub.publicUrl });
+    setUploadingLogo(false);
+  }
 
   const checklist = [
     { done: pages.some(p => p.slug === "" && p.status === "published"), label: "Home page published" },
@@ -846,6 +887,64 @@ function OverviewTab({
                 </li>
               ))}
             </ul>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader><CardTitle>Logo</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Shown top-left in your site&apos;s header, and used as the default
+            crest wherever your logo appears on the public site.
+          </p>
+
+          {site.logo_url && (
+            <div className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg bg-white">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={site.logo_url}
+                alt={`${site.site_name} logo`}
+                className="h-16 w-auto object-contain"
+              />
+              <p className="text-xs text-gray-500 break-all">{site.logo_url}</p>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Upload a new logo
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              disabled={uploadingLogo}
+              onChange={e => uploadLogo(e.target.files)}
+              className="block w-full text-sm text-gray-600
+                file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0
+                file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700
+                hover:file:bg-gray-200 disabled:opacity-50"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              {uploadingLogo ? "Uploading\u2026" : "PNG or SVG with a transparent background works best. Under 5 MB."}
+            </p>
+          </div>
+
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <Input
+                label="Or paste an image URL"
+                value={logoUrlDraft}
+                onChange={e => setLogoUrlDraft(e.target.value)}
+                placeholder="https://example.com/logo.png"
+              />
+            </div>
+            <Button
+              size="sm" variant="secondary" loading={saving}
+              onClick={() => onPatch({ logo_url: logoUrlDraft.trim() || null })}
+            >
+              <Save size={14} /> Save
+            </Button>
           </div>
         </CardContent>
       </Card>
