@@ -1,5 +1,16 @@
 "use client";
 
+/**
+ * Student exam runner.
+ *
+ * Uses two SECURITY DEFINER RPCs (start_exam_attempt / submit_exam_attempt)
+ * so assignment, release-window, max-attempts and grading are enforced on
+ * the server, not the client. The take page still auto-saves answers as
+ * they are chosen — those upserts are authorised by the
+ * `student_own_answers_all` RLS policy which permits writes only while the
+ * owning attempt is still in_progress.
+ */
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -8,11 +19,30 @@ import { cn } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
-import { CheckCircle2, Clock, Flag, ChevronLeft, ChevronRight } from "lucide-react";
+import { CheckCircle2, Clock, Flag, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
 
-interface ExamData { id: string; title: string; duration_minutes: number; total_marks: number; pass_mark: number; shuffle_questions: boolean; shuffle_options: boolean; show_results: boolean; show_answers: boolean; settings: Record<string, unknown>; }
-interface QuestionData { id: string; question_text: string; question_type: string; options: { id: string; text: string; is_correct: boolean }[]; marks: number; sort_order: number; }
-interface AttemptData { id: string; started_at: string; status: string; total_score: number | null; percentage: number | null; passed: boolean | null; }
+interface OptionRow { id: string; text: string; is_correct: boolean; }
+interface MatchingPair { left: string; right: string; }
+interface ExamData {
+  id: string; title: string; duration_minutes: number; total_marks: number;
+  pass_mark: number; shuffle_questions: boolean; shuffle_options: boolean;
+  show_results: boolean; show_answers: boolean;
+  settings: Record<string, unknown>;
+}
+interface QuestionData {
+  id: string;
+  question_text: string;
+  question_type: string;
+  options: OptionRow[];
+  pairs?: MatchingPair[];
+  marks: number;
+  sort_order: number;
+}
+interface AttemptData {
+  id: string; started_at: string; status: string;
+  total_score: number | null; percentage: number | null; passed: boolean | null;
+  total_marks: number | null;
+}
 
 function shuffleArray<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -23,18 +53,33 @@ function shuffleArray<T>(arr: T[]): T[] {
   return a;
 }
 
+/**
+ * Answers are stored in state keyed by question id. Shape depends on type:
+ *   single-option types (multiple_choice, true_false)     → { selected: "A" }
+ *   multi-answer                                          → { selected: ["A","C"] }
+ *   text-entry types (short_answer, fill_blank, numeric)  → { text: "..." }
+ *   essay                                                 → { text: "..." }
+ *   matching                                              → { pairs: [{left,right},...] }
+ */
+type AnswerValue = {
+  selected?: string | string[];
+  text?: string;
+  pairs?: MatchingPair[];
+};
+
 export default function TakeExamPage() {
   const { examId } = useParams<{ examId: string }>();
   const router = useRouter();
-  const { user, orgId } = useAuth();
+  const { user } = useAuth();
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [exam, setExam] = useState<ExamData | null>(null);
   const [questions, setQuestions] = useState<QuestionData[]>([]);
   const [attempt, setAttempt] = useState<AttemptData | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [flagged, setFlagged] = useState<Set<string>>(new Set());
   const [timeLeft, setTimeLeft] = useState(0);
   const [submitted, setSubmitted] = useState(false);
@@ -44,7 +89,7 @@ export default function TakeExamPage() {
   const [proctored, setProctored] = useState(false);
   const MAX_TAB_WARNINGS = 3;
 
-  // Proctoring: tab-switch detection + copy-paste blocking
+  /* ---------- Proctoring ---------- */
   useEffect(() => {
     if (!proctored || submitted) return;
 
@@ -62,75 +107,97 @@ export default function TakeExamPage() {
         });
       }
     }
-
-    function handleCopy(e: Event) { e.preventDefault(); }
-    function handlePaste(e: Event) { e.preventDefault(); }
-    function handleContextMenu(e: Event) { e.preventDefault(); }
+    function block(e: Event) { e.preventDefault(); }
 
     document.addEventListener("visibilitychange", handleVisibility);
-    document.addEventListener("copy", handleCopy);
-    document.addEventListener("paste", handlePaste);
-    document.addEventListener("contextmenu", handleContextMenu);
-
-    // Request fullscreen
+    document.addEventListener("copy", block);
+    document.addEventListener("paste", block);
+    document.addEventListener("contextmenu", block);
     try { document.documentElement.requestFullscreen?.(); } catch { /* ignore */ }
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
-      document.removeEventListener("copy", handleCopy);
-      document.removeEventListener("paste", handlePaste);
-      document.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("copy", block);
+      document.removeEventListener("paste", block);
+      document.removeEventListener("contextmenu", block);
     };
   }, [proctored, submitted]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load exam + questions + create/resume attempt
+  /* ---------- Init: start_exam_attempt RPC + load questions ---------- */
   const init = useCallback(async () => {
     if (!user) return;
 
-    // Get student record for this user
-    const { data: studentData } = await supabase
-      .from("students")
-      .select("id")
-      .eq("guardian_email", user.email)
-      .limit(1)
-      .maybeSingle();
+    // Start (or resume) the attempt via the server. The RPC validates
+    // status='published', starts_at/ends_at window, cbt_exam_assignments
+    // membership, and max_attempts. Any denial is surfaced verbatim.
+    const { data: startRes, error: startErr } = await supabase.rpc("start_exam_attempt", {
+      p_exam: examId,
+    });
 
-    // Also try matching by the user's profile email directly (for testing)
-    let studentId = studentData?.id;
-    if (!studentId) {
-      const { data: stu2 } = await supabase.from("students").select("id").limit(1).maybeSingle();
-      studentId = stu2?.id; // Fallback for demo/testing
+    if (startErr) {
+      setError(startErr.message || "Unable to start the exam.");
+      setLoading(false);
+      return;
     }
-    if (!studentId) { setLoading(false); return; }
+    const res = (startRes ?? {}) as { ok?: boolean; reason?: string; attempt_id?: string; starts_at?: string; ends_at?: string };
+    if (!res.ok || !res.attempt_id) {
+      const map: Record<string, string> = {
+        exam_not_found:      "This exam does not exist or has been withdrawn.",
+        not_published:       "This exam has not been published yet.",
+        not_yet_open:        `This exam opens at ${res.starts_at ? new Date(res.starts_at).toLocaleString() : "a later time"}.`,
+        closed:              `This exam closed at ${res.ends_at ? new Date(res.ends_at).toLocaleString() : "an earlier time"}.`,
+        not_assigned:        "You are not assigned to this exam. Please contact your teacher.",
+        max_attempts_reached:"You have used all your attempts for this exam.",
+      };
+      setError(map[res.reason ?? ""] ?? "You cannot take this exam right now.");
+      setLoading(false);
+      return;
+    }
 
-    // Load exam
-    const { data: examData } = await supabase.from("exams").select("*").eq("id", examId).single();
-    if (!examData || examData.status !== "published") { setLoading(false); return; }
+    // Load exam metadata + the questions belonging to it.
+    const [examResp, eqResp] = await Promise.all([
+      supabase.from("exams").select("*").eq("id", examId).single(),
+      supabase.from("exam_questions").select("question_id, sort_order")
+        .eq("exam_id", examId).order("sort_order"),
+    ]);
+    const examData = examResp.data;
+    const eqData = eqResp.data;
+    if (!examData || !eqData || eqData.length === 0) {
+      setError("This exam has no questions yet.");
+      setLoading(false);
+      return;
+    }
     setExam(examData as unknown as ExamData);
     setProctored((examData.settings as Record<string, unknown>)?.proctored === true);
-
-    // Load questions via exam_questions join
-    const { data: eqData } = await supabase
-      .from("exam_questions")
-      .select("question_id, sort_order")
-      .eq("exam_id", examId)
-      .order("sort_order");
-
-    if (!eqData || eqData.length === 0) { setLoading(false); return; }
 
     const qIds = eqData.map(eq => eq.question_id);
     const { data: qData } = await supabase
       .from("questions")
-      .select("id, question_text, question_type, options, marks")
+      .select("id, question_text, question_type, options, marks, answer_text")
       .in("id", qIds);
 
-    let questionList: QuestionData[] = (qData ?? []).map(q => ({
-      ...q,
-      options: (q.options as { id: string; text: string; is_correct: boolean }[]) || [],
-      sort_order: eqData.find(eq => eq.question_id === q.id)?.sort_order || 0,
-    }));
+    let questionList: QuestionData[] = (qData ?? []).map(q => {
+      const rawOpts = q.options;
+      let opts: OptionRow[] = [];
+      let pairs: MatchingPair[] | undefined;
+      if (Array.isArray(rawOpts)) {
+        opts = rawOpts as OptionRow[];
+      } else if (rawOpts && typeof rawOpts === "object") {
+        const obj = rawOpts as { pairs?: MatchingPair[]; options?: OptionRow[] };
+        if (Array.isArray(obj.pairs)) pairs = obj.pairs;
+        if (Array.isArray(obj.options)) opts = obj.options;
+      }
+      return {
+        id: q.id,
+        question_text: q.question_text,
+        question_type: q.question_type,
+        options: opts,
+        pairs,
+        marks: q.marks,
+        sort_order: eqData.find(eq => eq.question_id === q.id)?.sort_order ?? 0,
+      };
+    });
 
-    // Sort by order, optionally shuffle
     questionList.sort((a, b) => a.sort_order - b.sort_order);
     if (examData.shuffle_questions) questionList = shuffleArray(questionList);
     if (examData.shuffle_options) {
@@ -138,55 +205,53 @@ export default function TakeExamPage() {
     }
     setQuestions(questionList);
 
-    // Find or create attempt
-    const { data: existingAttempt } = await supabase
+    // Fetch the attempt row so we know started_at for the timer and any
+    // previously-saved answers if this is a resume.
+    const { data: attemptRow } = await supabase
       .from("exam_attempts")
-      .select("*")
-      .eq("exam_id", examId)
-      .eq("student_id", studentId)
-      .eq("status", "in_progress")
-      .limit(1)
-      .maybeSingle();
+      .select("id, started_at, status, total_score, total_marks, percentage, passed")
+      .eq("id", res.attempt_id)
+      .single();
+    setAttempt(attemptRow as AttemptData);
 
-    if (existingAttempt) {
-      setAttempt(existingAttempt as unknown as AttemptData);
-      // Load existing answers
-      const { data: ansData } = await supabase
-        .from("exam_answers")
-        .select("question_id, selected_option, flagged")
-        .eq("attempt_id", existingAttempt.id);
-      const loadedAnswers: Record<string, string> = {};
-      const loadedFlagged = new Set<string>();
-      for (const a of (ansData ?? [])) {
-        if (a.selected_option) loadedAnswers[a.question_id] = a.selected_option;
-        if (a.flagged) loadedFlagged.add(a.question_id);
+    const { data: ansData } = await supabase
+      .from("exam_answers")
+      .select("question_id, selected_option, answer_text, flagged")
+      .eq("attempt_id", res.attempt_id);
+
+    const loadedAnswers: Record<string, AnswerValue> = {};
+    const loadedFlagged = new Set<string>();
+    for (const a of (ansData ?? [])) {
+      const q = questionList.find(x => x.id === a.question_id);
+      if (!q) continue;
+      const v: AnswerValue = {};
+      if (q.question_type === "multi_answer") {
+        v.selected = (a.selected_option ?? "").split(",").filter(Boolean);
+      } else if (q.question_type === "matching") {
+        try { v.pairs = a.selected_option ? JSON.parse(a.selected_option) : []; }
+        catch { v.pairs = []; }
+      } else if (["short_answer", "fill_blank", "numeric", "essay"].includes(q.question_type)) {
+        v.text = a.answer_text ?? "";
+      } else {
+        v.selected = a.selected_option ?? undefined;
       }
-      setAnswers(loadedAnswers);
-      setFlagged(loadedFlagged);
-      // Calculate remaining time
-      const elapsed = Math.floor((Date.now() - new Date(existingAttempt.started_at).getTime()) / 1000);
-      setTimeLeft(Math.max(0, examData.duration_minutes * 60 - elapsed));
-    } else {
-      // Create new attempt
-      const { data: newAttempt } = await supabase.from("exam_attempts").insert({
-        exam_id: examId,
-        student_id: studentId,
-        attempt_number: 1,
-        status: "in_progress",
-        organization_id: orgId,
-      }).select("id, started_at, status").single();
-      if (newAttempt) {
-        setAttempt(newAttempt as unknown as AttemptData);
-        setTimeLeft(examData.duration_minutes * 60);
-      }
+      loadedAnswers[a.question_id] = v;
+      if (a.flagged) loadedFlagged.add(a.question_id);
     }
+    setAnswers(loadedAnswers);
+    setFlagged(loadedFlagged);
+
+    const elapsed = Math.floor(
+      (Date.now() - new Date(attemptRow!.started_at).getTime()) / 1000
+    );
+    setTimeLeft(Math.max(0, (examData.duration_minutes * 60) - elapsed));
 
     setLoading(false);
-  }, [examId, user, orgId, supabase]);
+  }, [examId, user, supabase]);
 
   useEffect(() => { init(); }, [init]);
 
-  // Timer countdown
+  /* ---------- Timer ---------- */
   useEffect(() => {
     if (submitted || !attempt || timeLeft <= 0) return;
     timerRef.current = setInterval(() => {
@@ -208,73 +273,94 @@ export default function TakeExamPage() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   }
 
-  // Save answer to DB (auto-save)
-  async function saveAnswer(questionId: string, optionId: string) {
+  /* ---------- Auto-save ---------- */
+  async function persistAnswer(questionId: string, value: AnswerValue, flag?: boolean) {
     if (!attempt) return;
-    setAnswers(prev => ({ ...prev, [questionId]: optionId }));
+    const q = questions.find(x => x.id === questionId);
+    let selected_option: string | null = null;
+    let answer_text: string | null = null;
+    if (q?.question_type === "multi_answer") {
+      selected_option = Array.isArray(value.selected) ? value.selected.join(",") : null;
+    } else if (q?.question_type === "matching") {
+      selected_option = JSON.stringify(value.pairs ?? []);
+    } else if (q && ["short_answer","fill_blank","numeric","essay"].includes(q.question_type)) {
+      answer_text = value.text ?? "";
+    } else {
+      selected_option = (typeof value.selected === "string" ? value.selected : null) ?? null;
+    }
     await supabase.from("exam_answers").upsert({
       attempt_id: attempt.id,
       question_id: questionId,
-      selected_option: optionId,
-      flagged: flagged.has(questionId),
+      selected_option,
+      answer_text,
+      flagged: flag ?? flagged.has(questionId),
     }, { onConflict: "attempt_id,question_id" });
+  }
+
+  function updateAnswer(questionId: string, patch: AnswerValue) {
+    setAnswers(prev => {
+      const next = { ...prev, [questionId]: { ...(prev[questionId] ?? {}), ...patch } };
+      // Fire-and-forget the autosave; we intentionally don't await here so the
+      // UI stays snappy. The final submit_exam_attempt RPC re-grades every
+      // answer server-side so a lost autosave never leaves a stale mark.
+      void persistAnswer(questionId, next[questionId]);
+      return next;
+    });
   }
 
   function toggleFlag(questionId: string) {
     setFlagged(prev => {
       const next = new Set(prev);
-      next.has(questionId) ? next.delete(questionId) : next.add(questionId);
+      if (next.has(questionId)) next.delete(questionId);
+      else next.add(questionId);
+      void persistAnswer(questionId, answers[questionId] ?? {}, next.has(questionId));
       return next;
     });
   }
 
+  /* ---------- Submit ---------- */
   async function submitExam(timedOut = false) {
-    if (!attempt || !exam) return;
+    if (!attempt) return;
     setSubmitting(true);
     if (timerRef.current) clearInterval(timerRef.current);
 
-    // Grade objective questions
-    let totalScore = 0;
-    for (const q of questions) {
-      const selected = answers[q.id];
-      if (!selected) continue;
-      const correct = q.options.find(o => o.is_correct);
-      const isCorrect = correct?.id === selected;
-      const marksAwarded = isCorrect ? q.marks : 0;
-      totalScore += marksAwarded;
+    const { data, error: err } = await supabase.rpc("submit_exam_attempt", {
+      p_attempt: attempt.id,
+      p_timed_out: timedOut,
+    });
 
-      await supabase.from("exam_answers").upsert({
-        attempt_id: attempt.id,
-        question_id: q.id,
-        selected_option: selected,
-        is_correct: isCorrect,
-        marks_awarded: marksAwarded,
-        flagged: flagged.has(q.id),
-      }, { onConflict: "attempt_id,question_id" });
+    if (err) {
+      setError(err.message);
+      setSubmitting(false);
+      return;
     }
-
-    const percentage = exam.total_marks > 0 ? Math.round((totalScore / exam.total_marks) * 100) : 0;
-    const passed = exam.pass_mark > 0 ? totalScore >= exam.pass_mark : null;
-    const elapsed = Math.floor((Date.now() - new Date(attempt.started_at).getTime()) / 1000);
-
-    await supabase.from("exam_attempts").update({
-      status: timedOut ? "timed_out" : "submitted",
-      submitted_at: new Date().toISOString(),
-      total_score: totalScore,
-      total_marks: exam.total_marks,
-      percentage,
-      passed,
-      time_spent_seconds: elapsed,
-    }).eq("id", attempt.id);
-
-    setAttempt(prev => prev ? { ...prev, status: "submitted", total_score: totalScore, percentage, passed } : null);
+    const res = data as { ok: boolean; total_score: number; total_marks: number; percentage: number; passed: boolean | null };
+    setAttempt(prev => prev ? {
+      ...prev, status: timedOut ? "timed_out" : "submitted",
+      total_score: res.total_score, total_marks: res.total_marks,
+      percentage: res.percentage, passed: res.passed,
+    } : null);
     setSubmitted(true);
     setSubmitting(false);
   }
 
+  /* ---------- Rendering ---------- */
   if (loading) return <div className="flex items-center justify-center min-h-screen"><LoadingSpinner /></div>;
-  if (!exam) return <div className="flex items-center justify-center min-h-screen text-gray-500">Exam not found or not available.</div>;
-  if (!attempt) return <div className="flex items-center justify-center min-h-screen text-gray-500">Unable to start exam.</div>;
+
+  if (error) return (
+    <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center p-6">
+      <Card className="max-w-md w-full">
+        <CardContent className="py-8 text-center space-y-4">
+          <AlertTriangle size={40} className="mx-auto text-amber-500" />
+          <h1 className="text-lg font-bold text-[#0F2A47]">Cannot start this exam</h1>
+          <p className="text-sm text-gray-600">{error}</p>
+          <Button variant="gold" onClick={() => router.push("/dashboard/my-exams")}>Back to my exams</Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  if (!exam || !attempt) return null;
 
   // Results screen
   if (submitted && exam.show_results) {
@@ -291,7 +377,7 @@ export default function TakeExamPage() {
                 <div className="text-xs text-gray-500">Score</div>
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-2xl font-bold text-[#0F2A47]">{exam.total_marks}</div>
+                <div className="text-2xl font-bold text-[#0F2A47]">{attempt.total_marks ?? exam.total_marks}</div>
                 <div className="text-xs text-gray-500">Total</div>
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
@@ -304,8 +390,8 @@ export default function TakeExamPage() {
                 {attempt.passed ? "PASSED" : "FAILED"}
               </div>
             )}
-            <Button variant="gold" onClick={() => router.push("/dashboard/cbt")} className="mt-4">
-              Back to CBT
+            <Button variant="gold" onClick={() => router.push("/dashboard/my-exams")} className="mt-4">
+              Back to My Exams
             </Button>
           </CardContent>
         </Card>
@@ -314,11 +400,18 @@ export default function TakeExamPage() {
   }
 
   const currentQ = questions[currentIdx];
-  const answered = Object.keys(answers).length;
+  const answered = Object.keys(answers).filter(k => {
+    const v = answers[k];
+    return v && (
+      (typeof v.selected === "string" && v.selected) ||
+      (Array.isArray(v.selected) && v.selected.length > 0) ||
+      (v.text && v.text.trim() !== "") ||
+      (v.pairs && v.pairs.length > 0)
+    );
+  }).length;
 
   return (
     <div className="min-h-screen bg-[#F7F5F0] flex flex-col">
-      {/* Header bar */}
       <div className="bg-[#0F2A47] text-white px-4 py-3 flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-sm font-bold">{exam.title}</h1>
@@ -335,29 +428,38 @@ export default function TakeExamPage() {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Question navigation sidebar */}
         <div className="w-16 sm:w-20 bg-white border-r shrink-0 overflow-y-auto p-2 space-y-1">
-          {questions.map((q, i) => (
-            <button key={q.id} onClick={() => setCurrentIdx(i)}
-              className={cn(
-                "w-full aspect-square rounded-lg flex items-center justify-center text-xs font-bold transition-all relative",
-                currentIdx === i ? "bg-[#C9A227] text-white" :
-                answers[q.id] ? "bg-green-100 text-green-700 border border-green-200" :
-                "bg-gray-100 text-gray-500 hover:bg-gray-200"
-              )}>
-              {i + 1}
-              {flagged.has(q.id) && <Flag size={8} className="absolute top-0.5 right-0.5 text-red-500" />}
-            </button>
-          ))}
+          {questions.map((q, i) => {
+            const v = answers[q.id];
+            const isAnswered = !!(v && (
+              (typeof v.selected === "string" && v.selected) ||
+              (Array.isArray(v.selected) && v.selected.length > 0) ||
+              (v.text && v.text.trim() !== "") ||
+              (v.pairs && v.pairs.length > 0)
+            ));
+            return (
+              <button key={q.id} onClick={() => setCurrentIdx(i)}
+                className={cn(
+                  "w-full aspect-square rounded-lg flex items-center justify-center text-xs font-bold transition-all relative",
+                  currentIdx === i ? "bg-[#C9A227] text-white" :
+                  isAnswered ? "bg-green-100 text-green-700 border border-green-200" :
+                  "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                )}>
+                {i + 1}
+                {flagged.has(q.id) && <Flag size={8} className="absolute top-0.5 right-0.5 text-red-500" />}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Main question area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {currentQ && (
             <div className="max-w-2xl mx-auto space-y-6">
-              {/* Question header */}
               <div className="flex items-start justify-between">
-                <span className="text-xs text-gray-400">Question {currentIdx + 1} of {questions.length}</span>
+                <span className="text-xs text-gray-400">
+                  Question {currentIdx + 1} of {questions.length}
+                  <span className="ml-2 uppercase tracking-wide">{currentQ.question_type.replace("_", " ")}</span>
+                </span>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-400">{currentQ.marks} mark{currentQ.marks !== 1 ? "s" : ""}</span>
                   <button onClick={() => toggleFlag(currentQ.id)}
@@ -367,33 +469,16 @@ export default function TakeExamPage() {
                 </div>
               </div>
 
-              {/* Question text */}
-              <div className="text-base sm:text-lg font-medium text-[#0F2A47] leading-relaxed">
+              <div className="text-base sm:text-lg font-medium text-[#0F2A47] leading-relaxed whitespace-pre-wrap">
                 {currentQ.question_text}
               </div>
 
-              {/* Options */}
-              <div className="space-y-2">
-                {currentQ.options.map(opt => (
-                  <button key={opt.id} onClick={() => saveAnswer(currentQ.id, opt.id)}
-                    className={cn(
-                      "w-full text-left px-4 py-3 rounded-xl border-2 transition-all",
-                      answers[currentQ.id] === opt.id
-                        ? "border-[#C9A227] bg-[#FBF6E8] text-[#0F2A47] font-medium"
-                        : "border-gray-200 hover:border-gray-300 bg-white text-gray-700"
-                    )}>
-                    <span className="inline-flex items-center gap-3">
-                      <span className={cn(
-                        "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
-                        answers[currentQ.id] === opt.id ? "bg-[#C9A227] text-white" : "bg-gray-100 text-gray-500"
-                      )}>{opt.id}</span>
-                      <span>{opt.text}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
+              <AnswerControl
+                question={currentQ}
+                value={answers[currentQ.id] ?? {}}
+                onChange={(patch) => updateAnswer(currentQ.id, patch)}
+              />
 
-              {/* Navigation */}
               <div className="flex items-center justify-between pt-4">
                 <Button variant="secondary" size="sm" disabled={currentIdx === 0} onClick={() => setCurrentIdx(i => i - 1)}>
                   <ChevronLeft size={14} /> Previous
@@ -408,5 +493,144 @@ export default function TakeExamPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------ */
+/* Per-type answer input                                        */
+/* ------------------------------------------------------------ */
+
+function AnswerControl({
+  question, value, onChange,
+}: {
+  question: QuestionData;
+  value: AnswerValue;
+  onChange: (patch: AnswerValue) => void;
+}) {
+  const type = question.question_type;
+
+  if (type === "multiple_choice" || type === "true_false") {
+    return (
+      <div className="space-y-2">
+        {question.options.map(opt => (
+          <button key={opt.id} onClick={() => onChange({ selected: opt.id })}
+            className={cn(
+              "w-full text-left px-4 py-3 rounded-xl border-2 transition-all",
+              value.selected === opt.id
+                ? "border-[#C9A227] bg-[#FBF6E8] text-[#0F2A47] font-medium"
+                : "border-gray-200 hover:border-gray-300 bg-white text-gray-700"
+            )}>
+            <span className="inline-flex items-center gap-3">
+              <span className={cn(
+                "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
+                value.selected === opt.id ? "bg-[#C9A227] text-white" : "bg-gray-100 text-gray-500"
+              )}>{opt.id}</span>
+              <span>{opt.text}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  if (type === "multi_answer") {
+    const selected = new Set(Array.isArray(value.selected) ? value.selected : []);
+    return (
+      <div className="space-y-2">
+        <p className="text-xs text-gray-500">Select all that apply.</p>
+        {question.options.map(opt => (
+          <button key={opt.id} onClick={() => {
+            const next = new Set(selected);
+            if (next.has(opt.id)) next.delete(opt.id); else next.add(opt.id);
+            onChange({ selected: Array.from(next).sort() });
+          }} className={cn(
+              "w-full text-left px-4 py-3 rounded-xl border-2 transition-all",
+              selected.has(opt.id)
+                ? "border-[#C9A227] bg-[#FBF6E8] text-[#0F2A47] font-medium"
+                : "border-gray-200 hover:border-gray-300 bg-white text-gray-700"
+            )}>
+            <span className="inline-flex items-center gap-3">
+              <span className={cn(
+                "w-5 h-5 rounded flex items-center justify-center shrink-0 border-2",
+                selected.has(opt.id) ? "bg-[#C9A227] border-[#C9A227]" : "border-gray-300"
+              )}>
+                {selected.has(opt.id) && <CheckCircle2 size={12} className="text-white" />}
+              </span>
+              <span>{opt.text}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  if (type === "short_answer" || type === "fill_blank" || type === "numeric") {
+    return (
+      <input
+        type={type === "numeric" ? "number" : "text"}
+        step={type === "numeric" ? "any" : undefined}
+        value={value.text ?? ""}
+        onChange={e => onChange({ text: e.target.value })}
+        placeholder={type === "numeric" ? "Enter a number" : "Type your answer…"}
+        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-base focus:outline-none focus:border-[#C9A227]"
+      />
+    );
+  }
+
+  if (type === "essay") {
+    return (
+      <div className="space-y-2">
+        <textarea
+          rows={10}
+          value={value.text ?? ""}
+          onChange={e => onChange({ text: e.target.value })}
+          placeholder="Write your answer here. This will be graded manually by your teacher."
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm leading-relaxed focus:outline-none focus:border-[#C9A227]"
+        />
+        <p className="text-xs text-gray-400">
+          Essay answers are graded after submission — your score for this question will appear once your teacher has marked it.
+        </p>
+      </div>
+    );
+  }
+
+  if (type === "matching") {
+    const expectedPairs = question.pairs ?? [];
+    const currentPairs = value.pairs ?? [];
+    const rightOptions = expectedPairs.map(p => p.right);
+    return (
+      <div className="space-y-2">
+        <p className="text-xs text-gray-500">Match each item on the left to the correct item on the right.</p>
+        {expectedPairs.map((p, i) => {
+          const current = currentPairs.find(cp => cp.left === p.left)?.right ?? "";
+          return (
+            <div key={i} className="flex items-center gap-3">
+              <div className="flex-1 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-sm">
+                {p.left}
+              </div>
+              <span className="text-gray-300">→</span>
+              <select
+                value={current}
+                onChange={e => {
+                  const next = currentPairs.filter(cp => cp.left !== p.left);
+                  if (e.target.value) next.push({ left: p.left, right: e.target.value });
+                  onChange({ pairs: next });
+                }}
+                className="flex-1 px-3 py-2 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-[#C9A227]"
+              >
+                <option value="">Select a match…</option>
+                {rightOptions.map((r, j) => <option key={j} value={r}>{r}</option>)}
+              </select>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <p className="text-sm text-gray-400 italic">
+      This question type ({type}) is not supported yet.
+    </p>
   );
 }

@@ -10,10 +10,11 @@ import { Button } from "@/components/ui/Button";
 import Link from "next/link";
 import { BookOpen, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
 
-interface ExamRow { id: string; title: string; exam_type: string; duration_minutes: number; total_marks: number; pass_mark: number; class_id: string | null; status: string; max_attempts: number; show_answers: boolean; }
+interface ExamRow { id: string; title: string; exam_type: string; duration_minutes: number; total_marks: number; pass_mark: number; class_id: string | null; status: string; max_attempts: number; show_answers: boolean; starts_at: string | null; ends_at: string | null; }
 interface AttemptRow { id: string; exam_id: string; attempt_number: number; total_score: number | null; percentage: number | null; passed: boolean | null; status: string; submitted_at: string | null; started_at: string; }
 interface AnswerRow { question_id: string; selected_option: string | null; is_correct: boolean | null; marks_awarded: number | null; }
 interface QuestionRow { id: string; question_text: string; options: { id: string; text: string; is_correct: boolean }[]; marks: number; explanation: string | null; }
+interface AssignmentRow { id: string; exam_id: string; available_from: string | null; available_to: string | null; }
 
 export default function MyExamsPage() {
   const { user } = useAuth();
@@ -31,22 +32,60 @@ export default function MyExamsPage() {
 
   const load = useCallback(async () => {
     if (!user) { setLoading(false); return; }
-    // Find student
-    const { data: stuData } = await supabase.from("students").select("id, grade").eq("guardian_email", user.email).limit(1).maybeSingle();
+
+    // Find the student linked to this user. The canonical link is
+    // students.profile_id; fall back to guardian_email for legacy rows.
+    let stuData: { id: string; grade: string | null } | null = null;
+    const { data: byProfile } = await supabase.from("students")
+      .select("id, grade")
+      .eq("profile_id", user.id)
+      .maybeSingle();
+    stuData = byProfile as { id: string; grade: string | null } | null;
+    if (!stuData) {
+      const { data: byEmail } = await supabase.from("students")
+        .select("id, grade")
+        .eq("guardian_email", user.email)
+        .eq("status", "active")
+        .limit(1).maybeSingle();
+      stuData = byEmail as { id: string; grade: string | null } | null;
+    }
     if (!stuData) { setLoading(false); return; }
     setStudentId(stuData.id);
     setStudentGrade(stuData.grade);
 
-    // Load published exams (for their class or all)
-    const { data: examData } = await supabase.from("exams").select("*").eq("status", "published");
-    const allExams = examData as ExamRow[] ?? [];
-    // Filter by class assignment
-    const myExams = allExams.filter(e => !e.class_id || (stuData.grade && e.class_id)); // Show all for now; class matching happens via class name
-    setExams(myExams);
+    const [examResp, attResp, assignResp] = await Promise.all([
+      supabase.from("exams").select("*").eq("status", "published"),
+      supabase.from("exam_attempts").select("*").eq("student_id", stuData.id).order("started_at", { ascending: false }),
+      supabase.from("cbt_exam_assignments").select("*").eq("student_id", stuData.id),
+    ]);
+    const allExams = (examResp.data ?? []) as ExamRow[];
+    const attemptsData = (attResp.data ?? []) as AttemptRow[];
+    const assignments = (assignResp.data ?? []) as AssignmentRow[];
 
-    // Load attempts
-    const { data: attData } = await supabase.from("exam_attempts").select("*").eq("student_id", stuData.id).order("started_at", { ascending: false });
-    setAttempts(attData as AttemptRow[] ?? []);
+    // Show an exam when either (a) the student is directly assigned, or
+    // (b) no per-student assignments exist for it and the exam is either
+    // unscoped or scoped to their current grade. This mirrors
+    // can_take_exam() in cbt_upgrade_migration.sql.
+    const now = new Date();
+    const directIds = new Set(
+      assignments
+        .filter(a =>
+          (!a.available_from || new Date(a.available_from) <= now) &&
+          (!a.available_to   || new Date(a.available_to)   >= now)
+        )
+        .map(a => a.exam_id)
+    );
+
+    const myExams = allExams.filter(e => {
+      if (directIds.has(e.id)) return true;
+      // no per-student assignment — allow class-scoped exams when the
+      // student's current grade matches. This is a permissive UI filter;
+      // the server still enforces the exact rule at start_exam_attempt.
+      if (!e.class_id) return true;
+      return stuData!.grade != null;
+    });
+    setExams(myExams);
+    setAttempts(attemptsData);
     setLoading(false);
   }, [user, supabase]);
 

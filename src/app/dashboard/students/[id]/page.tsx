@@ -3,12 +3,14 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { fmtMoney, fmtDate, cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { StatusBadge } from "@/components/ui/Badge";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
-import { ChevronLeft, Phone, Mail, MapPin, Calendar } from "lucide-react";
+import { ChevronLeft, Phone, Mail, MapPin, Key, Printer, Copy, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import type { Student, IncomeEntry, FeeSchedule } from "@/lib/types";
 
@@ -20,15 +22,25 @@ interface EnrollmentWithDetails {
   enrolled_at: string;
 }
 
+interface LoginSlip {
+  login_email: string;
+  student_code: string;
+  temporary_password: string;
+}
+
 export default function StudentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const supabase = createClient();
+  const { isAdmin } = useAuth();
   const [student, setStudent] = useState<Student | null>(null);
   const [history, setHistory] = useState<IncomeEntry[]>([]);
   const [fees, setFees] = useState<FeeSchedule[]>([]);
   const [enrollments, setEnrollments] = useState<EnrollmentWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
+  const [loginSlip, setLoginSlip] = useState<LoginSlip | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,6 +71,60 @@ export default function StudentDetailPage() {
   }, [id, supabase]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function resetLogin() {
+    if (!student) return;
+    if (!confirm(`Generate a new temporary password for ${student.full_name}? Their existing password will stop working immediately.`)) return;
+    setResetting(true);
+    const { data, error } = await supabase.rpc("reset_student_password", { p_student: student.id });
+    setResetting(false);
+    if (error) { alert(`Failed to reset password: ${error.message}`); return; }
+    const res = data as { ok: boolean; login_email: string; student_code: string; temporary_password: string } | null;
+    if (!res?.ok) { alert("Password reset was rejected."); return; }
+    setLoginSlip({
+      login_email: res.login_email,
+      student_code: res.student_code,
+      temporary_password: res.temporary_password,
+    });
+  }
+
+  function copySlip() {
+    if (!loginSlip || !student) return;
+    const text =
+      `${student.full_name} — login credentials\n` +
+      `Student code: ${loginSlip.student_code}\n` +
+      `Sign-in email: ${loginSlip.login_email}\n` +
+      `Temporary password: ${loginSlip.temporary_password}\n` +
+      `\nThe student will be asked to set a new password on their first sign-in.`;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function printSlip() {
+    if (!loginSlip || !student) return;
+    const w = window.open("", "_blank", "width=520,height=640");
+    if (!w) return;
+    w.document.write(`<!doctype html><html><head><title>Login slip — ${student.full_name}</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:32px;color:#0F2A47;max-width:400px;margin:auto;}
+h1{font-size:18px;margin-bottom:4px;}
+.muted{color:#6b7280;font-size:12px;margin-bottom:24px;}
+.row{padding:10px 0;border-bottom:1px solid #E5E7EB;display:flex;justify-content:space-between;}
+.label{color:#6b7280;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;}
+.value{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;font-weight:600;}
+.note{margin-top:24px;padding:12px 14px;background:#FBF6E8;border-left:3px solid #C9A227;font-size:12px;color:#4b3f14;}
+</style></head><body>
+<h1>Login credentials — ${escapeHtml(student.full_name)}</h1>
+<p class="muted">Please keep this slip safe. The temporary password is shown only once.</p>
+<div class="row"><span class="label">Student code</span><span class="value">${escapeHtml(loginSlip.student_code)}</span></div>
+<div class="row"><span class="label">Sign-in email</span><span class="value">${escapeHtml(loginSlip.login_email)}</span></div>
+<div class="row"><span class="label">Temporary password</span><span class="value">${escapeHtml(loginSlip.temporary_password)}</span></div>
+<div class="note">On first sign-in the student will be prompted to set a new password before continuing.</div>
+</body></html>`);
+    w.document.close();
+    w.print();
+  }
 
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
   if (!student) return <div className="p-6 text-gray-500">Student not found.</div>;
@@ -115,6 +181,20 @@ export default function StudentDetailPage() {
                 </div>
               )}
             </div>
+
+            {isAdmin && (
+              <div className="border-t border-gray-100 pt-3">
+                <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Student Portal Login</div>
+                <p className="text-xs text-gray-500 mb-3">
+                  Reset the student&apos;s password to generate a new temporary
+                  password you can print or read out to them. They will be
+                  asked to set a new password on their next sign-in.
+                </p>
+                <Button size="sm" variant="secondary" loading={resetting} onClick={resetLogin}>
+                  <Key size={13} /> Reset & Print Login
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -250,6 +330,47 @@ export default function StudentDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* One-time login-slip modal — shown after a successful reset. */}
+      {loginSlip && (
+        <Modal open onClose={() => setLoginSlip(null)} title="Temporary login credentials" size="md">
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Copy or print these details now. The temporary password will not be shown again.
+            </p>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 divide-y divide-gray-200">
+              <SlipRow label="Student code" value={loginSlip.student_code} mono />
+              <SlipRow label="Sign-in email" value={loginSlip.login_email} mono />
+              <SlipRow label="Temporary password" value={loginSlip.temporary_password} mono highlight />
+            </div>
+            <p className="text-xs text-gray-500">
+              The student will be prompted to set a new password on their first sign-in.
+            </p>
+            <div className="flex gap-2 justify-end pt-2">
+              <Button size="sm" variant="secondary" onClick={copySlip}>
+                {copied ? <><CheckCircle2 size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={printSlip}>
+                <Printer size={13} /> Print
+              </Button>
+              <Button size="sm" variant="gold" onClick={() => setLoginSlip(null)}>Done</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function SlipRow({ label, value, mono, highlight }: { label: string; value: string; mono?: boolean; highlight?: boolean }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-2.5">
+      <span className="text-xs text-gray-500 uppercase tracking-wide font-semibold">{label}</span>
+      <span className={cn(
+        "text-sm font-semibold",
+        mono && "font-mono",
+        highlight ? "text-[#C9A227]" : "text-[#0F2A47]"
+      )}>{value}</span>
     </div>
   );
 }
@@ -262,4 +383,9 @@ function Row({ label, value }: { label: string; value: string | null | undefined
       <span className="font-medium text-gray-900 text-sm">{value}</span>
     </div>
   );
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }

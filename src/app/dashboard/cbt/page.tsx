@@ -16,14 +16,37 @@ interface ClassRow { id: string; name: string; }
 interface QuestionRow { id: string; question_text: string; question_type: string; difficulty: string; marks: number; subject_id: string | null; topic: string | null; options: unknown; }
 interface ExamRow { id: string; title: string; exam_type: string; status: string; duration_minutes: number; total_marks: number; pass_mark: number; max_attempts: number; class_id: string | null; subject_id: string | null; shuffle_questions: boolean; shuffle_options: boolean; show_results: boolean; show_answers: boolean; settings: Record<string, unknown>; created_at: string; }
 interface ExamQuestionRow { id: string; exam_id: string; question_id: string; sort_order: number; }
+interface StudentRow { id: string; full_name: string; student_code: string; grade: string | null; }
+interface AssignmentRow { id: string; exam_id: string; student_id: string | null; class_id: string | null; available_from: string | null; available_to: string | null; }
 
-const CSV_TEMPLATE = `question_type,question_text,option_a,option_b,option_c,option_d,correct_option,answer_text,difficulty,marks,topic
-multiple_choice,"What is 2+2?","2","3","4","5","C","","easy","1","Math"
-true_false,"The sky is blue.","True","False","","","A","","easy","1","General"
-short_answer,"Capital of France?","","","","","","Paris","medium","2","Geography"
-fill_blank,"Water boils at ___ Celsius.","","","","","","100","medium","2","Science"
-numeric,"What is 5 * 3?","","","","","","15","easy","1","Math"
-essay,"Explain photosynthesis.","","","","","","","hard","10","Biology"`;
+/**
+ * CSV template for the bulk uploader.
+ *
+ * Columns (in order):
+ *   question_type, question_text, option_a, option_b, option_c, option_d,
+ *   correct_option, answer_text, difficulty, marks, topic, explanation,
+ *   case_sensitive, matching_pairs
+ *
+ * - `correct_option` accepts:
+ *     A / B / C / D / "A|B" (piped list) for multiple_choice / multi_answer / true_false.
+ * - `answer_text` holds the correct answer for short_answer / fill_blank / numeric.
+ * - `explanation` is shown to the student after grading (optional).
+ * - `case_sensitive` is TRUE/FALSE, only used by short_answer / fill_blank.
+ * - `matching_pairs` is a semicolon-separated list of "left=right" pairs,
+ *     e.g. "Nigeria=Abuja; Ghana=Accra; Kenya=Nairobi" — used only when
+ *     question_type is `matching`.
+ *
+ * Every other column may be empty.
+ */
+const CSV_TEMPLATE = `question_type,question_text,option_a,option_b,option_c,option_d,correct_option,answer_text,difficulty,marks,topic,explanation,case_sensitive,matching_pairs
+multiple_choice,"What is 2+2?","2","3","4","5","C","","easy","1","Math","2+2 equals 4","",""
+true_false,"The sky is blue.","True","False","","","A","","easy","1","General","","",""
+multi_answer,"Which are primary colours?","Red","Green","Blue","Yellow","A|C","","medium","2","Art","Red and blue are primary; green and yellow are secondary/mixed.","",""
+short_answer,"Capital of France?","","","","","","Paris","medium","2","Geography","","false",""
+fill_blank,"Water boils at ___ Celsius.","","","","","","100","medium","2","Science","","false",""
+numeric,"What is 5 * 3?","","","","","","15","easy","1","Math","","",""
+essay,"Explain photosynthesis.","","","","","","","hard","10","Biology","","",""
+matching,"Match the country to its capital.","","","","","","","medium","3","Geography","","","Nigeria=Abuja; Ghana=Accra; Kenya=Nairobi"`;
 
 export default function CbtPage() {
   const { canEdit, profile, orgId } = useAuth();
@@ -57,6 +80,18 @@ export default function CbtPage() {
   // Exam questions panel
   const [selectedExam, setSelectedExam] = useState<ExamRow | null>(null);
   const [examQuestions, setExamQuestions] = useState<ExamQuestionRow[]>([]);
+
+  // Assignment modal
+  const [assignExam, setAssignExam] = useState<ExamRow | null>(null);
+  const [students, setStudents] = useState<StudentRow[]>([]);
+  const [existingAssignments, setExistingAssignments] = useState<AssignmentRow[]>([]);
+  const [assignMode, setAssignMode] = useState<"class" | "students">("class");
+  const [assignClassId, setAssignClassId] = useState<string>("");
+  const [assignStudentIds, setAssignStudentIds] = useState<Set<string>>(new Set());
+  const [assignFrom, setAssignFrom] = useState<string>("");
+  const [assignUntil, setAssignUntil] = useState<string>("");
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [assignFilter, setAssignFilter] = useState<string>("");
 
   // Exam link
   const [copiedLink, setCopiedLink] = useState(false);
@@ -104,50 +139,138 @@ export default function CbtPage() {
     URL.revokeObjectURL(url);
   }
 
+  /**
+   * CSV row parser. Handles quoted commas and escaped double quotes
+   * ("") within quoted cells. Does not attempt to handle embedded
+   * newlines inside cells — those should not appear in this template.
+   */
+  function parseCsvLine(line: string): string[] {
+    const out: string[] = [];
+    let cur = "";
+    let inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuote && line[i + 1] === '"') { cur += '"'; i++; continue; }
+        inQuote = !inQuote;
+        continue;
+      }
+      if (ch === "," && !inQuote) { out.push(cur.trim()); cur = ""; continue; }
+      cur += ch;
+    }
+    out.push(cur.trim());
+    return out;
+  }
+
   async function uploadBulk() {
     setBulkUploading(true); setBulkResult(null);
-    const lines = bulkCsv.trim().split("\n").slice(1); // Skip header
+    const rawLines = bulkCsv.trim().split(/\r?\n/);
+    if (rawLines.length === 0) { setBulkUploading(false); return; }
+    const lines = rawLines.slice(1); // skip header
+
     let added = 0, failed = 0;
-    // CSV: question_type,question_text,option_a,option_b,option_c,option_d,correct_option,answer_text,difficulty,marks,topic
-    const parseCsvLine = (line: string): string[] => {
-      const out: string[] = []; let cur = ""; let q = false;
-      for (const ch of line) {
-        if (ch === '"') { q = !q; continue; }
-        if (ch === "," && !q) { out.push(cur.trim()); cur = ""; continue; }
-        cur += ch;
-      }
-      out.push(cur.trim());
-      return out;
-    };
+    const errors: string[] = [];
+
+    const knownTypes = new Set([
+      "multiple_choice", "true_false", "multi_answer",
+      "short_answer", "fill_blank", "numeric", "essay", "matching",
+    ]);
+
     for (const line of lines) {
       if (!line.trim()) continue;
       const cols = parseCsvLine(line);
-      // Backwards-compatible: if first col isn't a known type, assume multiple_choice legacy format
-      const knownTypes = new Set(["multiple_choice", "true_false", "short_answer", "fill_blank", "numeric", "essay"]);
-      let qType: string, qText: string, optA: string, optB: string, optC: string, optD: string, correct: string, answerText: string, diff: string, marks: string, topic: string;
+
+      /* Column indices (may be missing on legacy rows) */
+      let qType: string, qText: string, optA: string, optB: string, optC: string, optD: string;
+      let correct: string, answerText: string, diff: string, marks: string, topic: string;
+      let explanation = "";
+      let caseSensitive = "";
+      let matchingPairs = "";
+
       if (knownTypes.has(cols[0])) {
-        [qType, qText, optA, optB, optC, optD, correct, answerText, diff, marks, topic] = cols;
+        [
+          qType, qText, optA, optB, optC, optD, correct, answerText,
+          diff, marks, topic, explanation = "", caseSensitive = "", matchingPairs = "",
+        ] = cols;
       } else {
-        // Legacy MCQ-only format
+        // Legacy MCQ-only format: first col is the question text
         qType = "multiple_choice";
         [qText, optA, optB, optC, optD, correct, diff, marks, topic] = cols;
         answerText = "";
       }
+
       let options: unknown = null;
       let answer: string | null = null;
-      if (qType === "multiple_choice" || qType === "true_false") {
+
+      if (qType === "multiple_choice") {
         const correctId = (correct || "A").toUpperCase();
-        options = qType === "true_false"
-          ? [{ id: "A", text: optA || "True", is_correct: correctId === "A" }, { id: "B", text: optB || "False", is_correct: correctId === "B" }]
-          : [{ id: "A", text: optA, is_correct: correctId === "A" }, { id: "B", text: optB, is_correct: correctId === "B" }, { id: "C", text: optC, is_correct: correctId === "C" }, { id: "D", text: optD, is_correct: correctId === "D" }];
+        options = [
+          { id: "A", text: optA, is_correct: correctId === "A" },
+          { id: "B", text: optB, is_correct: correctId === "B" },
+          { id: "C", text: optC, is_correct: correctId === "C" },
+          { id: "D", text: optD, is_correct: correctId === "D" },
+        ];
+      } else if (qType === "true_false") {
+        const correctId = (correct || "A").toUpperCase();
+        options = [
+          { id: "A", text: optA || "True",  is_correct: correctId === "A" },
+          { id: "B", text: optB || "False", is_correct: correctId === "B" },
+        ];
+      } else if (qType === "multi_answer") {
+        const correctSet = new Set((correct || "").toUpperCase().split(/[|,]/).map(s => s.trim()));
+        options = [
+          { id: "A", text: optA, is_correct: correctSet.has("A") },
+          { id: "B", text: optB, is_correct: correctSet.has("B") },
+          { id: "C", text: optC, is_correct: correctSet.has("C") },
+          { id: "D", text: optD, is_correct: correctSet.has("D") },
+        ].filter(o => o.text);
+      } else if (qType === "matching") {
+        const pairs = matchingPairs
+          .split(/;\s*/)
+          .map(pair => {
+            const [left, right] = pair.split("=").map(s => s.trim());
+            return left && right ? { left, right } : null;
+          })
+          .filter((p): p is { left: string; right: string } => !!p);
+        if (pairs.length === 0) {
+          failed++;
+          errors.push(`Skipped matching row (no valid pairs): ${qText.slice(0, 40)}`);
+          continue;
+        }
+        options = { pairs };
       } else {
+        // short_answer / fill_blank / numeric / essay
         answer = answerText || null;
       }
-      const { error } = await supabase.from("questions").insert({ question_text: qText, question_type: qType, options, answer_text: answer, difficulty: diff || "medium", marks: parseFloat(marks) || 1, topic: topic || null, subject_id: bulkSubjectId || null, organization_id: orgId, created_by: profile?.full_name });
-      if (error) failed++; else added++;
+
+      const payload: Record<string, unknown> = {
+        question_text: qText,
+        question_type: qType,
+        options,
+        answer_text: answer,
+        explanation: explanation.trim() || null,
+        case_sensitive: caseSensitive.trim().toLowerCase() === "true",
+        difficulty: diff || "medium",
+        marks: parseFloat(marks) || 1,
+        topic: topic || null,
+        subject_id: bulkSubjectId || null,
+        organization_id: orgId,
+        created_by: profile?.full_name,
+      };
+
+      const { error } = await supabase.from("questions").insert(payload);
+      if (error) {
+        failed++;
+        errors.push(`${qText.slice(0, 30)}: ${error.message}`);
+      } else {
+        added++;
+      }
     }
-    setBulkResult(`${added} questions added, ${failed} failed.`);
-    setBulkUploading(false); load();
+
+    const errorHint = errors.length > 0 ? `\nFirst error: ${errors[0]}` : "";
+    setBulkResult(`${added} question(s) added, ${failed} failed.${errorHint}`);
+    setBulkUploading(false);
+    load();
   }
 
   // --- Exam CRUD ---
@@ -249,6 +372,100 @@ export default function CbtPage() {
     openExamQuestions(selectedExam); load();
   }
 
+  /* -----------------------------------------------------------
+   * Exam assignment
+   * ---------------------------------------------------------- */
+
+  async function openAssignModal(exam: ExamRow) {
+    setAssignExam(exam);
+    setAssignMode(exam.class_id ? "class" : "class");
+    setAssignClassId(exam.class_id || "");
+    setAssignStudentIds(new Set());
+    setAssignFilter("");
+    setAssignFrom("");
+    setAssignUntil("");
+    const [stuRes, existRes] = await Promise.all([
+      supabase.from("students").select("id, full_name, student_code, grade").eq("status", "active").order("full_name"),
+      supabase.from("cbt_exam_assignments").select("*").eq("exam_id", exam.id),
+    ]);
+    setStudents(stuRes.data as StudentRow[] ?? []);
+    setExistingAssignments(existRes.data as AssignmentRow[] ?? []);
+  }
+
+  async function saveAssignment() {
+    if (!assignExam || !orgId) return;
+    setAssignSaving(true);
+    const from = assignFrom ? new Date(assignFrom).toISOString() : null;
+    const to = assignUntil ? new Date(assignUntil).toISOString() : null;
+
+    if (assignMode === "class") {
+      if (!assignClassId) {
+        alert("Pick a class to assign to."); setAssignSaving(false); return;
+      }
+      // Remove any prior class-only assignment for this exam+class so
+      // re-saving with new dates does not accumulate rows.
+      await supabase.from("cbt_exam_assignments")
+        .delete()
+        .eq("exam_id", assignExam.id)
+        .eq("class_id", assignClassId)
+        .is("student_id", null);
+      const { error } = await supabase.from("cbt_exam_assignments").insert({
+        organization_id: orgId,
+        exam_id: assignExam.id,
+        class_id: assignClassId,
+        student_id: null,
+        available_from: from,
+        available_to: to,
+        assigned_by: profile?.id ?? null,
+      });
+      if (error) {
+        alert(`Failed to save assignment: ${error.message}`);
+        setAssignSaving(false); return;
+      }
+    } else {
+      if (assignStudentIds.size === 0) {
+        alert("Pick at least one student."); setAssignSaving(false); return;
+      }
+      // Drop any prior per-student assignments for the selected students on
+      // this exam so we can re-save cleanly.
+      await supabase.from("cbt_exam_assignments")
+        .delete()
+        .eq("exam_id", assignExam.id)
+        .in("student_id", Array.from(assignStudentIds));
+      const rows = Array.from(assignStudentIds).map(sid => ({
+        organization_id: orgId,
+        exam_id: assignExam.id,
+        student_id: sid,
+        class_id: null,
+        available_from: from,
+        available_to: to,
+        assigned_by: profile?.id ?? null,
+      }));
+      const { error } = await supabase.from("cbt_exam_assignments").insert(rows);
+      if (error) {
+        alert(`Failed to save assignment: ${error.message}`);
+        setAssignSaving(false); return;
+      }
+    }
+
+    // Refresh the list so the assignment count updates.
+    const { data: refreshed } = await supabase.from("cbt_exam_assignments")
+      .select("*").eq("exam_id", assignExam.id);
+    setExistingAssignments(refreshed as AssignmentRow[] ?? []);
+    setAssignSaving(false);
+    setAssignExam(null);
+  }
+
+  async function unassign(row: AssignmentRow) {
+    if (!confirm("Remove this assignment?")) return;
+    await supabase.from("cbt_exam_assignments").delete().eq("id", row.id);
+    if (assignExam) {
+      const { data: refreshed } = await supabase.from("cbt_exam_assignments")
+        .select("*").eq("exam_id", assignExam.id);
+      setExistingAssignments(refreshed as AssignmentRow[] ?? []);
+    }
+  }
+
   function getExamLink(examId: string) {
     return `${typeof window !== "undefined" ? window.location.origin : ""}/dashboard/cbt/${examId}/take`;
   }
@@ -297,6 +514,7 @@ export default function CbtPage() {
                       <td className="px-3 py-2 text-right">
                         <div className="flex items-center gap-1 justify-end">
                           <button onClick={() => openExamQuestions(exam)} className="text-xs text-[#0F2A47] hover:underline">Qs</button>
+                          {canEdit && <button onClick={() => openAssignModal(exam)} className="text-xs text-purple-700 hover:underline">Assign</button>}
                           {canEdit && <button onClick={() => openExamForm(exam)} className="text-xs text-blue-700 hover:underline">Edit</button>}
                           {exam.status === "published" && <button onClick={() => copyLink(exam.id)} className="text-xs text-[#C9A227] hover:underline flex items-center gap-0.5"><Link2 size={10} />{copiedLink ? "Copied" : "Link"}</button>}
                           {exam.status === "draft" && canEdit && <button onClick={() => publishExam(exam.id)} className="text-xs text-green-700 hover:underline">Publish</button>}
@@ -427,6 +645,106 @@ export default function CbtPage() {
               <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.proctored} onChange={e => setExamForm(f => ({ ...f, proctored: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Proctored (tab-switch detection)</label>
             </div>
             <div className="flex justify-end gap-2 pt-2"><Button variant="secondary" onClick={() => { setShowExamForm(false); setEditingExam(null); }}>Cancel</Button><Button variant="gold" loading={savingExam} onClick={saveExam} disabled={!examForm.title.trim()}><Save size={14} /> {editingExam ? "Update" : "Create"}</Button></div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ASSIGNMENT MODAL */}
+      {assignExam && (
+        <Modal open onClose={() => setAssignExam(null)} title={`Assign: ${assignExam.title}`} size="lg">
+          <div className="space-y-4">
+            <p className="text-xs text-gray-500">
+              Choose who can take this exam and, optionally, when it becomes available to them.
+              A student sees the exam only while inside the assignment window.
+            </p>
+
+            {/* Existing assignments */}
+            {existingAssignments.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold text-gray-500 mb-1">Current assignments</div>
+                <div className="space-y-1 max-h-40 overflow-y-auto rounded-lg border bg-gray-50 p-2">
+                  {existingAssignments.map(a => (
+                    <div key={a.id} className="flex items-center justify-between px-2 py-1 text-xs">
+                      <span className="text-gray-700">
+                        {a.student_id
+                          ? students.find(s => s.id === a.student_id)?.full_name || "Unknown student"
+                          : `Class: ${classes.find(c => c.id === a.class_id)?.name || "?"}`}
+                        {a.available_from && <span className="text-gray-400"> · from {new Date(a.available_from).toLocaleString()}</span>}
+                        {a.available_to && <span className="text-gray-400"> · until {new Date(a.available_to).toLocaleString()}</span>}
+                      </span>
+                      <button onClick={() => unassign(a)} className="text-red-500 hover:underline">Remove</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Mode toggle */}
+            <div className="flex gap-2">
+              <button onClick={() => setAssignMode("class")}
+                className={cn("px-3 py-1.5 text-xs font-semibold rounded-lg", assignMode === "class" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600")}>
+                By class
+              </button>
+              <button onClick={() => setAssignMode("students")}
+                className={cn("px-3 py-1.5 text-xs font-semibold rounded-lg", assignMode === "students" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600")}>
+                Specific students ({assignStudentIds.size} selected)
+              </button>
+            </div>
+
+            {assignMode === "class" ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
+                <select value={assignClassId} onChange={e => setAssignClassId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                  <option value="">Select a class…</option>
+                  {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <input type="text" value={assignFilter} onChange={e => setAssignFilter(e.target.value)}
+                  placeholder="Filter students by name or code…"
+                  className="w-full mb-2 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-lg divide-y">
+                  {students
+                    .filter(s => {
+                      const q = assignFilter.trim().toLowerCase();
+                      return !q || s.full_name.toLowerCase().includes(q) || s.student_code.toLowerCase().includes(q);
+                    })
+                    .map(s => (
+                      <label key={s.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer">
+                        <input type="checkbox"
+                          checked={assignStudentIds.has(s.id)}
+                          onChange={e => {
+                            setAssignStudentIds(prev => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(s.id); else next.delete(s.id);
+                              return next;
+                            });
+                          }}
+                          className="w-4 h-4 rounded border-gray-300 text-[#C9A227] focus:ring-[#C9A227]" />
+                        <span className="text-sm text-gray-800 flex-1">{s.full_name}</span>
+                        <span className="font-mono text-xs text-gray-400">{s.student_code}</span>
+                        <span className="text-xs text-gray-400">{s.grade}</span>
+                      </label>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Available From (optional)" type="datetime-local"
+                value={assignFrom} onChange={e => setAssignFrom(e.target.value)} />
+              <Input label="Available Until (optional)" type="datetime-local"
+                value={assignUntil} onChange={e => setAssignUntil(e.target.value)} />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="secondary" onClick={() => setAssignExam(null)}>Close</Button>
+              <Button variant="gold" loading={assignSaving} onClick={saveAssignment}>
+                <Save size={14} /> Save assignment
+              </Button>
+            </div>
           </div>
         </Modal>
       )}
