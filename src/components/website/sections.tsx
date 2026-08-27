@@ -65,6 +65,10 @@ export const SECTION_CATALOGUE: SectionMeta[] = [
       { name: "badge_initials", label: "Crest initials", type: "text",
         help: "Shown in the medallion when the theme uses the badge-ring hero." },
       { name: "badge_caption", label: "Crest caption", type: "text" },
+      { name: "badge_image_url", label: "Crest image (optional)", type: "image",
+        help: "Upload a school crest/logo to display inside the medallion instead of the initials. Square image, 800x800 or larger works best." },
+      { name: "show_panel_frame", label: "Show frame around crest", type: "boolean",
+        help: "When on, the crest sits inside a bordered panel with a woven background. Turn off for a cleaner look with a full-detail logo." },
       { name: "trust_chips", label: "Trust chips", type: "list",
         itemFields: [{ name: "label", label: "Chip text", type: "text" }] },
       { name: "stats", label: "Hero statistics", type: "list",
@@ -577,21 +581,29 @@ function RenderSectionBody({
               )}
             </div>
 
-            {showBadgeRing && (
-              <div className="hero-panel reveal" style={{ ["--reveal-delay" as string]: ".2s" }} aria-hidden="true">
-                <div className="badge-ring">
-                  {str(c, "badge_image_url") ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={str(c, "badge_image_url")} alt="" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}} />
-                  ) : (
-                    <>
-                      <strong>{str(c, "badge_initials") || "GS"}</strong>
-                      <span>{str(c, "badge_caption") || "Est. tradition"}</span>
-                    </>
-                  )}
+            {showBadgeRing && (() => {
+              const showFrame = (c as { show_panel_frame?: boolean }).show_panel_frame !== false;
+              const hasImage = !!str(c, "badge_image_url");
+              return (
+                <div
+                  className={`hero-panel reveal${showFrame ? "" : " is-frameless"}`}
+                  style={{ ["--reveal-delay" as string]: ".2s" }}
+                  aria-hidden="true"
+                >
+                  <div className="badge-ring" style={hasImage ? {background: "transparent", border: "none", padding: 0, overflow: "hidden"} : undefined}>
+                    {hasImage ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={str(c, "badge_image_url")} alt="" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%",display:"block"}} />
+                    ) : (
+                      <>
+                        <strong>{str(c, "badge_initials") || "GS"}</strong>
+                        <span>{str(c, "badge_caption") || "Est. tradition"}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {img && !hidePanel && (
               <div className="hero-panel reveal" style={{ ["--reveal-delay" as string]: ".2s" }}>

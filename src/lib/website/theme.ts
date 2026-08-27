@@ -955,6 +955,10 @@ ${S} .trust-strip.on-light .trust-chip{
 ${S} .hero-panel{display:none;}
 @media (min-width:1024px){${S} .hero-panel{display:grid;place-items:center;min-height:520px;}}
 ${S} .hero-panel img.hero-image{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;z-index:1;}
+/* --- Frameless hero panel (no border, no weave, no fill) --- */
+${S} .hero-panel.is-frameless{background:transparent;border:none;box-shadow:none;overflow:visible;}
+${S} .hero-panel.is-frameless::before{display:none;}
+${S} .hero-panel.is-frameless .badge-ring{box-shadow:0 30px 60px rgba(0,0,0,.35);}
 ${S} .badge-ring{
   width:min(440px,92%);aspect-ratio:1;border-radius:50%;
   display:grid;place-content:center;text-align:center;gap:6px;
