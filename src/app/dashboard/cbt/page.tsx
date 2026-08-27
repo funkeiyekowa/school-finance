@@ -206,17 +206,46 @@ export default function CbtPage() {
 
   async function addQuestionToExam(questionId: string) {
     if (!selectedExam) return;
-    await supabase.from("exam_questions").insert({ exam_id: selectedExam.id, question_id: questionId, sort_order: examQuestions.length + 1 });
+    if (!orgId) {
+      alert("No active organization. Please refresh or switch organization and try again.");
+      return;
+    }
+    const { error: insErr } = await supabase.from("exam_questions").insert({
+      exam_id: selectedExam.id,
+      question_id: questionId,
+      sort_order: examQuestions.length + 1,
+      organization_id: orgId,
+    });
+    if (insErr) {
+      alert(`Failed to add question: ${insErr.message}${insErr.hint ? "\nHint: " + insErr.hint : ""}`);
+      console.error("addQuestionToExam error:", insErr);
+      return;
+    }
     const q = questions.find(q => q.id === questionId);
-    if (q) await supabase.from("exams").update({ total_marks: (selectedExam.total_marks || 0) + q.marks }).eq("id", selectedExam.id);
+    if (q) {
+      const { error: updErr } = await supabase.from("exams")
+        .update({ total_marks: (selectedExam.total_marks || 0) + q.marks })
+        .eq("id", selectedExam.id);
+      if (updErr) console.error("update total_marks error:", updErr);
+    }
     openExamQuestions(selectedExam); load();
   }
 
   async function removeQuestionFromExam(eqId: string, questionId: string) {
     if (!selectedExam) return;
-    await supabase.from("exam_questions").delete().eq("id", eqId);
+    const { error: delErr } = await supabase.from("exam_questions").delete().eq("id", eqId);
+    if (delErr) {
+      alert(`Failed to remove question: ${delErr.message}`);
+      console.error("removeQuestionFromExam error:", delErr);
+      return;
+    }
     const q = questions.find(q => q.id === questionId);
-    if (q) await supabase.from("exams").update({ total_marks: Math.max(0, (selectedExam.total_marks || 0) - q.marks) }).eq("id", selectedExam.id);
+    if (q) {
+      const { error: updErr } = await supabase.from("exams")
+        .update({ total_marks: Math.max(0, (selectedExam.total_marks || 0) - q.marks) })
+        .eq("id", selectedExam.id);
+      if (updErr) console.error("update total_marks error:", updErr);
+    }
     openExamQuestions(selectedExam); load();
   }
 
