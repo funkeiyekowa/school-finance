@@ -581,43 +581,56 @@ function RenderSectionBody({
               )}
             </div>
 
-            {showBadgeRing && (() => {
+            {(() => {
+              if (hidePanel) return null;
               const showFrame = (c as { show_panel_frame?: boolean }).show_panel_frame !== false;
-              const hasImage = !!str(c, "badge_image_url");
+              const badgeImg = str(c, "badge_image_url") || (heroVariant === "badge-ring" ? img : "");
+              const useBadgeRing = heroVariant === "badge-ring" || !img || !!badgeImg;
+              if (!useBadgeRing && !img) return null;
+
+              const panelClass = `hero-panel reveal${showFrame ? "" : " is-frameless"}`;
+
+              if (useBadgeRing) {
+                return (
+                  <div
+                    className={panelClass}
+                    style={{ ["--reveal-delay" as string]: ".2s" }}
+                    aria-hidden="true"
+                  >
+                    <div
+                      className="badge-ring"
+                      style={badgeImg ? {background:"transparent",border:"none",padding:0,overflow:"hidden"} : undefined}
+                    >
+                      {badgeImg ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={badgeImg} alt={str(c, "image_alt", "")} style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%",display:"block"}} />
+                      ) : (
+                        <>
+                          <strong>{str(c, "badge_initials") || "GS"}</strong>
+                          <span>{str(c, "badge_caption") || "Est. tradition"}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              // Fallback: rectangular photo panel (respects frame toggle too)
               return (
                 <div
-                  className={`hero-panel reveal${showFrame ? "" : " is-frameless"}`}
+                  className={panelClass}
                   style={{ ["--reveal-delay" as string]: ".2s" }}
-                  aria-hidden="true"
                 >
-                  <div className="badge-ring" style={hasImage ? {background: "transparent", border: "none", padding: 0, overflow: "hidden"} : undefined}>
-                    {hasImage ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={str(c, "badge_image_url")} alt="" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%",display:"block"}} />
-                    ) : (
-                      <>
-                        <strong>{str(c, "badge_initials") || "GS"}</strong>
-                        <span>{str(c, "badge_caption") || "Est. tradition"}</span>
-                      </>
-                    )}
-                  </div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img}
+                    alt={str(c, "image_alt", "")}
+                    className="hero-image"
+                    style={{width:"100%",height:"100%",objectFit:"cover",position:"relative",zIndex:1}}
+                  />
                 </div>
               );
             })()}
-
-            {img && !hidePanel && (
-              <div className="hero-panel reveal" style={{ ["--reveal-delay" as string]: ".2s" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={img}
-                  alt={str(c, "image_alt", "")}
-                  style={{
-                    width: "100%", height: "100%", objectFit: "cover",
-                    position: "relative", zIndex: 1,
-                  }}
-                />
-              </div>
-            )}
           </div>
           <a href="#" className="scroll-cue" aria-label="Scroll to learn more">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
