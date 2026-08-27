@@ -9,7 +9,8 @@
  * read one, and one school can never see another's enquiries.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -46,12 +47,21 @@ const STATUSES = [
 ];
 
 export default function LeadsPage() {
+  return (
+    <Suspense fallback={<div className="p-6"><LoadingSpinner /></div>}>
+      <LeadsPageInner />
+    </Suspense>
+  );
+}
+
+function LeadsPageInner() {
   const supabase = useMemo(() => createClient(), []);
+  const searchParams = useSearchParams();
 
   const [rows, setRows] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<string>("all");
+  const [filter, setFilter] = useState<string>(() => searchParams.get("status") || "all");
   const [formFilter, setFormFilter] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Submission | null>(null);

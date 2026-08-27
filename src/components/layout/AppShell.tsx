@@ -59,15 +59,44 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    key: "workspace",
-    label: "My Workspace",
-    icon: <UserCircle size={16} />,
+    /* Teacher-facing tools: what a teacher uses day-to-day.
+       The overview page lives at /dashboard/teaching; attendance,
+       assessments and CBT are the same pages other staff see, but
+       surfaced under this group so teachers land on them by role
+       rather than digging through the wider Students & Academics
+       nav that admins use. Each item is gated on its own underlying
+       module (attendance/assessments/cbt) rather than the teacher_portal
+       module itself, so an item does not appear pointing at a page the
+       school has not enabled. */
+    key: "teacher_portal",
+    label: "Teacher's Portal",
+    icon: <BookOpen size={16} />,
     items: [
-      { href: "/dashboard/student-portal", label: "Student Portal", icon: <GraduationCap size={17} />, module: "student_portal" },
-      { href: "/dashboard/parent-portal", label: "Parent Portal", icon: <Users size={17} />, module: "parent_portal" },
       { href: "/dashboard/teaching", label: "My Teaching", icon: <BookOpen size={17} />, module: "teacher_portal" },
-      { href: "/dashboard/my-results", label: "My Results", icon: <FileBarChart size={17} />, module: "student_portal" },
+      { href: "/dashboard/attendance", label: "Attendance", icon: <Clock size={17} />, module: "attendance" },
+      { href: "/dashboard/assessments", label: "Assessments", icon: <FileBarChart size={17} />, module: "assessments" },
+      { href: "/dashboard/cbt", label: "CBT / Exams", icon: <BookOpen size={17} />, module: "cbt" },
+    ],
+  },
+  {
+    /* Student-facing self-service. Split out of My Workspace so a
+       student sees only their own things, not the teacher group. */
+    key: "student_portal",
+    label: "Student Portal",
+    icon: <GraduationCap size={16} />,
+    items: [
+      { href: "/dashboard/student-portal", label: "Overview", icon: <LayoutDashboard size={17} />, module: "student_portal" },
       { href: "/dashboard/my-exams", label: "My Exams", icon: <BookOpen size={17} />, module: "student_portal" },
+      { href: "/dashboard/my-results", label: "My Results", icon: <FileBarChart size={17} />, module: "student_portal" },
+    ],
+  },
+  {
+    /* Parent-facing self-service. */
+    key: "parent_portal",
+    label: "Parent Portal",
+    icon: <Users size={16} />,
+    items: [
+      { href: "/dashboard/parent-portal", label: "Overview", icon: <LayoutDashboard size={17} />, module: "parent_portal" },
       { href: "/dashboard/my-children", label: "My Children", icon: <Users size={17} />, module: "parent_portal" },
     ],
   },

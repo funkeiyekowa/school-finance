@@ -17,7 +17,8 @@
  * - Responsive + accessible
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { fmtDateTime } from "@/lib/utils";
@@ -38,15 +39,24 @@ import Link from "next/link";
 import type { Student } from "@/lib/types";
 
 export default function StudentsPage() {
+  return (
+    <Suspense fallback={<div className="p-6"><LoadingSpinner /></div>}>
+      <StudentsPageInner />
+    </Suspense>
+  );
+}
+
+function StudentsPageInner() {
   const { canEdit, isAdmin, isDeveloper, profile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
+  const searchParams = useSearchParams();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [filterGrade, setFilterGrade] = useState("");
+  const [filterGrade, setFilterGrade] = useState(() => searchParams.get("grade") || "");
   const [filterGender, setFilterGender] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
+  const [filterStatus, setFilterStatus] = useState(() => searchParams.get("status") || "");
+  const [showFilters, setShowFilters] = useState(() => !!(searchParams.get("grade") || searchParams.get("status")));
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
