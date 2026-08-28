@@ -15,7 +15,7 @@ interface StudentRow { id: string; student_code: string; full_name: string; grad
 interface RecordRow { id: string; student_id: string; status_code: string; remarks: string | null; }
 
 export default function AttendancePage() {
-  const { profile, canEdit, orgId } = useAuth();
+  const { profile, canEdit, orgId, user, membership } = useAuth();
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
@@ -38,10 +38,27 @@ export default function AttendancePage() {
       supabase.from("classes").select("id, name, short_code, sequence").eq("active", true).order("sequence"),
       supabase.from("attendance_statuses").select("*").eq("active", true).order("sort_order"),
     ]);
-    setClasses(clsRes.data as ClassRow[] ?? []);
-    setStatuses(statusRes.data as StatusRow[] ?? []);
+
+    let allClasses = (clsRes.data as ClassRow[]) ?? [];
+
+    // Teacher scoping: if the user is a teacher (not admin/owner), restrict
+    // the class list to the ones assigned to them via teacher_assignments.
+    const role = membership?.role ?? "";
+    const isTeacher = role === "teacher";
+    if (isTeacher && user) {
+      const { data: ta } = await supabase
+        .from("teacher_assignments")
+        .select("class_id")
+        .eq("user_id", user.id)
+        .eq("active", true);
+      const myClassIds = new Set((ta ?? []).map((r: { class_id: string }) => r.class_id));
+      allClasses = allClasses.filter(c => myClassIds.has(c.id));
+    }
+
+    setClasses(allClasses);
+    setStatuses((statusRes.data as StatusRow[]) ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, user, membership]);
 
   useEffect(() => { loadBase(); }, [loadBase]);
 
@@ -117,15 +134,26 @@ export default function AttendancePage() {
     // Delete existing records for this class/date/session then insert fresh
     // (upsert with the composite unique constraint)
     const studentIds = students.map(s => s.id);
-    await supabase
+    const { error: delErr } = await supabase
       .from("attendance_records")
       .delete()
       .eq("date", selectedDate)
       .eq("session", session)
       .eq("class_id", selectedClassId)
       .in("student_id", studentIds);
+    if (delErr) {
+      console.warn("attendance delete failed:", delErr.message);
+      alert(`Could not clear previous marks: ${delErr.message}`);
+      setSaving(false);
+      return;
+    }
 
-    await supabase.from("attendance_records").insert(records);
+    const { error: insErr } = await supabase.from("attendance_records").insert(records);
+    if (insErr) {
+      alert(`Could not save attendance: ${insErr.message}`);
+      setSaving(false);
+      return;
+    }
 
     await supabase.from("activity_log").insert({
       user_email: profile?.email,

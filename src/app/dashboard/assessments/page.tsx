@@ -17,7 +17,7 @@ interface StudentRow { id: string; student_code: string; full_name: string; grad
 interface ScoreRow { id: string; student_id: string; assessment_type_id: string; score: number | null; }
 
 export default function AssessmentsPage() {
-  const { canEdit, profile, orgId } = useAuth();
+  const { canEdit, profile, orgId, user, membership } = useAuth();
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
@@ -45,12 +45,30 @@ export default function AssessmentsPage() {
       supabase.from("assessment_types").select("*").eq("active", true).order("sort_order"),
       supabase.from("grading_scales").select("grade, label, min_score, max_score").order("sort_order"),
     ]);
-    setClasses(clsRes.data as ClassRow[] ?? []);
-    setSubjects(subRes.data as SubjectRow[] ?? []);
-    setTypes(typRes.data as AssessmentTypeRow[] ?? []);
-    setGrades(grdRes.data as GradeRow[] ?? []);
+
+    let cls = (clsRes.data as ClassRow[]) ?? [];
+    let subs = (subRes.data as SubjectRow[]) ?? [];
+
+    // Teacher scoping: filter classes AND subjects by teacher_assignments.
+    if (membership?.role === "teacher" && user) {
+      const { data: ta } = await supabase
+        .from("teacher_assignments")
+        .select("class_id, subject_id")
+        .eq("user_id", user.id)
+        .eq("active", true);
+      const rows = (ta ?? []) as { class_id: string; subject_id: string | null }[];
+      const myClassIds = new Set(rows.map(r => r.class_id));
+      const mySubIds = new Set(rows.map(r => r.subject_id).filter(Boolean) as string[]);
+      cls = cls.filter(c => myClassIds.has(c.id));
+      if (mySubIds.size > 0) subs = subs.filter(s => mySubIds.has(s.id));
+    }
+
+    setClasses(cls);
+    setSubjects(subs);
+    setTypes((typRes.data as AssessmentTypeRow[]) ?? []);
+    setGrades((grdRes.data as GradeRow[]) ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, user, membership]);
 
   useEffect(() => { loadBase(); }, [loadBase]);
 
@@ -141,17 +159,25 @@ export default function AssessmentsPage() {
     }
 
     if (records.length > 0) {
-      // Delete existing and re-insert (handles the unique constraint cleanly)
       const studentIds = students.map(s => s.id);
-      await supabase
+      const { error: delErr } = await supabase
         .from("student_scores")
         .delete()
         .eq("subject_id", selectedSubjectId)
         .eq("class_id", selectedClassId)
         .eq("term", selectedTerm)
         .in("student_id", studentIds);
-
-      await supabase.from("student_scores").insert(records);
+      if (delErr) {
+        alert(`Could not clear previous scores: ${delErr.message}`);
+        setSaving(false);
+        return;
+      }
+      const { error: insErr } = await supabase.from("student_scores").insert(records);
+      if (insErr) {
+        alert(`Could not save scores: ${insErr.message}`);
+        setSaving(false);
+        return;
+      }
     }
 
     await supabase.from("activity_log").insert({
