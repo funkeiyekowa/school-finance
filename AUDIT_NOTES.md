@@ -202,3 +202,72 @@ Modified:
 - `src/components/layout/AppShell.tsx` — signOut → /login
 - `src/components/website/SitePage.tsx` — Sign in link in header
 - `src/lib/website/theme.ts` — `.site-signin-link` styling
+
+---
+
+## School-scoped login (Round 3)
+
+### What shipped
+
+- **URL shape.** Every school now has a canonical sign-in URL:
+  `https://<platform>/s/<school-slug>/login`. The header of the school's
+  public website already points here. Old links to `/login` still work as
+  the generic entry.
+- **One form, no role picker.** Students enter their code (e.g. `S288`),
+  parents/teachers/admins enter their email. Password is a normal password.
+- **Role resolved server-side** via the new
+  `resolve_login_context(p_slug text)` RPC. It walks:
+  1. `org_memberships` (owner/admin/staff → admin, teacher → teacher,
+     parent → parent, student → student)
+  2. `staff_members.user_id` / `teacher_assignments.user_id` → teacher
+  3. `students.profile_id` in that org → student
+  4. `parent_profiles.profile_id` linked to a student in that org → parent
+- **Wrong-school session is killed.** If the account is not attached to
+  the school in the URL, we `signOut()` immediately and show
+  "This account is not attached to <School Name>."
+- **Redirect map (client-side, `router.replace`):**
+  admin → `/dashboard`, teacher → `/dashboard/teaching`,
+  student → `/dashboard/student-portal`, parent → `/dashboard/parent-portal`.
+- **Pending gate softened.** `dashboard/layout.tsx` no longer forces
+  `/auth/pending` for a legitimate role (student/parent/teacher/admin/etc.)
+  with an `organization_id`. The new SQL also flips every approval-shaped
+  column (`active`, `approved`, `is_approved`, `status`, `account_status`)
+  for anyone whose role can be verified in some org.
+- **Safety-net signup trigger.** `handle_new_user_school_binding` fires
+  `AFTER INSERT ON auth.users`: a new user whose email matches a
+  `students.guardian_email` gets a `parent_profiles` row, links to every
+  child in the same org, and an `org_memberships` row. A new user whose
+  email matches a `staff_members.email` gets the teacher wiring.
+- **Middleware.**
+  - Unauth visit to `/dashboard/*` → redirect to `/s/<slug>/login` when we
+    know the slug (from an `sf_last_school` cookie set on successful login,
+    or the `Referer` header). Otherwise `/login`.
+  - Auth visit to `/s/<slug>/login` → calls `resolve_login_context` and
+    forwards to that role's portal, no form flash.
+- **Passthroughs.** `/s/<slug>/dashboard/...` redirects to `/dashboard/...`
+  so old bookmarks still work. `/s/<slug>/logout` signs out and returns to
+  the school login.
+
+### Not done this round (explicit follow-ups)
+
+- The dashboard tree itself is **not** re-parented under `/s/[slug]/...`.
+  Once signed in, the URL is still `/dashboard/...`. Re-parenting would
+  touch every internal link across the app and is a separate PR.
+- `handle_new_user_school_binding` handles the "user signed up themselves"
+  edge case. Most parents/teachers are still created by the existing
+  `auto_provision_parent` / admin-added-teacher flows.
+
+### How a super-admin invites a new school
+
+1. Create the organization (via `/admin-console`), set `slug` to a short
+   lowercase identifier (`grant-schools`, `st-marys`, etc.).
+2. Publish the school's website — that also gives them their `/s/<slug>`
+   URL.
+3. Share `https://<platform>/s/<slug>/login` as the school's single sign-in
+   entry point. Students, parents, teachers and admins all use it; the RPC
+   sorts them into the right portal.
+
+### SQL to run
+
+`supabase/school_scoped_login.sql`. Idempotent. Ends with a verifier
+`SELECT` showing counts of each resolvable role.
