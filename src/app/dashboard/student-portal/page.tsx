@@ -36,15 +36,24 @@ export default function StudentPortalPage() {
     if (!user) { setLoading(false); return; }
     setLoading(true);
 
-    const { data: stu } = await supabase
-      .from("students")
-      .select("*")
-      .eq("profile_id", user.id)
-      .maybeSingle();
-
-    let student = stu as Student | null;
+    // Prefer the SECURITY DEFINER RPC — it bypasses RLS so a student
+    // can always resolve their own row even if a per-org policy is
+    // temporarily out of sync.
+    let student: Student | null = null;
+    const { data: ctx, error: ctxErr } = await supabase.rpc("get_my_student_context");
+    if (!ctxErr && Array.isArray(ctx) && ctx.length > 0) {
+      student = ctx[0] as Student;
+    }
     if (!student) {
-      // fallback by guardian_email
+      const { data: stu } = await supabase
+        .from("students")
+        .select("*")
+        .eq("profile_id", user.id)
+        .maybeSingle();
+      student = stu as Student | null;
+    }
+    if (!student) {
+      // fallback by guardian_email (legacy rows)
       const { data } = await supabase.from("students").select("*")
         .eq("guardian_email", user.email).eq("status", "active").maybeSingle();
       student = data as Student | null;
