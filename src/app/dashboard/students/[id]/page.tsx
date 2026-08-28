@@ -8,9 +8,10 @@ import { fmtMoney, fmtDate, cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { Input } from "@/components/ui/Input";
 import { StatusBadge } from "@/components/ui/Badge";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
-import { ChevronLeft, Phone, Mail, MapPin, Key, Printer, Copy, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, Phone, Mail, MapPin, Key, Printer, Copy, CheckCircle2, Pencil, UserPlus } from "lucide-react";
 import Link from "next/link";
 import type { Student, IncomeEntry, FeeSchedule } from "@/lib/types";
 
@@ -41,6 +42,10 @@ export default function StudentDetailPage() {
   const [resetting, setResetting] = useState(false);
   const [loginSlip, setLoginSlip] = useState<LoginSlip | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showGuardianEdit, setShowGuardianEdit] = useState(false);
+  const [savingGuardian, setSavingGuardian] = useState(false);
+  const [guardianForm, setGuardianForm] = useState({ guardian_name: "", guardian_phone: "", guardian_email: "" });
+  const [guardianNotice, setGuardianNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -126,6 +131,52 @@ h1{font-size:18px;margin-bottom:4px;}
     w.print();
   }
 
+  function openGuardianEdit() {
+    if (!student) return;
+    setGuardianForm({
+      guardian_name: student.guardian_name || "",
+      guardian_phone: student.guardian_phone || "",
+      guardian_email: student.guardian_email || "",
+    });
+    setGuardianNotice(null);
+    setShowGuardianEdit(true);
+  }
+
+  async function saveGuardian() {
+    if (!student) return;
+    setSavingGuardian(true);
+    setGuardianNotice(null);
+    const email = guardianForm.guardian_email.trim().toLowerCase();
+    const hadEmailBefore = !!(student.guardian_email && student.guardian_email.trim());
+    const emailChanged = email !== (student.guardian_email || "").trim().toLowerCase();
+
+    const { error } = await supabase
+      .from("students")
+      .update({
+        guardian_name: guardianForm.guardian_name.trim() || null,
+        guardian_phone: guardianForm.guardian_phone.trim() || null,
+        guardian_email: email || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", student.id);
+
+    setSavingGuardian(false);
+    if (error) {
+      setGuardianNotice(`Failed to save: ${error.message}${error.hint ? " (" + error.hint + ")" : ""}`);
+      console.error("saveGuardian error:", error);
+      return;
+    }
+    setShowGuardianEdit(false);
+    if (email && emailChanged) {
+      alert(
+        hadEmailBefore
+          ? `Guardian email updated. If this is a new address, a Parent Portal account was auto-provisioned for ${email} with default password ChangeMe123! (they will be asked to change it on first sign-in).`
+          : `Parent Portal account auto-provisioned for ${email}. Default password: ChangeMe123! (they will be asked to change it on first sign-in).`
+      );
+    }
+    load();
+  }
+
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
   if (!student) return <div className="p-6 text-gray-500">Student not found.</div>;
 
@@ -166,19 +217,42 @@ h1{font-size:18px;margin-bottom:4px;}
             )}
 
             <div className="border-t border-gray-100 pt-3">
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Guardian</div>
-              <div className="font-medium text-gray-900">{student.guardian_name || "—"}</div>
-              {student.guardian_phone && (
-                <div className="flex items-center gap-2 mt-1">
-                  <Phone size={12} className="text-gray-400" />
-                  <span className="text-gray-600">{student.guardian_phone}</span>
-                </div>
-              )}
-              {student.guardian_email && (
-                <div className="flex items-center gap-2 mt-1">
-                  <Mail size={12} className="text-gray-400" />
-                  <span className="text-gray-600">{student.guardian_email}</span>
-                </div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-semibold text-gray-500 uppercase">Guardian</div>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={openGuardianEdit}
+                    className="inline-flex items-center gap-1 text-xs text-[#0F2A47] hover:text-[#C9A227] font-medium"
+                  >
+                    {student.guardian_name || student.guardian_email ? (
+                      <><Pencil size={11} /> Edit</>
+                    ) : (
+                      <><UserPlus size={11} /> Add guardian</>
+                    )}
+                  </button>
+                )}
+              </div>
+              {student.guardian_name || student.guardian_phone || student.guardian_email ? (
+                <>
+                  <div className="font-medium text-gray-900">{student.guardian_name || "—"}</div>
+                  {student.guardian_phone && (
+                    <div className="flex items-center gap-2 mt-1">
+                      <Phone size={12} className="text-gray-400" />
+                      <span className="text-gray-600">{student.guardian_phone}</span>
+                    </div>
+                  )}
+                  {student.guardian_email && (
+                    <div className="flex items-center gap-2 mt-1">
+                      <Mail size={12} className="text-gray-400" />
+                      <span className="text-gray-600">{student.guardian_email}</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-gray-500">
+                  No guardian on file. {isAdmin && "Setting a guardian email auto-creates a Parent Portal account so they can sign in."}
+                </p>
               )}
             </div>
 
@@ -371,6 +445,50 @@ function SlipRow({ label, value, mono, highlight }: { label: string; value: stri
         mono && "font-mono",
         highlight ? "text-[#C9A227]" : "text-[#0F2A47]"
       )}>{value}</span>
+    </div>
+
+      {showGuardianEdit && (
+        <Modal open onClose={() => setShowGuardianEdit(false)} title="Edit Guardian" size="md">
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Update the guardian details for this student. Setting a
+              <strong> guardian email </strong>
+              auto-provisions a Parent Portal account so this guardian can
+              sign in and see their child\u2019s records.
+            </p>
+            <Input
+              label="Guardian name"
+              value={guardianForm.guardian_name}
+              onChange={e => setGuardianForm(f => ({ ...f, guardian_name: e.target.value }))}
+              placeholder="e.g. Mrs. Adekeye"
+            />
+            <Input
+              label="Guardian phone"
+              value={guardianForm.guardian_phone}
+              onChange={e => setGuardianForm(f => ({ ...f, guardian_phone: e.target.value }))}
+              placeholder="e.g. 0803 000 0000"
+            />
+            <Input
+              label="Guardian email"
+              type="email"
+              value={guardianForm.guardian_email}
+              onChange={e => setGuardianForm(f => ({ ...f, guardian_email: e.target.value }))}
+              placeholder="parent@example.com"
+            />
+            {guardianNotice && (
+              <div className="p-3 text-sm bg-red-50 text-red-800 rounded-md border border-red-200">
+                {guardianNotice}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="secondary" onClick={() => setShowGuardianEdit(false)}>Cancel</Button>
+              <Button variant="gold" loading={savingGuardian} onClick={saveGuardian}>
+                <CheckCircle2 size={14} /> Save Guardian
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
