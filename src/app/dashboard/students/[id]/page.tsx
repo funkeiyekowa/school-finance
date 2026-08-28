@@ -44,7 +44,24 @@ export default function StudentDetailPage() {
   const [copied, setCopied] = useState(false);
   const [showGuardianEdit, setShowGuardianEdit] = useState(false);
   const [savingGuardian, setSavingGuardian] = useState(false);
-  const [guardianForm, setGuardianForm] = useState({ guardian_name: "", guardian_phone: "", guardian_email: "" });
+  const [guardianForm, setGuardianForm] = useState({
+    student_code: "",
+    first_name: "",
+    last_name: "",
+    middle_name: "",
+    full_name: "",
+    gender: "",
+    date_of_birth: "",
+    admission_date: "",
+    grade: "",
+    academic_year: "",
+    address: "",
+    guardian_name: "",
+    guardian_phone: "",
+    guardian_email: "",
+    notes: "",
+    status: "active",
+  });
   const [guardianNotice, setGuardianNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -133,10 +150,24 @@ h1{font-size:18px;margin-bottom:4px;}
 
   function openGuardianEdit() {
     if (!student) return;
+    const s = student as unknown as Record<string, unknown>;
     setGuardianForm({
+      student_code: student.student_code || "",
+      first_name: String(s.first_name || ""),
+      last_name: String(s.last_name || ""),
+      middle_name: String(s.middle_name || ""),
+      full_name: student.full_name || "",
+      gender: student.gender || "",
+      date_of_birth: student.date_of_birth || "",
+      admission_date: student.admission_date || "",
+      grade: student.grade || "",
+      academic_year: student.academic_year || "",
+      address: student.address || "",
       guardian_name: student.guardian_name || "",
       guardian_phone: student.guardian_phone || "",
       guardian_email: student.guardian_email || "",
+      notes: String(s.notes || ""),
+      status: student.status || "active",
     });
     setGuardianNotice(null);
     setShowGuardianEdit(true);
@@ -150,28 +181,46 @@ h1{font-size:18px;margin-bottom:4px;}
     const hadEmailBefore = !!(student.guardian_email && student.guardian_email.trim());
     const emailChanged = email !== (student.guardian_email || "").trim().toLowerCase();
 
-    const { error } = await supabase
-      .from("students")
-      .update({
-        guardian_name: guardianForm.guardian_name.trim() || null,
-        guardian_phone: guardianForm.guardian_phone.trim() || null,
-        guardian_email: email || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", student.id);
+    const first  = guardianForm.first_name.trim();
+    const last   = guardianForm.last_name.trim();
+    const middle = guardianForm.middle_name.trim();
+    const derivedFull = [last, first, middle].filter(Boolean).join(" ");
+    const fullName = guardianForm.full_name.trim() || derivedFull || student.full_name;
+
+    const payload: Record<string, unknown> = {
+      student_code: guardianForm.student_code.trim() || student.student_code,
+      first_name: first || null,
+      last_name: last || null,
+      middle_name: middle || null,
+      full_name: fullName,
+      gender: guardianForm.gender || null,
+      date_of_birth: guardianForm.date_of_birth || null,
+      admission_date: guardianForm.admission_date || null,
+      grade: guardianForm.grade.trim() || null,
+      academic_year: guardianForm.academic_year.trim() || null,
+      address: guardianForm.address.trim() || null,
+      status: guardianForm.status || "active",
+      notes: guardianForm.notes.trim() || null,
+      guardian_name: guardianForm.guardian_name.trim() || null,
+      guardian_phone: guardianForm.guardian_phone.trim() || null,
+      guardian_email: email || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from("students").update(payload).eq("id", student.id);
 
     setSavingGuardian(false);
     if (error) {
       setGuardianNotice(`Failed to save: ${error.message}${error.hint ? " (" + error.hint + ")" : ""}`);
-      console.error("saveGuardian error:", error);
+      console.error("saveStudent error:", error);
       return;
     }
     setShowGuardianEdit(false);
     if (email && emailChanged) {
       alert(
         hadEmailBefore
-          ? `Guardian email updated. If this is a new address, a Parent Portal account was auto-provisioned for ${email} with default password ChangeMe123! (they will be asked to change it on first sign-in).`
-          : `Parent Portal account auto-provisioned for ${email}. Default password: ChangeMe123! (they will be asked to change it on first sign-in).`
+          ? `Student updated. Guardian email changed \u2014 if this is a new address, a Parent Portal account was auto-provisioned for ${email} with default password ChangeMe123! (they will be asked to change it on first sign-in).`
+          : `Student updated. Parent Portal account auto-provisioned for ${email}. Default password: ChangeMe123! (they will be asked to change it on first sign-in).`
       );
     }
     load();
@@ -225,11 +274,7 @@ h1{font-size:18px;margin-bottom:4px;}
                     onClick={openGuardianEdit}
                     className="inline-flex items-center gap-1 text-xs text-[#0F2A47] hover:text-[#C9A227] font-medium"
                   >
-                    {student.guardian_name || student.guardian_email ? (
-                      <><Pencil size={11} /> Edit</>
-                    ) : (
-                      <><UserPlus size={11} /> Add guardian</>
-                    )}
+                    <Pencil size={11} /> Edit student
                   </button>
                 )}
               </div>
@@ -434,42 +479,95 @@ h1{font-size:18px;margin-bottom:4px;}
       )}
 
       {showGuardianEdit && (
-        <Modal open onClose={() => setShowGuardianEdit(false)} title="Edit Guardian" size="md">
-          <div className="space-y-4">
+        <Modal open onClose={() => setShowGuardianEdit(false)} title="Edit Student" size="xl">
+          <div className="space-y-5">
             <p className="text-sm text-gray-600">
-              Update the guardian details for this student. Setting a
+              Update this student’s details. Setting a
               <strong> guardian email </strong>
-              auto-provisions a Parent Portal account so this guardian can
-              sign in and see their child&apos;s records.
+              auto-provisions a Parent Portal account so the guardian can sign in and see their child’s records.
             </p>
-            <Input
-              label="Guardian name"
-              value={guardianForm.guardian_name}
-              onChange={e => setGuardianForm(f => ({ ...f, guardian_name: e.target.value }))}
-              placeholder="e.g. Mrs. Adekeye"
-            />
-            <Input
-              label="Guardian phone"
-              value={guardianForm.guardian_phone}
-              onChange={e => setGuardianForm(f => ({ ...f, guardian_phone: e.target.value }))}
-              placeholder="e.g. 0803 000 0000"
-            />
-            <Input
-              label="Guardian email"
-              type="email"
-              value={guardianForm.guardian_email}
-              onChange={e => setGuardianForm(f => ({ ...f, guardian_email: e.target.value }))}
-              placeholder="parent@example.com"
-            />
+
+            {/* Identity */}
+            <fieldset className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 border border-gray-200 rounded-xl">
+              <legend className="text-xs font-bold uppercase tracking-wider text-gray-500 px-2">Identity</legend>
+              <Input label="Student ID" value={guardianForm.student_code}
+                onChange={e => setGuardianForm(f => ({ ...f, student_code: e.target.value }))} />
+              <Input label="Last Name" value={guardianForm.last_name}
+                onChange={e => setGuardianForm(f => ({ ...f, last_name: e.target.value }))} />
+              <Input label="First Name" value={guardianForm.first_name}
+                onChange={e => setGuardianForm(f => ({ ...f, first_name: e.target.value }))} />
+              <Input label="Middle Name" value={guardianForm.middle_name}
+                onChange={e => setGuardianForm(f => ({ ...f, middle_name: e.target.value }))} />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                <select value={guardianForm.gender}
+                  onChange={e => setGuardianForm(f => ({ ...f, gender: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C9A227]">
+                  <option value="">Select…</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
+              </div>
+              <Input label="Date of Birth" type="date" value={guardianForm.date_of_birth}
+                onChange={e => setGuardianForm(f => ({ ...f, date_of_birth: e.target.value }))} />
+            </fieldset>
+
+            {/* Enrollment */}
+            <fieldset className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 border border-gray-200 rounded-xl">
+              <legend className="text-xs font-bold uppercase tracking-wider text-gray-500 px-2">Enrollment</legend>
+              <Input label="Class / Grade" value={guardianForm.grade}
+                onChange={e => setGuardianForm(f => ({ ...f, grade: e.target.value }))} placeholder="e.g. JSS1 / Grade 5" />
+              <Input label="Academic Year" value={guardianForm.academic_year}
+                onChange={e => setGuardianForm(f => ({ ...f, academic_year: e.target.value }))} placeholder="e.g. 2026/2027" />
+              <Input label="Admission Date" type="date" value={guardianForm.admission_date}
+                onChange={e => setGuardianForm(f => ({ ...f, admission_date: e.target.value }))} />
+              <div className="sm:col-span-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select value={guardianForm.status}
+                  onChange={e => setGuardianForm(f => ({ ...f, status: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C9A227]">
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="graduated">Graduated</option>
+                  <option value="withdrawn">Withdrawn</option>
+                </select>
+              </div>
+            </fieldset>
+
+            {/* Guardian / Parent */}
+            <fieldset className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 border border-gray-200 rounded-xl">
+              <legend className="text-xs font-bold uppercase tracking-wider text-gray-500 px-2">Guardian / Parent</legend>
+              <Input label="Guardian Name" value={guardianForm.guardian_name}
+                onChange={e => setGuardianForm(f => ({ ...f, guardian_name: e.target.value }))} />
+              <Input label="Guardian Phone" value={guardianForm.guardian_phone}
+                onChange={e => setGuardianForm(f => ({ ...f, guardian_phone: e.target.value }))} placeholder="+234 800 000 0000" />
+              <Input label="Guardian Email" type="email" value={guardianForm.guardian_email}
+                onChange={e => setGuardianForm(f => ({ ...f, guardian_email: e.target.value }))} placeholder="parent@example.com" />
+              <div className="sm:col-span-3">
+                <Input label="Address" value={guardianForm.address}
+                  onChange={e => setGuardianForm(f => ({ ...f, address: e.target.value }))} />
+              </div>
+            </fieldset>
+
+            {/* Notes */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <textarea value={guardianForm.notes}
+                onChange={e => setGuardianForm(f => ({ ...f, notes: e.target.value }))}
+                rows={3} placeholder="Any additional information…"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]" />
+            </div>
+
             {guardianNotice && (
               <div className="p-3 text-sm bg-red-50 text-red-800 rounded-md border border-red-200">
                 {guardianNotice}
               </div>
             )}
+
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setShowGuardianEdit(false)}>Cancel</Button>
               <Button variant="gold" loading={savingGuardian} onClick={saveGuardian}>
-                <CheckCircle2 size={14} /> Save Guardian
+                <CheckCircle2 size={14} /> Save changes
               </Button>
             </div>
           </div>
