@@ -15,6 +15,7 @@ import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/context/AuthContext";
+import { signOutToSchoolLogin } from "@/lib/auth/signOutToSchoolLogin";
 import { OrgSwitcher, ActiveOrgBadge } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
 import {
@@ -281,8 +282,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   async function handleSignOut() {
+    // Sign the Supabase session out first, then bounce to whichever
+    // school this browser most recently used. `sf_last_school` cookie
+    // is set on successful school-scoped sign-in.
     await signOut();
-    router.push("/login");
+    signOutToSchoolLogin();
   }
 
   function Sidebar({ mobile = false }: { mobile?: boolean }) {
