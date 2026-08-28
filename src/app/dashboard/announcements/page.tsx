@@ -38,7 +38,7 @@ export default function AnnouncementsPage() {
 
   async function saveAnnouncement(publish = false) {
     setSaving(true);
-    await supabase.from("announcements").insert({
+    const { error: insErr } = await supabase.from("announcements").insert({
       title: form.title.trim(),
       body: form.body.trim(),
       target: form.target,
@@ -49,6 +49,11 @@ export default function AnnouncementsPage() {
       created_by: profile?.full_name || profile?.email,
       organization_id: orgId,
     });
+    if (insErr) {
+      alert(`Could not save announcement: ${insErr.message}`);
+      setSaving(false);
+      return;
+    }
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,
       action: publish ? "Publish Announcement" : "Draft Announcement",
@@ -60,7 +65,10 @@ export default function AnnouncementsPage() {
   }
 
   async function publishAnnouncement(id: string) {
-    await supabase.from("announcements").update({ published: true, published_at: new Date().toISOString() }).eq("id", id);
+    const { error } = await supabase.from("announcements")
+      .update({ published: true, published_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) alert(`Could not publish: ${error.message}`);
     load();
   }
 
