@@ -37,6 +37,10 @@ interface NavItem {
   module?: string;
   adminOnly?: boolean;
   superAdminOnly?: boolean;
+  /** If set, the item is only visible when the current user's role is in this list.
+   * Roles are taken from profiles.role AND org_memberships.role: student, parent,
+   * teacher, staff, admin, owner, editor, viewer, bursar, accountant, developer. */
+  roles?: string[];
 }
 
 interface NavGroup {
@@ -46,6 +50,8 @@ interface NavGroup {
   items: NavItem[];
   /** If true, this group is always visible (no accordion header) */
   standalone?: boolean;
+  /** Group-level allow-list. Applied on top of the per-item roles filter. */
+  roles?: string[];
 }
 
 const NAV_GROUPS: NavGroup[] = [
@@ -69,6 +75,7 @@ const NAV_GROUPS: NavGroup[] = [
        module itself, so an item does not appear pointing at a page the
        school has not enabled. */
     key: "teacher_portal",
+    roles: [...['teacher'], ...['owner','admin','editor','staff','bursar','accountant','developer']],
     label: "Teacher's Portal",
     icon: <BookOpen size={16} />,
     items: [
@@ -82,6 +89,7 @@ const NAV_GROUPS: NavGroup[] = [
     /* Student-facing self-service. Split out of My Workspace so a
        student sees only their own things, not the teacher group. */
     key: "student_portal",
+    roles: ['student'],
     label: "Student Portal",
     icon: <GraduationCap size={16} />,
     items: [
@@ -93,6 +101,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     /* Parent-facing self-service. */
     key: "parent_portal",
+    roles: ['parent'],
     label: "Parent Portal",
     icon: <Users size={16} />,
     items: [
@@ -102,6 +111,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     key: "academics",
+    roles: [...['teacher'], ...['owner','admin','editor','staff','bursar','accountant','developer']],
     label: "Students & Academics",
     icon: <GraduationCap size={16} />,
     items: [
@@ -117,6 +127,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     key: "finance",
+    roles: ['owner','admin','editor','staff','bursar','accountant','developer'],
     label: "Finance",
     icon: <Wallet size={16} />,
     items: [
@@ -131,6 +142,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     key: "people",
+    roles: ['owner','admin','editor','staff','bursar','accountant','developer'],
     label: "People",
     icon: <Briefcase size={16} />,
     items: [
@@ -141,6 +153,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     key: "operations",
+    roles: ['owner','admin','editor','staff','bursar','accountant','developer'],
     label: "Operations",
     icon: <Package size={16} />,
     items: [
@@ -151,6 +164,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     key: "communication",
+    roles: ['owner','admin','editor','staff','bursar','accountant','developer'],
     label: "Communication",
     icon: <Megaphone size={16} />,
     items: [
@@ -161,6 +175,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     key: "admin",
+    roles: ['owner','admin','editor','staff','bursar','accountant','developer'],
     label: "Reports & Admin",
     icon: <BarChart3 size={16} />,
     items: [
@@ -225,10 +240,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [activeHref]);
 
+  /**
+   * Resolve which roles the caller currently holds — union of
+   * profiles.role AND org_memberships.role, plus a "super_admin" tag
+   * when applicable. Both count, because provisioning may set one and
+   * a later add-to-org may set the other.
+   */
+  const activeRoles = new Set<string>();
+  if (profile?.role)     activeRoles.add(profile.role);
+  if (membership?.role)  activeRoles.add(membership.role);
+  if (isSuperAdmin)      activeRoles.add("super_admin");
+  const isStaffy = ["owner","admin","editor","staff","bursar","accountant","developer"]
+    .some(r => activeRoles.has(r));
+
+  function isRoleAllowed(allowed?: string[]): boolean {
+    if (!allowed || allowed.length === 0) return true;
+    if (isSuperAdmin) return true;
+    for (const r of allowed) if (activeRoles.has(r)) return true;
+    return false;
+  }
+
+  function isGroupVisible(group: NavGroup): boolean {
+    return isRoleAllowed(group.roles);
+  }
+
   function isVisible(item: NavItem): boolean {
     if (item.superAdminOnly && !isSuperAdmin) return false;
     if (item.adminOnly && !isAdmin) return false;
-    if (item.feature && !isAdmin && !hasFeature(item.feature)) return false;
+    if (!isRoleAllowed(item.roles)) return false;
+    // Staffy roles bypass the permissions map (extends the old isAdmin
+    // bypass to bursar/accountant/editor/staff too, so a bursar without
+    // an explicit 'income' permission still sees Finance).
+    if (item.feature && !isStaffy && !hasFeature(item.feature)) return false;
     if (item.module && !hasModule(item.module)) return false;
     return true;
   }
@@ -269,6 +312,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Navigation */}
         <nav className="flex-1 py-2 overflow-y-auto px-2" aria-label="Main navigation">
           {NAV_GROUPS.map(group => {
+            if (!isGroupVisible(group)) return null;
             const visibleItems = group.items.filter(isVisible);
             if (visibleItems.length === 0) return null;
 
