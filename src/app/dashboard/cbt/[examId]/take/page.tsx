@@ -252,20 +252,34 @@ export default function TakeExamPage() {
   useEffect(() => { init(); }, [init]);
 
   /* ---------- Timer ---------- */
+  //
+  // The interval starts only once we have BOTH the attempt row and a
+  // positive timeLeft.  Previously the effect depended only on [attempt,
+  // submitted] and bailed on the first render (timeLeft was still 0 in the
+  // same tick).  Adding timeLeft to the deps re-arms the interval as soon
+  // as init() writes the real remaining seconds.  We also use a ref to make
+  // sure only one interval is ever live.
   useEffect(() => {
     if (submitted || !attempt || timeLeft <= 0) return;
+    if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timerRef.current!);
+          timerRef.current = null;
           submitExam(true);
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [attempt, submitted]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [attempt, submitted, timeLeft > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function formatTime(seconds: number): string {
     const m = Math.floor(seconds / 60);
@@ -362,33 +376,47 @@ export default function TakeExamPage() {
 
   if (!exam || !attempt) return null;
 
-  // Results screen
-  if (submitted && exam.show_results) {
+  // Post-submit summary — always shown, honours exam.show_results for detail.
+  //   * show_results=true  -> shows score, total, %, pass/fail
+  //   * show_results=false -> confirmation only (no numbers), matches the
+  //     exam owner's setting so students don't see leaked scores.
+  //   * Regardless of setting we hand the student a "Back to My Exams"
+  //     button so they never get stuck on a blank page.
+  if (submitted) {
+    const showDetail = !!exam.show_results;
     return (
       <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center p-6">
         <Card className="max-w-md w-full">
           <CardContent className="py-8 text-center space-y-4">
-            <CheckCircle2 size={48} className={cn("mx-auto", attempt.passed ? "text-green-600" : attempt.passed === false ? "text-red-500" : "text-[#C9A227]")} />
+            <CheckCircle2 size={48} className={cn("mx-auto", showDetail && attempt.passed ? "text-green-600" : showDetail && attempt.passed === false ? "text-red-500" : "text-[#C9A227]")} />
             <h1 className="text-xl font-bold text-[#0F2A47]">Exam Submitted</h1>
             <p className="text-gray-600">{exam.title}</p>
-            <div className="grid grid-cols-3 gap-3 pt-4">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-2xl font-bold text-[#0F2A47]">{attempt.total_score ?? 0}</div>
-                <div className="text-xs text-gray-500">Score</div>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-2xl font-bold text-[#0F2A47]">{attempt.total_marks ?? exam.total_marks}</div>
-                <div className="text-xs text-gray-500">Total</div>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-2xl font-bold text-[#0F2A47]">{attempt.percentage ?? 0}%</div>
-                <div className="text-xs text-gray-500">Percentage</div>
-              </div>
-            </div>
-            {attempt.passed !== null && (
-              <div className={cn("text-sm font-bold", attempt.passed ? "text-green-600" : "text-red-600")}>
-                {attempt.passed ? "PASSED" : "FAILED"}
-              </div>
+            {showDetail ? (
+              <>
+                <div className="grid grid-cols-3 gap-3 pt-4">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-2xl font-bold text-[#0F2A47]">{attempt.total_score ?? 0}</div>
+                    <div className="text-xs text-gray-500">Score</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-2xl font-bold text-[#0F2A47]">{attempt.total_marks ?? exam.total_marks}</div>
+                    <div className="text-xs text-gray-500">Total</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-2xl font-bold text-[#0F2A47]">{attempt.percentage ?? 0}%</div>
+                    <div className="text-xs text-gray-500">Percentage</div>
+                  </div>
+                </div>
+                {attempt.passed !== null && (
+                  <div className={cn("text-sm font-bold", attempt.passed ? "text-green-600" : "text-red-600")}>
+                    {attempt.passed ? "PASSED" : "FAILED"}
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-gray-500">
+                Thank you. Your answers have been recorded. Results will be released by your teacher.
+              </p>
             )}
             <Button variant="gold" onClick={() => router.push("/dashboard/my-exams")} className="mt-4">
               Back to My Exams

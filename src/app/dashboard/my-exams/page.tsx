@@ -106,11 +106,17 @@ export default function MyExamsPage() {
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
   if (!studentId) return <div className="p-6 text-gray-500">No student account linked. Contact your school administrator.</div>;
 
-  const availableExams = exams.filter(e => {
-    const myAttempts = attempts.filter(a => a.exam_id === e.id && a.status !== "in_progress");
-    return myAttempts.length < e.max_attempts;
+  // Group exams by whether the student still has attempts left.  Exams the
+  // student has fully consumed still appear (in a separate 'Completed' bucket)
+  // so they know it's not missing — with status shown as Completed.
+  const examUsage = exams.map(e => {
+    const submittedForThis = attempts.filter(a => a.exam_id === e.id && (a.status === "submitted" || a.status === "timed_out" || a.status === "graded")).length;
+    const inProgress = attempts.some(a => a.exam_id === e.id && a.status === "in_progress");
+    const remaining = Math.max(0, e.max_attempts - submittedForThis);
+    return { exam: e, submitted: submittedForThis, inProgress, remaining };
   });
-
+  const availableExams = examUsage.filter(u => u.remaining > 0 || u.inProgress);
+  const exhaustedExams = examUsage.filter(u => u.remaining === 0 && !u.inProgress);
   const completedAttempts = attempts.filter(a => a.status === "submitted" || a.status === "timed_out" || a.status === "graded");
 
   return (
@@ -143,7 +149,7 @@ export default function MyExamsPage() {
         <CardContent>
           {availableExams.length === 0 ? <p className="text-sm text-gray-400 text-center py-4">No exams available right now.</p> : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {availableExams.map(exam => (
+              {availableExams.map(({ exam, submitted, inProgress, remaining }) => (
                 <div key={exam.id} className="p-4 border rounded-xl hover:border-[#C9A227] transition-colors">
                   <div className="flex items-start justify-between mb-2">
                     <div>
@@ -157,8 +163,19 @@ export default function MyExamsPage() {
                     <span>{exam.total_marks} marks</span>
                     {exam.pass_mark > 0 && <span>Pass: {exam.pass_mark}</span>}
                   </div>
+                  <div className="text-[10px] text-gray-500 mb-2">
+                    {inProgress ? (
+                      <span className="text-amber-600 font-semibold">In progress — resume to continue</span>
+                    ) : submitted > 0 ? (
+                      <span>Attempt {submitted + 1} of {exam.max_attempts} — {remaining} left</span>
+                    ) : (
+                      <span>{exam.max_attempts} attempt{exam.max_attempts === 1 ? "" : "s"} allowed</span>
+                    )}
+                  </div>
                   <Link href={`/dashboard/cbt/${exam.id}/take`}>
-                    <Button size="sm" variant="gold" className="w-full">Start Exam</Button>
+                    <Button size="sm" variant="gold" className="w-full">
+                      {inProgress ? "Resume Exam" : submitted > 0 ? "Retake Exam" : "Start Exam"}
+                    </Button>
                   </Link>
                 </div>
               ))}
@@ -166,6 +183,34 @@ export default function MyExamsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Exams the student has fully used up */}
+      {exhaustedExams.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Completed Exams</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {exhaustedExams.map(({ exam, submitted }) => (
+                <div key={exam.id} className="p-4 border rounded-xl bg-gray-50 opacity-80">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <h3 className="font-semibold text-sm text-[#0F2A47]">{exam.title}</h3>
+                      <span className="text-[10px] uppercase text-gray-400">{exam.exam_type}</span>
+                    </div>
+                    <BookOpen size={16} className="text-gray-400" />
+                  </div>
+                  <div className="text-[10px] text-gray-500 mb-2">
+                    All {submitted} attempt{submitted === 1 ? "" : "s"} used. See your results below.
+                  </div>
+                  <Button size="sm" variant="secondary" className="w-full" disabled>
+                    Completed
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Attempt History */}
       {completedAttempts.length > 0 && (
