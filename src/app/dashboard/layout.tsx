@@ -41,7 +41,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       redirect("/auth/pending");
     }
 
-    if (!newProfile.active) redirect("/auth/pending");
+    const _legitimateRolesN = ["student","parent","teacher","admin","owner","super_admin","developer","editor","staff"];
+    const _newOrgId = (newProfile as { organization_id?: string | null }).organization_id ?? null;
+    if (!newProfile.active && !(_legitimateRolesN.includes(newProfile.role ?? "") && Boolean(_newOrgId))) redirect("/auth/pending");
 
     return (
       <AuthProvider>
@@ -50,7 +52,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     );
   }
 
-  if (!profile.active) redirect("/auth/pending");
+  const _legitimateRoles = ["student","parent","teacher","admin","owner","super_admin","developer","editor","staff"];
+  const _profileOrgId = (profile as { organization_id?: string | null }).organization_id ?? null;
+  const _isLegit = _legitimateRoles.includes(profile.role ?? "") && Boolean(_profileOrgId);
+  if (!profile.active && !_isLegit) redirect("/auth/pending");
 
   return (
     <AuthProvider>
