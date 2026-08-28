@@ -239,7 +239,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   async function handleSignOut() {
     await signOut();
-    router.push("/auth/login");
+    router.push("/login");
   }
 
   function Sidebar({ mobile = false }: { mobile?: boolean }) {

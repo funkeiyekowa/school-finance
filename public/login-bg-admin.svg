@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1200" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#000000"/>
+      <stop offset="1" stop-color="#0f0f0f"/>
+    </linearGradient>
+    <pattern id="mesh" width="80" height="80" patternUnits="userSpaceOnUse">
+      <path d="M0 40 L 80 40 M 40 0 L 40 80" stroke="#ffffff" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="g2" cx="0.5" cy="0.5" r="0.7">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="1200" fill="url(#g1)"/>
+  <rect width="800" height="1200" fill="url(#mesh)"/>
+  <rect width="800" height="1200" fill="url(#g2)"/>
+  <g stroke="#ffffff" stroke-opacity="0.10" fill="none">
+    <circle cx="400" cy="600" r="150"/>
+    <circle cx="400" cy="600" r="240"/>
+    <circle cx="400" cy="600" r="330"/>
+  </g>
+</svg>

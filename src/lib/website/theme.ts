@@ -362,7 +362,10 @@ ${S} .main-nav a{
   transition:border-color .18s var(--ease),opacity .18s var(--ease);opacity:.88;
 }
 ${S} .main-nav a:hover{border-color:var(--c-accent);opacity:1;}
-${S} .header-actions{display:flex;align-items:center;gap:10px;}
+${S} .header-actions{display:flex;align-items:center;gap:14px;}
+${S} .site-signin-link{font-size:14px;font-weight:600;color:var(--text,#0F2A47);text-decoration:none;padding:8px 12px;border-radius:8px;transition:background-color .15s ease,color .15s ease;}
+${S} .site-signin-link:hover{background-color:rgba(15,42,71,0.06);color:var(--accent,#C9A227);}
+${S} .site-signin-link:focus-visible{outline:2px solid var(--accent,#C9A227);outline-offset:2px;}
 ${S} .nav-toggle{
   display:inline-flex;align-items:center;justify-content:center;
   width:42px;height:42px;border-radius:var(--r-sm);

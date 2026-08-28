@@ -260,6 +260,9 @@ export function SiteShell({
 
             {/* Header actions */}
             <div className="header-actions">
+              <a href="/login" className="site-signin-link" aria-label="Sign in to portal">
+                Sign in
+              </a>
               <a href={resolveHref("/admissions")} className="btn btn-gold btn-sm js-apply-cta" data-subject="Admission Enquiry">
                 Apply Now
               </a>
