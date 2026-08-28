@@ -177,6 +177,11 @@ export function SiteShell({
       ? href
       : `${basePath}${href.startsWith("/") ? href : `/${href}`}`;
 
+  // Sign In goes to the school-scoped login when we know the slug
+  // (basePath looks like /s/<slug>). Fall back to /login otherwise.
+  const slugMatch = /^\/s\/([^\/]+)/.exec(basePath || "");
+  const signInHref = slugMatch ? `/s/${slugMatch[1]}/login` : "/login";
+
   const socialEntries = Object.entries(social).filter(
     ([, url]) => typeof url === "string" && url.trim() !== ""
   ) as [string, string][];
@@ -260,7 +265,7 @@ export function SiteShell({
 
             {/* Header actions */}
             <div className="header-actions">
-              <a href="/login" className="btn btn-gold btn-sm" aria-label="Sign in to portal">
+              <a href={signInHref} className="btn btn-gold btn-sm" aria-label="Sign in to portal">
                 Sign In
               </a>
               <button
@@ -288,7 +293,7 @@ export function SiteShell({
                 </li>
               ))}
               <li>
-                <a href="/login" className="btn btn-gold">
+                <a href={signInHref} className="btn btn-gold">
                   Sign In
                 </a>
               </li>
