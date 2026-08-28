@@ -111,6 +111,25 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
         return;
       }
 
+      // 3a. Refuse super-admin sign-in on a school URL. Super-admin lives
+      //     ONLY at /admin-console — sending them to a school portal would
+      //     leak the wrong dashboard.
+      if (signData.user) {
+        const [{ data: prof }, { data: mem }] = await Promise.all([
+          supabase.from("profiles").select("role").eq("id", signData.user.id).maybeSingle(),
+          supabase.from("org_memberships").select("role").eq("user_id", signData.user.id).eq("role", "super_admin").limit(1),
+        ]);
+        const p = prof as { role?: string } | null;
+        const m = (mem ?? []) as { role: string }[];
+        const isSuperAdmin = m.length > 0 || p?.role === "super_admin" || p?.role === "developer";
+        if (isSuperAdmin) {
+          await supabase.auth.signOut();
+          setError("Platform super-admins must sign in at /admin-console, not on a school portal.");
+          setLoading(false);
+          return;
+        }
+      }
+
       // 3. Resolve role for THIS school.
       const { data: ctxData, error: ctxErr } = await supabase.rpc("resolve_login_context", { p_slug: slug });
       if (ctxErr) {
@@ -297,12 +316,6 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
             </p>
           </div>
 
-          <div className="text-center mt-4 text-xs text-gray-400">
-            Wrong school?{" "}
-            <Link href="/login" className="text-gray-500 hover:underline">
-              Sign in without a school link
-            </Link>
-          </div>
         </div>
       </div>
     </div>

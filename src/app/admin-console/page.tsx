@@ -3,10 +3,16 @@
 /**
  * /admin-console - stealth super-admin sign-in.
  *
+ * IMPORTANT: This page is intentionally NEVER linked from any public
+ * page, sidebar, or footer. It is discoverable ONLY by direct URL. Do
+ * NOT add it to a navigation menu, marketing page, /login chooser, or
+ * staff-portal chooser in a future refactor. If a super-admin loses the
+ * URL, they type it in.
+ *
  * Distinctive mono/dark aesthetic (no gold, just gray + green terminal
- * accent). Not linked from anywhere. Pre-check rejects non-super-admins
- * IMMEDIATELY after signing in so a normal admin who guesses the URL
- * is signed out before ever reaching the console.
+ * accent). Pre-check rejects non-super-admins IMMEDIATELY after signing
+ * in so a normal admin who guesses the URL is signed out before ever
+ * reaching the console.
  */
 
 import { useState } from "react";
