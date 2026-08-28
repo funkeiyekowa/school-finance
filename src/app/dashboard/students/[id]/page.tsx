@@ -432,20 +432,6 @@ h1{font-size:18px;margin-bottom:4px;}
           </div>
         </Modal>
       )}
-    </div>
-  );
-}
-
-function SlipRow({ label, value, mono, highlight }: { label: string; value: string; mono?: boolean; highlight?: boolean }) {
-  return (
-    <div className="flex items-center justify-between px-3 py-2.5">
-      <span className="text-xs text-gray-500 uppercase tracking-wide font-semibold">{label}</span>
-      <span className={cn(
-        "text-sm font-semibold",
-        mono && "font-mono",
-        highlight ? "text-[#C9A227]" : "text-[#0F2A47]"
-      )}>{value}</span>
-    </div>
 
       {showGuardianEdit && (
         <Modal open onClose={() => setShowGuardianEdit(false)} title="Edit Guardian" size="md">
@@ -454,7 +440,7 @@ function SlipRow({ label, value, mono, highlight }: { label: string; value: stri
               Update the guardian details for this student. Setting a
               <strong> guardian email </strong>
               auto-provisions a Parent Portal account so this guardian can
-              sign in and see their child\u2019s records.
+              sign in and see their child&apos;s records.
             </p>
             <Input
               label="Guardian name"
@@ -489,6 +475,19 @@ function SlipRow({ label, value, mono, highlight }: { label: string; value: stri
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+function SlipRow({ label, value, mono, highlight }: { label: string; value: string; mono?: boolean; highlight?: boolean }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-2.5">
+      <span className="text-xs text-gray-500 uppercase tracking-wide font-semibold">{label}</span>
+      <span className={cn(
+        "text-sm font-semibold",
+        mono && "font-mono",
+        highlight ? "text-[#C9A227]" : "text-[#0F2A47]"
+      )}>{value}</span>
     </div>
   );
 }
