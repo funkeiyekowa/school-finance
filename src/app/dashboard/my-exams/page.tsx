@@ -92,14 +92,30 @@ export default function MyExamsPage() {
   useEffect(() => { load(); }, [load]);
 
   async function openReview(attempt: AttemptRow) {
-    const { data: ansData } = await supabase.from("exam_answers").select("question_id, selected_option, is_correct, marks_awarded").eq("attempt_id", attempt.id);
-    setReviewAnswers(ansData as AnswerRow[] ?? []);
-
-    const qIds = (ansData ?? []).map((a: { question_id: string }) => a.question_id);
-    if (qIds.length > 0) {
-      const { data: qData } = await supabase.from("questions").select("id, question_text, options, marks, explanation").in("id", qIds);
-      setReviewQuestions(qData as QuestionRow[] ?? []);
-    }
+    // Questions are staff-only under RLS; the review payload (questions +
+    // correct answers + the student's own responses) comes from the
+    // get_attempt_review RPC, which only returns data for a submitted
+    // attempt the caller owns when the exam permits answer review.
+    const { data, error: err } = await supabase.rpc("get_attempt_review", { p_attempt: attempt.id });
+    if (err) { alert(`Could not load review: ${err.message}`); return; }
+    const rows = (data ?? []) as {
+      question_id: string; question_text: string; options: unknown;
+      marks: number; explanation: string | null;
+      selected_option: string | null; is_correct: boolean | null; marks_awarded: number | null;
+    }[];
+    setReviewQuestions(rows.map(r => ({
+      id: r.question_id,
+      question_text: r.question_text,
+      options: (r.options as { id: string; text: string; is_correct: boolean }[]) ?? [],
+      marks: r.marks,
+      explanation: r.explanation,
+    })));
+    setReviewAnswers(rows.map(r => ({
+      question_id: r.question_id,
+      selected_option: r.selected_option,
+      is_correct: r.is_correct,
+      marks_awarded: r.marks_awarded,
+    })));
     setReviewAttempt(attempt);
   }
 

@@ -262,37 +262,21 @@ CREATE POLICY exams_student_read ON public.exams FOR SELECT
   );
 
 -- questions & exam_questions ----------------------------------------
--- Staff manage the whole bank. A student may read ONLY the questions of
--- an exam they actually have an attempt for — which keeps the exam
--- runner working (it opens an attempt, then reads that exam's questions)
--- without exposing the rest of the bank. NOTE: this still lets a student
--- see is_correct for their own active exam via devtools; the follow-up
--- is to serve questions through a sanitized RPC that strips answers.
+-- STAFF ONLY. Direct table reads by students are blocked entirely so a
+-- student can never see is_correct / answer_text — not even for their
+-- own active exam via devtools. Students receive questions exclusively
+-- through the SECURITY DEFINER RPCs in cbt_sanitized_questions.sql
+-- (get_attempt_questions strips the answers; get_attempt_review returns
+-- them only after submission when the exam allows it).
 SELECT public._reset_policies('questions');
 CREATE POLICY questions_staff_all ON public.questions FOR ALL
   USING (organization_id = current_user_org_id() AND public.is_staff_user())
   WITH CHECK (organization_id = current_user_org_id() AND public.is_staff_user());
-CREATE POLICY questions_student_read ON public.questions FOR SELECT
-  USING (
-    id IN (
-      SELECT eq.question_id
-      FROM public.exam_questions eq
-      JOIN public.exam_attempts ea ON ea.exam_id = eq.exam_id
-      WHERE ea.student_id IN (SELECT student_id FROM public.my_linked_student_ids())
-    )
-  );
 
 SELECT public._reset_policies('exam_questions');
 CREATE POLICY exam_questions_staff_all ON public.exam_questions FOR ALL
   USING (organization_id = current_user_org_id() AND public.is_staff_user())
   WITH CHECK (organization_id = current_user_org_id() AND public.is_staff_user());
-CREATE POLICY exam_questions_student_read ON public.exam_questions FOR SELECT
-  USING (
-    exam_id IN (
-      SELECT ea.exam_id FROM public.exam_attempts ea
-      WHERE ea.student_id IN (SELECT student_id FROM public.my_linked_student_ids())
-    )
-  );
 
 -- cbt_exam_assignments ----------------------------------------------
 DO $$ BEGIN

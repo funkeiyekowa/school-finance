@@ -154,15 +154,25 @@ export default function TakeExamPage() {
       return;
     }
 
-    // Load exam metadata + the questions belonging to it.
-    const [examResp, eqResp] = await Promise.all([
+    // Load exam metadata, and the questions via the sanitized RPC. The
+    // questions/exam_questions tables are staff-only under RLS, so the
+    // student never receives is_correct / answer_text — get_attempt_questions
+    // strips them server-side.
+    const [examResp, qResp] = await Promise.all([
       supabase.from("exams").select("*").eq("id", examId).single(),
-      supabase.from("exam_questions").select("question_id, sort_order")
-        .eq("exam_id", examId).order("sort_order"),
+      supabase.rpc("get_attempt_questions", { p_attempt: res.attempt_id }),
     ]);
     const examData = examResp.data;
-    const eqData = eqResp.data;
-    if (!examData || !eqData || eqData.length === 0) {
+    if (qResp.error) {
+      setError(qResp.error.message || "Could not load the exam questions.");
+      setLoading(false);
+      return;
+    }
+    const qData = (qResp.data ?? []) as {
+      id: string; question_text: string; question_type: string;
+      options: unknown; marks: number; sort_order: number;
+    }[];
+    if (!examData || qData.length === 0) {
       setError("This exam has no questions yet.");
       setLoading(false);
       return;
@@ -170,21 +180,21 @@ export default function TakeExamPage() {
     setExam(examData as unknown as ExamData);
     setProctored((examData.settings as Record<string, unknown>)?.proctored === true);
 
-    const qIds = eqData.map(eq => eq.question_id);
-    const { data: qData } = await supabase
-      .from("questions")
-      .select("id, question_text, question_type, options, marks, answer_text")
-      .in("id", qIds);
-
-    let questionList: QuestionData[] = (qData ?? []).map(q => {
+    let questionList: QuestionData[] = qData.map(q => {
       const rawOpts = q.options;
       let opts: OptionRow[] = [];
       let pairs: MatchingPair[] | undefined;
       if (Array.isArray(rawOpts)) {
-        opts = rawOpts as OptionRow[];
+        // Sanitized options: [{ id, text }] — no is_correct present.
+        opts = (rawOpts as { id: string; text: string }[]).map(o => ({ ...o, is_correct: false }));
       } else if (rawOpts && typeof rawOpts === "object") {
-        const obj = rawOpts as { pairs?: MatchingPair[]; options?: OptionRow[] };
-        if (Array.isArray(obj.pairs)) pairs = obj.pairs;
+        const obj = rawOpts as { pairs?: { left: string }[]; choices?: string[]; options?: OptionRow[] };
+        if (Array.isArray(obj.pairs)) {
+          // Matching: reconstruct pairs with the shuffled right-hand choices
+          // as the pickable options; correctness lives only on the server.
+          const choices = Array.isArray(obj.choices) ? obj.choices : [];
+          pairs = obj.pairs.map((p, i) => ({ left: p.left, right: choices[i] ?? "" }));
+        }
         if (Array.isArray(obj.options)) opts = obj.options;
       }
       return {
@@ -194,7 +204,7 @@ export default function TakeExamPage() {
         options: opts,
         pairs,
         marks: q.marks,
-        sort_order: eqData.find(eq => eq.question_id === q.id)?.sort_order ?? 0,
+        sort_order: q.sort_order ?? 0,
       };
     });
 
