@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { StatusBadge } from "@/components/ui/Badge";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
+import { useToast } from "@/lib/hooks/useToast";
 import { MessageSquare, Search, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
 import type { SmsInbox, Student, FeeSchedule } from "@/lib/types";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
@@ -22,6 +23,7 @@ type AlertStatus = "all" | "needs_review" | "matched" | "unmatched" | "duplicate
 export default function SmsAlertsPage() {
   const { profile, canEdit, isDeveloper } = useAuth();
   const supabase = createClient();
+  const { notify, ToastHost } = useToast();
   const [alerts, setAlerts] = useState<SmsInbox[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [fees, setFees] = useState<FeeSchedule[]>([]);
@@ -84,49 +86,59 @@ export default function SmsAlertsPage() {
   const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(filtered.map(a => a.id));
 
   async function bulkDeleteSelected(ids: string[]) {
-    if (ids.length > 0) await supabase.from("sms_inbox").delete().in("id", ids);
+    if (ids.length === 0) return;
+    const { error } = await supabase.from("sms_inbox").delete().in("id", ids);
+    if (error) { notify(`Bulk delete failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete Payment Alerts", details: `${ids.length} alerts deleted` });
+    notify(`Deleted ${ids.length} alerts`);
     load();
   }
   async function bulkDeleteAll() {
-    await supabase.from("sms_inbox").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    const { error } = await supabase.from("sms_inbox").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Purge All Payment Alerts", details: "All alerts deleted" });
+    notify("All alerts deleted");
     load();
   }
 
   async function bulkArchiveSelected(ids: string[]) {
-    for (const id of ids) {
-      await supabase.from("sms_inbox").update({
-        archive_status: "MANUALLY_ARCHIVED",
-        archived_at: new Date().toISOString(),
-        archived_by: profile?.id,
-        archive_reason: "Manually archived by admin",
-      }).eq("id", id);
-    }
+    // Single .in() round-trip rather than a per-id loop, so a partial
+    // RLS or constraint failure surfaces as one error instead of being
+    // hidden inside the loop.
+    if (ids.length === 0) return;
+    const { error } = await supabase.from("sms_inbox").update({
+      archive_status: "MANUALLY_ARCHIVED",
+      archived_at: new Date().toISOString(),
+      archived_by: profile?.id,
+      archive_reason: "Manually archived by admin",
+    }).in("id", ids);
+    if (error) { notify(`Bulk archive failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Archive Payment Alerts", details: `${ids.length} alerts archived` });
+    notify(`Archived ${ids.length} alerts`);
     clearSelection();
     load();
   }
 
   async function bulkRestoreSelected(ids: string[]) {
-    for (const id of ids) {
-      await supabase.from("sms_inbox").update({
-        archive_status: "ACTIVE",
-        archived_at: null,
-        archived_by: null,
-        archive_reason: null,
-        primary_alert_id: null,
-        duplicate_confidence: null,
-        duplicate_evidence: null,
-      }).eq("id", id);
-    }
+    if (ids.length === 0) return;
+    const { error } = await supabase.from("sms_inbox").update({
+      archive_status: "ACTIVE",
+      archived_at: null,
+      archived_by: null,
+      archive_reason: null,
+      primary_alert_id: null,
+      duplicate_confidence: null,
+      duplicate_evidence: null,
+    }).in("id", ids);
+    if (error) { notify(`Bulk restore failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Restore Payment Alerts", details: `${ids.length} alerts restored` });
+    notify(`Restored ${ids.length} alerts`);
     clearSelection();
     load();
   }
 
   async function restoreAlert(id: string) {
-    await supabase.from("sms_inbox").update({
+    const { error } = await supabase.from("sms_inbox").update({
       archive_status: "ACTIVE",
       archived_at: null,
       archived_by: null,
@@ -136,19 +148,23 @@ export default function SmsAlertsPage() {
       duplicate_evidence: null,
       match_status: "needs_review",
     }).eq("id", id);
+    if (error) { notify(`Restore failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Restore Payment Alert", details: id });
+    notify("Alert restored");
     load();
     setSelected(null);
   }
 
   async function archiveAlert(id: string, reason: string) {
-    await supabase.from("sms_inbox").update({
+    const { error } = await supabase.from("sms_inbox").update({
       archive_status: "MANUALLY_ARCHIVED",
       archived_at: new Date().toISOString(),
       archived_by: profile?.id,
       archive_reason: reason || "Manually archived",
     }).eq("id", id);
+    if (error) { notify(`Archive failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Archive Payment Alert", details: `${id} — ${reason}` });
+    notify("Alert archived");
     load();
     setSelected(null);
   }
@@ -307,6 +323,7 @@ export default function SmsAlertsPage() {
           onRestore={restoreAlert}
         />
       )}
+      <ToastHost />
     </div>
   );
 }
@@ -374,7 +391,11 @@ function AlertDetailModal({
           const voucherNo = generateCode("VCH-", (existing ?? []).map(e => e.voucher_no));
           const selectedVendor = vendors.find(v => v.id === selectedVendorId);
 
-          await supabase.from("expense_entries").insert({
+          // Insert expense first; if it fails don't flip the alert to
+          // "matched" — a matched alert with no expense entry is a
+          // reconciliation ghost. Supabase queries don't throw, so an
+          // { error } check is required here.
+          const { error: expErr } = await supabase.from("expense_entries").insert({
             voucher_no: voucherNo,
             date: (alert.received_at || alert.created_at).substring(0, 10),
             vendor_id: selectedVendorId || null,
@@ -387,8 +408,9 @@ function AlertDetailModal({
             reconciled: false,
             notes: reviewNote || null,
           });
+          if (expErr) { setError(`Could not record expense: ${expErr.message}`); setLoading(false); return; }
 
-          await supabase.from("sms_inbox").update({
+          const { error: alertErr } = await supabase.from("sms_inbox").update({
             match_status: "matched",
             processing_status: "confirmed",
             review_notes: reviewNote || null,
@@ -396,6 +418,7 @@ function AlertDetailModal({
             reviewed_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           }).eq("id", alert.id);
+          if (alertErr) { setError(`Expense saved, but alert status update failed: ${alertErr.message}`); setLoading(false); return; }
 
           await supabase.from("activity_log").insert({
             user_email: profile?.email, user_name: profile?.full_name,
@@ -410,7 +433,7 @@ function AlertDetailModal({
           const { data: existing } = await supabase.from("income_entries").select("receipt_no");
           const receiptNo = generateCode("RCT-", (existing ?? []).map(e => e.receipt_no));
 
-          await supabase.from("income_entries").insert({
+          const { error: incErr } = await supabase.from("income_entries").insert({
             receipt_no: receiptNo,
             date: (alert.received_at || alert.created_at).substring(0, 10),
             student_id: selectedStudentId,
@@ -426,8 +449,9 @@ function AlertDetailModal({
             sms_inbox_id: alert.id,
             notes: reviewNote || null,
           });
+          if (incErr) { setError(`Could not record income: ${incErr.message}`); setLoading(false); return; }
 
-          await supabase.from("sms_inbox").update({
+          const { error: alertErr } = await supabase.from("sms_inbox").update({
             match_status: "matched",
             processing_status: "confirmed",
             matched_student_id: selectedStudentId,
@@ -437,6 +461,7 @@ function AlertDetailModal({
             reviewed_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           }).eq("id", alert.id);
+          if (alertErr) { setError(`Payment saved, but alert status update failed: ${alertErr.message}`); setLoading(false); return; }
 
           await supabase.from("activity_log").insert({
             user_email: profile?.email, user_name: profile?.full_name,
@@ -447,11 +472,12 @@ function AlertDetailModal({
 
       } else if (action === "reject") {
         if (!reviewNote.trim()) { setError("A review note is required to reject."); setLoading(false); return; }
-        await supabase.from("sms_inbox").update({
+        const { error: rejErr } = await supabase.from("sms_inbox").update({
           match_status: "rejected", processing_status: "rejected",
           review_notes: reviewNote, reviewed_by: profile?.id,
           reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
         }).eq("id", alert.id);
+        if (rejErr) { setError(`Reject failed: ${rejErr.message}`); setLoading(false); return; }
         const channelLabel = alert.source_channel === "email" ? "Email" : "SMS";
         await supabase.from("activity_log").insert({
           user_email: profile?.email, user_name: profile?.full_name,
@@ -459,11 +485,12 @@ function AlertDetailModal({
         });
 
       } else if (action === "duplicate") {
-        await supabase.from("sms_inbox").update({
+        const { error: dupErr } = await supabase.from("sms_inbox").update({
           match_status: "duplicate", processing_status: "duplicate",
           review_notes: reviewNote || "Marked as duplicate", reviewed_by: profile?.id,
           reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
         }).eq("id", alert.id);
+        if (dupErr) { setError(`Mark-duplicate failed: ${dupErr.message}`); setLoading(false); return; }
         await supabase.from("activity_log").insert({
           user_email: profile?.email, user_name: profile?.full_name,
           action: "Mark Duplicate", details: alert.id,
