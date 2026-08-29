@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireStaffSession } from "@/lib/api/requireStaff";
 
 // Registers our webhook endpoint with the school's SMS Gate account using
 // the credentials they entered in Setup > SMS Gateway (never hardcoded).
 export async function POST(request: Request) {
+  const guard = await requireStaffSession();
+  if (guard) return guard;
+
   try {
     const { serverAddress, username, password, webhookUrl, deviceId } = await request.json();
 

@@ -12,15 +12,19 @@ import {
 } from "@/lib/alerts/matcher";
 import { createServiceClient } from "@/lib/alerts/service";
 import { evaluatePolicy, loadPolicy, getConfidenceBand } from "@/lib/alerts/policy";
+import { requireStaffSession } from "@/lib/api/requireStaff";
 
 /**
  * Dry-run the full parse + match pipeline on pasted SMS/email text.
  *
  * Returns everything the real pipeline would compute — direction, amount,
  * counterparty, matched student/vendor, confidence, match reason — but
- * never writes anything to the database.
+ * never writes anything to the database. Staff-only so an anonymous
+ * caller can't fish the student directory by pasting text.
  */
 export async function POST(request: Request) {
+  const guard = await requireStaffSession();
+  if (guard) return guard;
   const supabase = createServiceClient();
 
   let body: Record<string, unknown>;

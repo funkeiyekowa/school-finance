@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
+import { requireStaffSession } from "@/lib/api/requireStaff";
 
 export async function POST(request: Request) {
+  const guard = await requireStaffSession();
+  if (guard) return guard;
+
   try {
     const { serverAddress, username, password, webhookId } = await request.json();
 

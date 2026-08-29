@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
+import { requireStaffSession } from "@/lib/api/requireStaff";
 
 // Verifies that the given SMS Gate (or compatible) credentials actually
 // authenticate, without registering anything. Credentials are supplied
 // per-request from the Setup UI — nothing is read from env vars, so any
 // school can plug in their own gateway account.
+//
+// Guarded by requireStaffSession so this cannot be used as an anonymous
+// credential-probing proxy against arbitrary SMS Gate servers.
 export async function POST(request: Request) {
+  const guard = await requireStaffSession();
+  if (guard) return guard;
+
   try {
     const { serverAddress, username, password } = await request.json();
 

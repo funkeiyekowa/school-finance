@@ -37,10 +37,13 @@ const nextConfig = {
     optimizePackageImports: ["recharts", "date-fns", "lucide-react", "@supabase/ssr", "@supabase/supabase-js"],
   },
 
-  env: {
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || "https://dqlsdocmjudzyzmqisrx.supabase.co",
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxbHNkb2NtanVkenl6bXFpc3J4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxODE3MjUsImV4cCI6MjEwMjc1NzcyNX0.IEjg4SbWeoCzhpYfDiFXiWa3Fy1StbIxxuFetA4byrE",
-  },
+  // NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are read
+  // from the environment (.env.local locally, Vercel env in prod) — no
+  // hardcoded fallbacks here so a missing config fails loudly at build
+  // time instead of silently shipping stale credentials. The anon key
+  // is safe to expose in the browser (that's what it's for) but pinning
+  // it to a specific project made it impossible to rotate without a
+  // code push.
 
   images: {
     // Allow the supabase asset host + unsplash (used on the landing page).

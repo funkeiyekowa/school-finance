@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
 import { processAlert } from "@/lib/alerts/processor";
-import { createServiceClient } from "@/lib/alerts/service";
+import { createServiceClient, extractSecret, verifySmsSecret } from "@/lib/alerts/service";
 
 /**
  * Receives bank alert SMS forwarded by the SMS Gateway Android app.
+ *
+ * Caller must present school_settings.sms_webhook_secret via one of:
+ *   - x-webhook-secret / x-api-key header
+ *   - Authorization: Bearer <secret>
+ *   - ?secret=<secret> in the query string
+ *   - a "secret" field in the request body
+ * Configure it once in Setup → SMS Alerts and paste it into your gateway.
  *
  * This route only normalises the various gateway payload shapes; all
  * parsing, matching and ledger posting lives in the shared processor so
@@ -17,6 +24,14 @@ export async function POST(request: Request) {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Request body must be JSON." }, { status: 400 });
+  }
+
+  // Refuse anything without the configured shared secret. Without this
+  // gate, anyone who knows the URL can POST fake bank alerts that get
+  // recorded as real income against a random student.
+  const check = await verifySmsSecret(supabase, extractSecret(request, body));
+  if (!check.ok) {
+    return NextResponse.json({ error: check.message ?? "Unauthorized" }, { status: check.status });
   }
 
   const normalised = normaliseGatewayPayload(body);
