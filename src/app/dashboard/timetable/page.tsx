@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useToast } from "@/lib/hooks/useToast";
 import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -27,6 +28,7 @@ const DAYS = [
 export default function TimetablePage() {
   const { canEdit, profile, orgId } = useAuth();
   const supabase = createClient();
+  const { notify, ToastHost } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [classes, setClasses] = useState<ClassRow[]>([]);
@@ -138,27 +140,33 @@ export default function TimetablePage() {
       updated_at: new Date().toISOString(),
     };
 
-    if (editEntry) {
-      await supabase.from("timetable_entries").update(payload).eq("id", editEntry.id);
-    } else {
-      const { error } = await supabase.from("timetable_entries").insert(payload);
-      if (error?.code === "23505") {
+    const { error } = editEntry
+      ? await supabase.from("timetable_entries").update(payload).eq("id", editEntry.id)
+      : await supabase.from("timetable_entries").insert(payload);
+
+    if (error) {
+      setSaving(false);
+      if (error.code === "23505") {
         setConflict("This slot already has an entry for this class. Edit the existing one instead.");
-        setSaving(false);
-        return;
+      } else {
+        notify(`Could not save entry: ${error.message}`, "error");
       }
+      return;
     }
 
     setSaving(false);
     setShowModal(false);
+    notify(editEntry ? "Timetable entry updated" : "Timetable entry added");
     load();
   }
 
   async function deleteEntry() {
     if (!editEntry) return;
     if (!confirm("Remove this timetable entry?")) return;
-    await supabase.from("timetable_entries").delete().eq("id", editEntry.id);
+    const { error } = await supabase.from("timetable_entries").delete().eq("id", editEntry.id);
+    if (error) { notify(`Could not remove entry: ${error.message}`, "error"); return; }
     setShowModal(false);
+    notify("Timetable entry removed");
     load();
   }
 
@@ -317,6 +325,7 @@ export default function TimetablePage() {
           </div>
         </Modal>
       )}
+      <ToastHost />
     </div>
   );
 }

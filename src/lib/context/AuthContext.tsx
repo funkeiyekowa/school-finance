@@ -279,6 +279,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
+    // Hard safety net: whatever happens with the auth/profile network
+    // calls below, never leave the app pinned in the loading state.
+    // Without this, a hung getUser() (paused project waking up, dropped
+    // socket) would keep every loading-gated screen on its spinner
+    // indefinitely. After 12s we give up waiting and render; the browser
+    // client still holds the session for subsequent queries.
+    const failSafe = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 12000);
+
     supabase.auth.getUser().then(({ data: { user: u } }) => {
       if (cancelled) return;
       setUser(u);
@@ -289,6 +299,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loadedUserId.current = null;
         setLoading(false);
       }
+    }).catch(() => {
+      if (!cancelled) setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -324,6 +336,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       cancelled = true;
+      clearTimeout(failSafe);
       subscription.unsubscribe();
     };
   }, [supabase, loadProfile, clearSession]);

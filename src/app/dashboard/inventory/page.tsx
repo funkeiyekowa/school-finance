@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useToast } from "@/lib/hooks/useToast";
 import { fmtMoney, cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -16,6 +17,7 @@ interface ItemRow { id: string; name: string; item_code: string | null; category
 export default function InventoryPage() {
   const { canEdit, profile, orgId } = useAuth();
   const supabase = createClient();
+  const { notify, ToastHost } = useToast();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [search, setSearch] = useState("");
@@ -52,11 +54,17 @@ export default function InventoryPage() {
   }
 
   async function saveItem() {
+    if (!itemForm.name.trim()) { notify("Item name is required.", "error"); return; }
     setSavingItem(true);
     const payload = { name: itemForm.name.trim(), item_code: itemForm.item_code.trim() || null, category: itemForm.category.trim() || null, unit: itemForm.unit, quantity_on_hand: parseFloat(itemForm.quantity_on_hand) || 0, reorder_level: parseFloat(itemForm.reorder_level) || 0, unit_cost: itemForm.unit_cost ? parseFloat(itemForm.unit_cost) : null, location: itemForm.location.trim() || null, organization_id: orgId, updated_at: new Date().toISOString() };
-    if (editingItem) { await supabase.from("inventory_items").update(payload).eq("id", editingItem.id); }
-    else { await supabase.from("inventory_items").insert(payload); }
-    setSavingItem(false); setShowItemForm(false); setEditingItem(null); load();
+    const { error } = editingItem
+      ? await supabase.from("inventory_items").update(payload).eq("id", editingItem.id)
+      : await supabase.from("inventory_items").insert(payload);
+    setSavingItem(false);
+    if (error) { notify(`Could not save item: ${error.message}`, "error"); return; }
+    setShowItemForm(false); setEditingItem(null);
+    notify(editingItem ? "Item updated" : "Item added");
+    load();
   }
 
   function openMoveForm(item: ItemRow, type: string) {
@@ -67,23 +75,28 @@ export default function InventoryPage() {
 
   async function saveMovement() {
     if (!moveItem) return;
-    setSavingMove(true);
     const qty = parseFloat(moveForm.quantity) || 0;
+    if (qty <= 0) { notify("Enter a quantity greater than zero.", "error"); return; }
+    setSavingMove(true);
     const actualQty = moveForm.movement_type === "stock_out" ? -qty : qty;
 
-    await supabase.from("stock_movements").insert({
+    const { error: moveErr } = await supabase.from("stock_movements").insert({
       item_id: moveItem.id, movement_type: moveForm.movement_type,
       quantity: actualQty, reference: moveForm.reference.trim() || null,
       reason: moveForm.reason.trim() || null,
       recorded_by: profile?.full_name || profile?.email,
       organization_id: orgId,
     });
+    if (moveErr) { setSavingMove(false); notify(`Could not record movement: ${moveErr.message}`, "error"); return; }
 
     // Update quantity on hand
     const newQty = moveItem.quantity_on_hand + actualQty;
-    await supabase.from("inventory_items").update({ quantity_on_hand: Math.max(0, newQty), updated_at: new Date().toISOString() }).eq("id", moveItem.id);
-
-    setSavingMove(false); setShowMoveForm(false); setMoveItem(null); load();
+    const { error: qtyErr } = await supabase.from("inventory_items").update({ quantity_on_hand: Math.max(0, newQty), updated_at: new Date().toISOString() }).eq("id", moveItem.id);
+    setSavingMove(false);
+    if (qtyErr) { notify(`Movement saved but stock level did not update: ${qtyErr.message}`, "error"); load(); return; }
+    setShowMoveForm(false); setMoveItem(null);
+    notify(moveForm.movement_type === "stock_out" ? "Stock removed" : "Stock added");
+    load();
   }
 
   const filtered = items.filter(i => {
@@ -207,6 +220,7 @@ export default function InventoryPage() {
           </div>
         </Modal>
       )}
+      <ToastHost />
     </div>
   );
 }

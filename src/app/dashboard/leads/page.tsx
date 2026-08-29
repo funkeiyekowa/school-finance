@@ -12,6 +12,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/lib/hooks/useToast";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -57,6 +58,7 @@ export default function LeadsPage() {
 function LeadsPageInner() {
   const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
+  const { notify, ToastHost } = useToast();
 
   const [rows, setRows] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,30 +98,37 @@ function LeadsPageInner() {
     const { error: err } = await supabase
       .from("website_submissions").update({ status }).eq("id", row.id);
     setBusy(false);
-    if (err) { setError(err.message); return; }
+    if (err) { notify(`Could not update status: ${err.message}`, "error"); return; }
     setRows(rs => rs.map(r => (r.id === row.id ? { ...r, status } : r)));
     if (open?.id === row.id) setOpen({ ...open, status });
+    notify("Status updated");
   }
 
   async function saveNotes(row: Submission) {
     setBusy(true);
-    await supabase.from("website_submissions").update({ notes }).eq("id", row.id);
+    const { error: err } = await supabase.from("website_submissions").update({ notes }).eq("id", row.id);
     setBusy(false);
+    if (err) { notify(`Could not save notes: ${err.message}`, "error"); return; }
     setRows(rs => rs.map(r => (r.id === row.id ? { ...r, notes } : r)));
     setOpen(null);
+    notify("Notes saved");
   }
 
   async function markSpam(row: Submission) {
-    await supabase.from("website_submissions")
+    const { error: err } = await supabase.from("website_submissions")
       .update({ is_spam: !row.is_spam, status: row.is_spam ? "new" : "closed" })
       .eq("id", row.id);
+    if (err) { notify(`Could not update: ${err.message}`, "error"); return; }
+    notify(row.is_spam ? "Marked as not spam" : "Marked as spam");
     load();
   }
 
   async function remove(row: Submission) {
     if (!confirm("Delete this enquiry permanently?")) return;
-    await supabase.from("website_submissions").delete().eq("id", row.id);
+    const { error: err } = await supabase.from("website_submissions").delete().eq("id", row.id);
+    if (err) { notify(`Could not delete: ${err.message}`, "error"); return; }
     setOpen(null);
+    notify("Enquiry deleted");
     load();
   }
 
@@ -388,6 +397,7 @@ function LeadsPageInner() {
           </div>
         </Modal>
       )}
+      <ToastHost />
     </div>
   );
 }
