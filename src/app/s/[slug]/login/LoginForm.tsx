@@ -35,22 +35,26 @@ const STUDENT_CODE_RE = /^[A-Za-z]\d+$/;
 
 /* Module-scope helpers so they aren't nested function declarations inside
    the component (which trips TS strict-mode inside blocks). */
-async function raceWithTimeout<T>(pr: Promise<T>, ms: number): Promise<T | null> {
-  return Promise.race<T | null>([
-    pr,
-    new Promise<null>((r) => setTimeout(() => r(null), ms)),
-  ]);
+// Accept anything thenable (Supabase PostgrestBuilder is not strictly a Promise
+// under TS but resolves like one). Coerce via Promise.resolve.
+function raceWithTimeout(pr: unknown, ms: number): Promise<{ data: unknown } | null> {
+  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
+  return Promise.race([
+    Promise.resolve(pr as PromiseLike<{ data: unknown }>),
+    timeout,
+  ]) as Promise<{ data: unknown } | null>;
 }
-async function raceWithTimeoutRpc<T>(
-  pr: Promise<T>,
+function raceWithTimeoutRpc(
+  pr: unknown,
   ms: number,
-): Promise<T | { data: null; error: { message: string } }> {
-  return Promise.race<T | { data: null; error: { message: string } }>([
-    pr,
-    new Promise((resolve) =>
-      setTimeout(() => resolve({ data: null, error: { message: "timeout" } }), ms),
-    ),
-  ]);
+): Promise<{ data: unknown; error: { message: string } | null }> {
+  const timeout = new Promise<{ data: null; error: { message: string } }>((resolve) =>
+    setTimeout(() => resolve({ data: null, error: { message: "timeout" } }), ms),
+  );
+  return Promise.race([
+    Promise.resolve(pr as PromiseLike<{ data: unknown; error: { message: string } | null }>),
+    timeout,
+  ]) as Promise<{ data: unknown; error: { message: string } | null }>;
 }
 
 export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Props) {

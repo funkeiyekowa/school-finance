@@ -44,11 +44,12 @@ const STAFF_PROFILE_ROLES = new Set([
 
 /* Module-scope helper — moved out of the component so it isn't a
    nested function declaration inside a block. */
-async function raceWithTimeoutStaff<T>(pr: Promise<T>, ms: number): Promise<T | null> {
-  return Promise.race<T | null>([
-    pr,
-    new Promise<null>((r) => setTimeout(() => r(null), ms)),
-  ]);
+function raceWithTimeoutStaff(pr: unknown, ms: number): Promise<{ data: unknown } | null> {
+  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
+  return Promise.race([
+    Promise.resolve(pr as PromiseLike<{ data: unknown }>),
+    timeout,
+  ]) as Promise<{ data: unknown } | null>;
 }
 
 export default function StaffLoginForm({ slug, schoolName, logoUrl, found }: Props) {
