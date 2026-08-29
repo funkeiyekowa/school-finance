@@ -36,6 +36,7 @@ const STUDENT_CODE_RE = /^[A-Za-z]\d+$/;
 export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Props) {
   const supabase = createClient();
   const router = useRouter();
+  const [persona, setPersona] = useState<"student" | "parent">("student");
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -111,19 +112,35 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
         return;
       }
 
-      // 3a. Refuse super-admin sign-in on a school URL. Show a generic
-      //     error to avoid revealing the existence of a separate console.
+      // 3a. Refuse super-admin AND staff sign-in on this URL. Staff must
+      //     use /s/<slug>/staff-portal. Show a helpful redirect prompt
+      //     for staff; a generic error for super_admin so /admin-console
+      //     is never leaked.
       if (signData.user) {
-        const [{ data: prof }, { data: mem }] = await Promise.all([
+        const [{ data: prof }, { data: mem }, { data: staffRow }] = await Promise.all([
           supabase.from("profiles").select("role").eq("id", signData.user.id).maybeSingle(),
-          supabase.from("org_memberships").select("role").eq("user_id", signData.user.id).eq("role", "super_admin").limit(1),
+          supabase.from("org_memberships").select("role").eq("user_id", signData.user.id).limit(20),
+          supabase.from("staff_members").select("id").eq("user_id", signData.user.id).limit(1),
         ]);
-        const p = prof as { role?: string } | null;
-        const m = (mem ?? []) as { role: string }[];
-        const isSuperAdmin = m.length > 0 || p?.role === "super_admin" || p?.role === "developer";
+        const pr = prof as { role?: string } | null;
+        const mArr = (mem ?? []) as { role: string }[];
+        const isSuperAdmin =
+          mArr.some((x) => x.role === "super_admin") ||
+          pr?.role === "super_admin" ||
+          pr?.role === "developer";
         if (isSuperAdmin) {
           await supabase.auth.signOut();
           setError("Invalid email or password.");
+          setLoading(false);
+          return;
+        }
+        const isStaff =
+          !!(staffRow && (staffRow as unknown[]).length > 0) ||
+          mArr.some((x) => ["owner", "admin", "editor", "staff", "teacher"].includes(x.role)) ||
+          (pr?.role ? ["owner", "admin", "editor", "staff", "teacher"].includes(pr.role) : false);
+        if (isStaff) {
+          await supabase.auth.signOut();
+          setError(`Staff accounts sign in at the Staff Portal. Please visit /s/${slug}/staff-portal.`);
           setLoading(false);
           return;
         }
@@ -146,10 +163,26 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
         return;
       }
 
-      // Remember which school this user came in through so middleware can
-      // redirect unauth visits to the right /s/<slug>/login next time.
+      // Enforce the persona tab (item 2): a Parent tab requires role=parent;
+      // a Student tab requires role=student.
+      if (persona === "parent" && ctx.role !== "parent") {
+        await supabase.auth.signOut();
+        setError("This account is not a parent account. Switch to the Student tab or contact your school.");
+        setLoading(false);
+        return;
+      }
+      if (persona === "student" && ctx.role !== "student") {
+        await supabase.auth.signOut();
+        setError("This account is not a student account. Switch to the Parent tab or contact your school.");
+        setLoading(false);
+        return;
+      }
+
+      // Remember which school + portal this user came in through so
+      // middleware and sign-out can route them back correctly.
       try {
         document.cookie = `sf_last_school=${encodeURIComponent(slug)}; path=/; max-age=${60 * 60 * 24 * 90}; samesite=lax`;
+        document.cookie = `sf_last_portal=student; path=/; max-age=${60 * 60 * 24 * 90}; samesite=lax`;
       } catch {
         // Cookies disabled — non-fatal.
       }
@@ -228,15 +261,41 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
           </Link>
 
           <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
-            <h2 className="text-2xl font-bold text-[#0F2A47]">Sign in</h2>
+            <h2 className="text-2xl font-bold text-[#0F2A47]">
+              {persona === "parent" ? "Parent Login" : "Student Login"}
+            </h2>
             <p className="text-sm text-gray-500 mt-1 mb-5">
-              Use your email or student code.
+              {persona === "parent"
+                ? "Sign in with the email address you gave the school."
+                : "Sign in with your student code or the email issued by your school."}
             </p>
+
+            {/* Persona tabs — student first, parent second */}
+            <div className="grid grid-cols-2 gap-1.5 mb-5 p-1 bg-gray-100 rounded-lg">
+              <button
+                type="button"
+                onClick={() => { setPersona("student"); setError(""); }}
+                className={`py-2 px-3 rounded-md text-sm font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                  persona === "student" ? "bg-[#0F2A47] text-white shadow" : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                <GraduationCap size={14} /> Student
+              </button>
+              <button
+                type="button"
+                onClick={() => { setPersona("parent"); setError(""); }}
+                className={`py-2 px-3 rounded-md text-sm font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                  persona === "parent" ? "bg-[#0F2A47] text-white shadow" : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                <User size={14} /> Parent
+              </button>
+            </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label htmlFor="identifier" className="block text-xs font-semibold text-gray-600 mb-1.5">
-                  Email or Student Code
+                  {persona === "parent" ? "Email address" : "Email or Student Code"}
                 </label>
                 <div className="relative">
                   <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -247,7 +306,7 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
                     required
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="you@example.com or S288"
+                    placeholder={persona === "parent" ? "you@example.com" : "S288 or you@school.com"}
                     className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]"
                   />
                 </div>
@@ -310,8 +369,9 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
             </form>
 
             <p className="mt-6 text-center text-xs text-gray-500">
-              Students use their school-issued code. Parents use the email you
-              gave the school. Teachers and admins use their staff email.
+              {persona === "parent"
+                ? "This is the Parent Portal. Teachers and admins should use the Staff Portal."
+                : "Students use the school-issued code. Parents should switch to the Parent tab."}
             </p>
           </div>
 

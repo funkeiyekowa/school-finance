@@ -45,7 +45,7 @@ const STAFF_PROFILE_ROLES = new Set([
 export default function StaffLoginForm({ slug, schoolName, logoUrl, found }: Props) {
   const supabase = createClient();
   const router = useRouter();
-  const [persona, setPersona] = useState<Persona>("admin");
+  const [persona, setPersona] = useState<Persona>("teacher");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -96,28 +96,60 @@ export default function StaffLoginForm({ slug, schoolName, logoUrl, found }: Pro
       }
 
       // 3. Resolve role for THIS school.
-      const { data: ctxData, error: ctxErr } = await supabase.rpc("resolve_login_context", { p_slug: slug });
+      //    Supabase JWT is minted server-side; a small client<->server
+      //    clock skew can throw "JWT issued at future". Retry once
+      //    after a 1 s pause before surfacing to the user.
+      let ctxData: unknown = null;
+      let ctxErr: { message?: string } | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await supabase.rpc("resolve_login_context", { p_slug: slug });
+        ctxData = res.data;
+        ctxErr = res.error as { message?: string } | null;
+        if (!ctxErr) break;
+        const msg = (ctxErr.message ?? "").toLowerCase();
+        const clockSkew = msg.includes("issued at future") || msg.includes("jwt") || msg.includes("clock");
+        if (!clockSkew) break;
+        await new Promise((r) => setTimeout(r, 1200));
+      }
       if (ctxErr) {
         await supabase.auth.signOut();
-        setError(`Could not verify your school access: ${ctxErr.message}`);
+        setError("Could not verify your school access. Please try again in a moment.");
         setLoading(false);
         return;
       }
       const ctx = ctxData as LoginContext | null;
 
+      const ctxRole = ctx?.role ?? null;
       const isStaffProfileRole = p?.role ? STAFF_PROFILE_ROLES.has(p.role) : false;
-      const isStaffCtxRole = ctx?.role === "teacher" || ctx?.role === "admin";
+      const isStaffCtxRole = ctxRole === "teacher" || ctxRole === "admin" || (ctxRole as string) === "staff";
 
-      if (!ctx || !ctx.role || !ctx.redirect || !isStaffCtxRole || !isStaffProfileRole) {
+      if (!ctx || !ctxRole || !ctx.redirect || !isStaffCtxRole || !isStaffProfileRole) {
         await supabase.auth.signOut();
         setError(`This account is not a staff member of ${schoolName}.`);
         setLoading(false);
         return;
       }
 
-      // Remember the school for the sign-out redirect helper.
+      // Enforce the persona tab: an Admin tab requires role=admin;
+      // a Teacher tab requires role=teacher OR staff (non-teaching).
+      const personaMatches =
+        (persona === "admin"   && ctxRole === "admin") ||
+        (persona === "teacher" && (ctxRole === "teacher" || (ctxRole as string) === "staff"));
+      if (!personaMatches) {
+        await supabase.auth.signOut();
+        setError(
+          persona === "admin"
+            ? "Your account is not an administrator. Switch to the Teacher tab."
+            : "Your account is an administrator. Switch to the Admin tab."
+        );
+        setLoading(false);
+        return;
+      }
+
+      // Remember the school + portal for the sign-out redirect helper.
       try {
         document.cookie = `sf_last_school=${encodeURIComponent(slug)}; path=/; max-age=${60 * 60 * 24 * 90}; samesite=lax`;
+        document.cookie = `sf_last_portal=staff; path=/; max-age=${60 * 60 * 24 * 90}; samesite=lax`;
       } catch {
         // Cookies disabled — non-fatal.
       }
@@ -195,22 +227,14 @@ export default function StaffLoginForm({ slug, schoolName, logoUrl, found }: Pro
           </Link>
 
           <div className="bg-[#0f2438] rounded-2xl shadow-2xl border border-[#D4AF37]/20 p-8">
-            <h2 className="text-2xl font-bold text-white">Staff sign in</h2>
+            <h2 className="text-2xl font-bold text-white">{persona === "teacher" ? "Teacher Login" : "Administrator Login"}</h2>
             <p className="text-sm text-white/60 mt-1 mb-5">
-              Continuing as <span className="text-[#D4AF37] font-semibold">{persona === "admin" ? "Administrator" : "Teacher"}</span>
+              Continuing as <span className="text-[#D4AF37] font-semibold">{persona === "teacher" ? "Teacher" : "Administrator"}</span>
             </p>
 
-            {/* Persona toggle - purely cosmetic; role is decided server-side */}
+            {/* Persona tabs — server-side enforcement means the chosen tab
+                MUST match the staff_type on staff_members. Teacher-first. */}
             <div className="grid grid-cols-2 gap-1.5 mb-5 p-1 bg-black/30 rounded-lg">
-              <button
-                type="button"
-                onClick={() => setPersona("admin")}
-                className={`py-2 px-3 rounded-md text-sm font-semibold transition-all flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D4AF37] ${
-                  persona === "admin" ? "bg-[#D4AF37] text-[#0a1929] shadow" : "text-white/60 hover:text-white"
-                }`}
-              >
-                <ShieldCheck size={14} /> Admin
-              </button>
               <button
                 type="button"
                 onClick={() => setPersona("teacher")}
@@ -219,6 +243,15 @@ export default function StaffLoginForm({ slug, schoolName, logoUrl, found }: Pro
                 }`}
               >
                 <BookOpen size={14} /> Teacher
+              </button>
+              <button
+                type="button"
+                onClick={() => setPersona("admin")}
+                className={`py-2 px-3 rounded-md text-sm font-semibold transition-all flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D4AF37] ${
+                  persona === "admin" ? "bg-[#D4AF37] text-[#0a1929] shadow" : "text-white/60 hover:text-white"
+                }`}
+              >
+                <ShieldCheck size={14} /> Admin
               </button>
             </div>
 

@@ -93,6 +93,10 @@ export function OrgMembersPanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Item 1: role tabs, search, sort
+  const [tabRole, setTabRole] = useState<string>("all");
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberSort, setMemberSort] = useState<{ key: "name" | "role" | "status" | "joined"; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
 
   const [showAdd, setShowAdd] = useState(false);
   const [addEmail, setAddEmail] = useState("");
@@ -231,6 +235,36 @@ export function OrgMembersPanel({
 
   if (loading) return <LoadingSpinner />;
 
+  const filteredMembers = (() => {
+    let list = members.slice();
+    if (tabRole !== "all") {
+      list = list.filter((m) => (m.membership_role || m.profile_role || "").toLowerCase() === tabRole);
+    }
+    const q = memberSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter((m) =>
+        (m.full_name || "").toLowerCase().includes(q) ||
+        (m.email || "").toLowerCase().includes(q) ||
+        (m.membership_role || "").toLowerCase().includes(q)
+      );
+    }
+    const dir = memberSort.dir === "asc" ? 1 : -1;
+    list.sort((a, b) => {
+      switch (memberSort.key) {
+        case "role":   return ((a.membership_role || "").localeCompare(b.membership_role || "")) * dir;
+        case "status": return (Number(!!a.active) - Number(!!b.active)) * dir;
+        case "joined": return ((a.joined_at || "").localeCompare(b.joined_at || "")) * dir;
+        case "name":
+        default:       return ((a.full_name || a.email || "").localeCompare(b.full_name || b.email || "")) * dir;
+      }
+    });
+    return list;
+  })();
+
+  const toggleMemberSort = (key: "name" | "role" | "status" | "joined") => {
+    setMemberSort((cur) => cur.key === key ? { key, dir: cur.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -260,6 +294,55 @@ export function OrgMembersPanel({
         </div>
       )}
 
+      {/* Role tabs + search + sort */}
+      {members.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {(() => {
+              const counts = members.reduce<Record<string, number>>((acc, m) => {
+                const k = (m.membership_role || m.profile_role || "unknown").toLowerCase();
+                acc[k] = (acc[k] ?? 0) + 1;
+                return acc;
+              }, {});
+              const tabs: { key: string; label: string }[] = [
+                { key: "all", label: "All" },
+                ...Object.keys(counts).sort().map((k) => ({ key: k, label: k.charAt(0).toUpperCase() + k.slice(1) })),
+              ];
+              return tabs.map((t) => {
+                const active = tabRole === t.key;
+                const c = t.key === "all" ? members.length : (counts[t.key] ?? 0);
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setTabRole(t.key)}
+                    className={cn(
+                      "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border",
+                      active ? "bg-[#0F2A47] text-white border-[#0F2A47]" : "bg-white text-gray-700 border-gray-200 hover:border-[#C9A227]"
+                    )}
+                  >
+                    {t.label}
+                    <span className={cn("ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold", active ? "bg-white/20" : "bg-gray-100 text-gray-600")}>{c}</span>
+                  </button>
+                );
+              });
+            })()}
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="search"
+                value={memberSearch}
+                onChange={(e) => setMemberSearch(e.target.value)}
+                placeholder="Search member…"
+                className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#C9A227]"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {members.length === 0 ? (
         <EmptyState
           icon={<Users size={32} />}
@@ -270,16 +353,16 @@ export function OrgMembersPanel({
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b">
-                <th className="text-left px-3 py-2 font-semibold text-gray-600">User</th>
-                <th className="text-left px-3 py-2 font-semibold text-gray-600">Role in school</th>
+                <th className="text-left px-3 py-2 font-semibold text-gray-600"><button onClick={() => toggleMemberSort("name")} className="hover:text-[#C9A227] inline-flex items-center gap-1">User {memberSort.key === "name" && (memberSort.dir === "asc" ? "▲" : "▼")}</button></th>
+                <th className="text-left px-3 py-2 font-semibold text-gray-600"><button onClick={() => toggleMemberSort("role")} className="hover:text-[#C9A227] inline-flex items-center gap-1">Role in school {memberSort.key === "role" && (memberSort.dir === "asc" ? "▲" : "▼")}</button></th>
                 <th className="text-left px-3 py-2 font-semibold text-gray-600">Lands here</th>
-                <th className="text-left px-3 py-2 font-semibold text-gray-600">Status</th>
-                <th className="text-left px-3 py-2 font-semibold text-gray-600">Joined</th>
+                <th className="text-left px-3 py-2 font-semibold text-gray-600"><button onClick={() => toggleMemberSort("status")} className="hover:text-[#C9A227] inline-flex items-center gap-1">Status {memberSort.key === "status" && (memberSort.dir === "asc" ? "▲" : "▼")}</button></th>
+                <th className="text-left px-3 py-2 font-semibold text-gray-600"><button onClick={() => toggleMemberSort("joined")} className="hover:text-[#C9A227] inline-flex items-center gap-1">Joined {memberSort.key === "joined" && (memberSort.dir === "asc" ? "▲" : "▼")}</button></th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
-              {members.map((m) => {
+              {filteredMembers.map((m) => {
                 const busy = busyId === m.membership_id;
                 const isSelf = m.user_id === user?.id;
                 return (

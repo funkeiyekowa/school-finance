@@ -26,20 +26,27 @@ interface TabDef {
 }
 
 /* Role tab definitions — grouping profiles by their effective role. */
-const TABS: TabDef[] = [
-  { key: "all",     label: "All",         icon: <Users size={14} />,        matches: () => true },
-  { key: "admin",   label: "Admins",      icon: <Shield size={14} />,       matches: (p) => ["admin", "owner", "super_admin"].includes(p.role) },
-  { key: "teacher", label: "Teachers",    icon: <GraduationCap size={14} />, matches: (p) => p.role === "teacher" },
-  { key: "parent",  label: "Parents",     icon: <UserCircle2 size={14} />,   matches: (p) => p.role === "parent" },
-  { key: "student", label: "Students",    icon: <Sparkles size={14} />,      matches: (p) => p.role === "student" },
-  { key: "staff",   label: "Non-teaching", icon: <Wrench size={14} />,       matches: (p) => ["staff", "editor"].includes(p.role) },
-  { key: "pending", label: "Pending",     icon: <XCircle size={14} />,       matches: (p) => !p.active || p.role === "pending" },
-];
+function buildTabs(staffTypes: Record<string, string>): TabDef[] {
+  return [
+    { key: "all",     label: "All",         icon: <Users size={14} />,        matches: () => true },
+    { key: "admin",   label: "Admins",      icon: <Shield size={14} />,       matches: (p) => ["admin", "owner", "super_admin"].includes(p.role) },
+    { key: "admin-admin", label: "Admins — Admin", icon: <Shield size={14} />, matches: (p) => ["admin","owner"].includes(p.role) && (staffTypes[p.id] || "") === "admin" },
+    { key: "admin-teaching", label: "Admins — Teaching", icon: <GraduationCap size={14} />, matches: (p) => ["admin","owner"].includes(p.role) && (staffTypes[p.id] || "") === "teaching" },
+    { key: "admin-nonteaching", label: "Admins — Non-teaching", icon: <Wrench size={14} />, matches: (p) => ["admin","owner"].includes(p.role) && ["non_teaching","nonteaching","non teaching","support"].includes(staffTypes[p.id] || "") },
+    { key: "teacher", label: "Teachers",    icon: <GraduationCap size={14} />, matches: (p) => p.role === "teacher" },
+    { key: "parent",  label: "Parents",     icon: <UserCircle2 size={14} />,   matches: (p) => p.role === "parent" },
+    { key: "student", label: "Students",    icon: <Sparkles size={14} />,      matches: (p) => p.role === "student" },
+    { key: "staff",   label: "Non-teaching", icon: <Wrench size={14} />,       matches: (p) => ["staff", "editor"].includes(p.role) },
+    { key: "pending", label: "Pending",     icon: <XCircle size={14} />,       matches: (p) => !p.active || p.role === "pending" },
+  ];
+}
 
 export default function TeamPage() {
   const { isAdmin, profile, orgId } = useAuth();
   const supabase = createClient();
   const [users, setUsers] = useState<Profile[]>([]);
+  const [staffTypes, setStaffTypes] = useState<Record<string, string>>({});
+  const tabs = useMemo(() => buildTabs(staffTypes), [staffTypes]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
@@ -53,11 +60,17 @@ export default function TeamPage() {
     setLoading(true);
     let profileList: Profile[] = [];
 
+    let staffMap: Record<string, string> = {};
     if (orgId) {
-      const { data: members } = await supabase
-        .from("org_memberships")
-        .select("user_id, role, active")
-        .eq("organization_id", orgId);
+      const [{ data: members }, { data: staff }] = await Promise.all([
+        supabase.from("org_memberships").select("user_id, role, active").eq("organization_id", orgId),
+        supabase.from("staff_members").select("user_id, staff_type").eq("organization_id", orgId),
+      ]);
+      if (staff) {
+        for (const row of staff as { user_id: string | null; staff_type: string | null }[]) {
+          if (row.user_id) staffMap[row.user_id] = (row.staff_type || "").toLowerCase();
+        }
+      }
       if (members && members.length > 0) {
         const userIds = members.map((m: { user_id: string }) => m.user_id);
         const { data: profiles } = await supabase
@@ -72,6 +85,7 @@ export default function TeamPage() {
       profileList = (data ?? []) as Profile[];
     }
     setUsers(profileList);
+    setStaffTypes(staffMap);
 
     const { data: rolesData } = await supabase.from("roles").select("*").order("name");
     setRoles(rolesData ?? []);
@@ -111,12 +125,12 @@ export default function TeamPage() {
   /* -------- filter + sort -------- */
   const tabCounts = useMemo(() => {
     const c: Record<string, number> = {};
-    TABS.forEach((t) => { c[t.key] = users.filter(t.matches).length; });
+    tabs.forEach((t) => { c[t.key] = users.filter(t.matches).length; });
     return c;
   }, [users]);
 
   const filtered = useMemo(() => {
-    const tab = TABS.find((t) => t.key === activeTab) ?? TABS[0];
+    const tab = tabs.find((t) => t.key === activeTab) ?? tabs[0];
     const q = search.trim().toLowerCase();
     const list = users
       .filter(tab.matches)
@@ -146,11 +160,12 @@ export default function TeamPage() {
   }
 
   function exportCsv() {
-    const header = ["Name", "Email", "Role", "Status", "Joined"];
+    const header = ["Name", "Email", "Role", "Staff Type", "Status", "Joined"];
     const rows = filtered.map((u) => [
       u.full_name || u.email.split("@")[0],
       u.email,
       u.role,
+      staffTypes[u.id] || "",
       u.active ? "active" : "pending",
       u.created_at ? new Date(u.created_at).toISOString() : "",
     ]);
@@ -177,7 +192,7 @@ export default function TeamPage() {
 
       {/* Role Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-3">
-        {TABS.map((t) => {
+        {tabs.map((t) => {
           const active = activeTab === t.key;
           return (
             <button
@@ -227,6 +242,7 @@ export default function TeamPage() {
                   <ThSort label="User"   sortKey="name"   currentKey={sortKey} currentDir={sortDir} onClick={toggleSort} />
                   <ThSort label="Email"  sortKey="email"  currentKey={sortKey} currentDir={sortDir} onClick={toggleSort} />
                   <ThSort label="Role"   sortKey="role"   currentKey={sortKey} currentDir={sortDir} onClick={toggleSort} />
+                  <th className="text-left px-4 py-3 text-xs font-semibold">Type</th>
                   <ThSort label="Status" sortKey="status" currentKey={sortKey} currentDir={sortDir} onClick={toggleSort} />
                   <ThSort label="Joined" sortKey="joined" currentKey={sortKey} currentDir={sortDir} onClick={toggleSort} />
                   <th className="px-4 py-3 text-xs font-semibold text-right">Actions</th>
@@ -234,7 +250,7 @@ export default function TeamPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={6}><EmptyState message={search ? "No matches for that search." : "No users in this group yet."} icon={<Users size={32} />} /></td></tr>
+                  <tr><td colSpan={7}><EmptyState message={search ? "No matches for that search." : "No users in this group yet."} icon={<Users size={32} />} /></td></tr>
                 ) : (
                   filtered.map((u) => (
                     <tr key={u.id} className={cn("border-b border-gray-50 hover:bg-gray-50", !u.active && "opacity-60")}>
@@ -262,6 +278,14 @@ export default function TeamPage() {
                           {roles.length === 0 && <option value={u.role}>{u.role}</option>}
                           {roles.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
                         </select>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600">
+                        {(() => {
+                          const st = staffTypes[u.id];
+                          if (!st) return <span className="text-gray-300">—</span>;
+                          const label = st === "admin" ? "Admin" : st === "teaching" ? "Teaching" : "Non-teaching";
+                          return <span className="inline-flex px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-medium">{label}</span>;
+                        })()}
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={u.active ? "active" : "pending"} />

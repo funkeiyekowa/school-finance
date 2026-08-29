@@ -14,7 +14,24 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    setMessage("");
+    const target = email.trim().toLowerCase();
+
+    // Item 9: check the email exists before Supabase silently returns 200.
+    // The auth_email_exists RPC is SECURITY DEFINER and does not leak PII
+    // beyond a boolean — safe to expose to anonymous callers.
+    try {
+      const { data: exists, error: chkErr } = await supabase.rpc("auth_email_exists", { p_email: target });
+      if (!chkErr && exists === false) {
+        setError("Email is not on the system.");
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // RPC not yet installed — fall through to Supabase which will 200 silently.
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(target, {
       redirectTo: `${window.location.origin}/auth/reset-password`,
     });
     setLoading(false);

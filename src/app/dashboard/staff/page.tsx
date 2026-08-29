@@ -26,6 +26,7 @@ export default function StaffPage() {
   const [editing, setEditing] = useState<StaffRow | null>(null);
   const [form, setForm] = useState({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active" });
   const [credNotice, setCredNotice] = useState<{ email: string; name: string } | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [stRes, dpRes] = await Promise.all([
@@ -39,23 +40,55 @@ export default function StaffPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  function openForm(s?: StaffRow) {
+  async function openForm(s?: StaffRow) {
     if (s) {
       setEditing(s);
       setForm({ staff_code: s.staff_code, full_name: s.full_name, email: s.email || "", phone: s.phone || "", job_title: s.job_title || "", staff_type: s.staff_type, department_id: s.department_id || "", date_joined: s.date_joined || "", status: s.status });
     } else {
       setEditing(null);
-      setForm({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active" });
+      // Auto-generate the next staff code (item 3)
+      let nextCode = "";
+      try {
+        if (orgId) {
+          const { data } = await supabase.rpc("next_staff_code", { p_org: orgId });
+          if (typeof data === "string") nextCode = data;
+        }
+      } catch { /* fall back to blank */ }
+      setForm({ staff_code: nextCode, full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active" });
     }
+    setSaveError(null);
     setShowForm(true);
   }
 
   async function saveStaff() {
+    setSaveError(null);
+    // Item 4: email mandatory (staff needs a login).
+    const email = form.email.trim().toLowerCase();
+    const code  = form.staff_code.trim();
+    if (!email) return setSaveError("Email is required — it is the staff member's login.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setSaveError("Enter a valid email address.");
+    if (!code)  return setSaveError("Staff code is required.");
+    if (!form.full_name.trim()) return setSaveError("Full name is required.");
+
+    // Item 6: uniqueness check on staff_code and email within this org.
+    const conflictQ = supabase
+      .from("staff_members")
+      .select("id, staff_code, email")
+      .eq("organization_id", orgId)
+      .or(`staff_code.eq.${code},email.eq.${email}`);
+    const { data: dup } = await conflictQ;
+    const dups = (dup ?? []) as { id: string; staff_code: string; email: string | null }[];
+    const conflict = dups.find(d => d.id !== editing?.id);
+    if (conflict) {
+      if (conflict.staff_code === code) return setSaveError(`Staff code ${code} is already used.`);
+      if ((conflict.email || "").toLowerCase() === email) return setSaveError(`Email ${email} is already used.`);
+    }
+
     setSaving(true);
     const payload = {
-      staff_code: form.staff_code.trim(),
+      staff_code: code,
       full_name: form.full_name.trim(),
-      email: form.email.trim() || null,
+      email,
       phone: form.phone.trim() || null,
       job_title: form.job_title.trim() || null,
       staff_type: form.staff_type,
@@ -66,12 +99,12 @@ export default function StaffPage() {
       updated_at: new Date().toISOString(),
     };
     if (editing) {
-      await supabase.from("staff_members").update(payload).eq("id", editing.id);
+      const { error: upErr } = await supabase.from("staff_members").update(payload).eq("id", editing.id);
+      if (upErr) { setSaveError(upErr.message); setSaving(false); return; }
     } else {
       const { error: insErr } = await supabase.from("staff_members").insert(payload);
-      if (!insErr && payload.email) {
-        setCredNotice({ email: String(payload.email), name: String(payload.full_name) });
-      }
+      if (insErr) { setSaveError(insErr.message); setSaving(false); return; }
+      setCredNotice({ email, name: payload.full_name });
     }
     setSaving(false);
     setShowForm(false);
@@ -182,9 +215,9 @@ export default function StaffPage() {
         <Modal open onClose={() => { setShowForm(false); setEditing(null); }} title={editing ? "Edit Staff" : "Add Staff"} size="lg">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <Input label="Staff Code" value={form.staff_code} onChange={e => setForm(f => ({ ...f, staff_code: e.target.value }))} placeholder="STF001" />
-              <Input label="Full Name" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Adewale Johnson" />
-              <Input label="Email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@school.com" />
+              <Input label="Staff Code *" required value={form.staff_code} onChange={e => setForm(f => ({ ...f, staff_code: e.target.value }))} placeholder="STF001" />
+              <Input label="Full Name *" required value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Adewale Johnson" />
+              <Input label="Email *" required type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@school.com" />
               <Input label="Phone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="0801..." />
               <Input label="Job Title" value={form.job_title} onChange={e => setForm(f => ({ ...f, job_title: e.target.value }))} placeholder="Mathematics Teacher" />
               <div>
@@ -218,9 +251,14 @@ export default function StaffPage() {
                 </select>
               </div>
             </div>
+            {saveError && (
+              <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {saveError}
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => { setShowForm(false); setEditing(null); }}>Cancel</Button>
-              <Button variant="gold" loading={saving} onClick={saveStaff} disabled={!form.full_name.trim() || !form.staff_code.trim()}>
+              <Button variant="gold" loading={saving} onClick={saveStaff} disabled={!form.full_name.trim() || !form.staff_code.trim() || !form.email.trim()}>
                 <Save size={14} /> {editing ? "Update" : "Add Staff"}
               </Button>
             </div>
