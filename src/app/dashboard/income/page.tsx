@@ -13,6 +13,7 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { Modal } from "@/components/ui/Modal";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
+import { useToast } from "@/lib/hooks/useToast";
 import { cn } from "@/lib/utils";
 import { Plus, Search, Download, Receipt, CheckCircle, Circle } from "lucide-react";
 import type { IncomeEntry, Student, FeeSchedule } from "@/lib/types";
@@ -22,6 +23,7 @@ function IncomePageInner() {
   const searchParams = useSearchParams();
   const { canEdit, profile, isDeveloper } = useAuth();
   const supabase = createClient();
+  const { notify, ToastHost } = useToast();
   const [entries, setEntries] = useState<IncomeEntry[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [fees, setFees] = useState<FeeSchedule[]>([]);
@@ -61,22 +63,33 @@ function IncomePageInner() {
   const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(filtered.map(e => e.id));
 
   async function bulkDeleteSelected(ids: string[]) {
-    for (const id of ids) {
-      await supabase.from("income_entries").delete().eq("id", id);
-    }
+    if (ids.length === 0) return;
+    // Single round-trip via .in() so a single RLS/constraint denial surfaces
+    // as one error instead of being swallowed inside a per-id loop.
+    const { error } = await supabase.from("income_entries").delete().in("id", ids);
+    if (error) { notify(`Bulk delete failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete Income", details: `${ids.length} entries deleted` });
+    notify(`Deleted ${ids.length} entries`);
     load();
   }
 
   async function bulkDeleteAll() {
-    await supabase.from("income_entries").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    const { error } = await supabase.from("income_entries").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Purge All Income", details: `All income entries deleted` });
+    notify("All income entries deleted");
     load();
   }
 
   async function toggleReconcile(entry: IncomeEntry) {
-    await supabase.from("income_entries").update({ reconciled: !entry.reconciled, updated_at: new Date().toISOString() }).eq("id", entry.id);
-    setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, reconciled: !e.reconciled } : e));
+    const next = !entry.reconciled;
+    // Optimistic flip so the UI feels instant; roll back on error.
+    setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, reconciled: next } : e));
+    const { error } = await supabase.from("income_entries").update({ reconciled: next, updated_at: new Date().toISOString() }).eq("id", entry.id);
+    if (error) {
+      setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, reconciled: entry.reconciled } : e));
+      notify(`Reconcile failed: ${error.message}`, "error");
+    }
   }
 
   function handleExport() {
@@ -218,6 +231,7 @@ function IncomePageInner() {
           onClose={() => { setShowAdd(false); load(); }}
         />
       )}
+      <ToastHost />
     </div>
   );
 }

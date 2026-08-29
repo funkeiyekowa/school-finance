@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/context/AuthContext";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { useToast } from "@/lib/hooks/useToast";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, Printer, CheckCircle2, Award, GraduationCap, Users } from "lucide-react";
 
@@ -32,6 +33,7 @@ export default function ReportCardDetailPage() {
   const router = useRouter();
   const { isAdmin, profile } = useAuth();
   const supabase = createClient();
+  const { notify, ToastHost } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [rc, setRc] = useState<ReportCardFull | null>(null);
@@ -69,23 +71,27 @@ export default function ReportCardDetailPage() {
 
   async function saveComments() {
     setSaving(true);
-    await supabase.from("report_cards").update({
+    const { error } = await supabase.from("report_cards").update({
       teacher_comment: teacherComment,
       principal_comment: principalComment,
       updated_at: new Date().toISOString(),
     }).eq("id", id);
     setSaving(false);
+    if (error) { notify(`Save failed: ${error.message}`, "error"); return; }
+    notify("Comments saved");
     load();
   }
 
   async function publish() {
     setSaving(true);
-    await supabase.from("report_cards").update({
+    const { error } = await supabase.from("report_cards").update({
       published: true,
       published_at: new Date().toISOString(),
       published_by: profile?.id,
     }).eq("id", id);
     setSaving(false);
+    if (error) { notify(`Publish failed: ${error.message}`, "error"); return; }
+    notify("Report card published");
     load();
   }
 
@@ -237,6 +243,7 @@ export default function ReportCardDetailPage() {
           )}
         </CardContent>
       </Card>
+      <ToastHost />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { Modal } from "@/components/ui/Modal";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
+import { useToast } from "@/lib/hooks/useToast";
 import { Plus, Search, Download, CheckCircle, Circle } from "lucide-react";
 import type { ExpenseEntry, Vendor } from "@/lib/types";
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "@/lib/types";
@@ -19,6 +20,7 @@ import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "@/lib/types";
 export default function ExpensesPage() {
   const { canEdit, profile, isDeveloper } = useAuth();
   const supabase = createClient();
+  const { notify, ToastHost } = useToast();
   const [entries, setEntries] = useState<ExpenseEntry[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,19 +56,29 @@ export default function ExpensesPage() {
   const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(filtered.map(e => e.id));
 
   async function bulkDeleteSelected(ids: string[]) {
-    if (ids.length > 0) await supabase.from("expense_entries").delete().in("id", ids);
+    if (ids.length === 0) return;
+    const { error } = await supabase.from("expense_entries").delete().in("id", ids);
+    if (error) { notify(`Bulk delete failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete Expenses", details: `${ids.length} entries deleted` });
+    notify(`Deleted ${ids.length} entries`);
     load();
   }
   async function bulkDeleteAll() {
-    await supabase.from("expense_entries").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    const { error } = await supabase.from("expense_entries").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Purge All Expenses", details: "All expense entries deleted" });
+    notify("All expense entries deleted");
     load();
   }
 
   async function toggleReconcile(entry: ExpenseEntry) {
-    await supabase.from("expense_entries").update({ reconciled: !entry.reconciled, updated_at: new Date().toISOString() }).eq("id", entry.id);
-    setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, reconciled: !e.reconciled } : e));
+    const next = !entry.reconciled;
+    setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, reconciled: next } : e));
+    const { error } = await supabase.from("expense_entries").update({ reconciled: next, updated_at: new Date().toISOString() }).eq("id", entry.id);
+    if (error) {
+      setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, reconciled: entry.reconciled } : e));
+      notify(`Reconcile failed: ${error.message}`, "error");
+    }
   }
 
   return (
@@ -176,6 +188,7 @@ export default function ExpensesPage() {
       )}
 
       {showAdd && <AddExpenseModal vendors={vendors} onClose={() => { setShowAdd(false); load(); }} />}
+      <ToastHost />
     </div>
   );
 }

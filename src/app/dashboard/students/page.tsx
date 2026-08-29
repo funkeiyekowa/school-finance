@@ -30,6 +30,7 @@ import { Modal } from "@/components/ui/Modal";
 import { ImportStudentsModal } from "@/components/students/ImportStudentsModal";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
+import { useToast } from "@/lib/hooks/useToast";
 import { cn, today } from "@/lib/utils";
 import {
   GraduationCap, Plus, Search, ChevronRight, Upload, Trash2,
@@ -49,6 +50,7 @@ export default function StudentsPage() {
 function StudentsPageInner() {
   const { canEdit, isAdmin, isDeveloper, profile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
+  const { notify, ToastHost } = useToast();
   const searchParams = useSearchParams();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,12 +146,15 @@ function StudentsPageInner() {
     }
 
     const { error } = await supabase.from("students").update(updates).eq("id", id);
-    if (!error) {
+    if (error) {
+      notify(`Save failed: ${error.message}`, "error");
+    } else {
       setStudents(prev => prev.map(s => s.id === id ? { ...s, ...updates } as Student : s));
       await supabase.from("activity_log").insert({
         user_email: profile?.email, user_name: profile?.full_name,
         action: "Edit Student", details: `Updated ${key} for ${id}`,
       });
+      notify("Saved");
     }
     setSavingId(null);
     cancelEdit();
@@ -158,12 +163,18 @@ function StudentsPageInner() {
   async function confirmDelete() {
     if (!deleteTarget) return;
     setSavingId(deleteTarget.id);
-    await supabase.from("students").delete().eq("id", deleteTarget.id);
+    const { error } = await supabase.from("students").delete().eq("id", deleteTarget.id);
+    if (error) {
+      notify(`Delete failed: ${error.message}`, "error");
+      setSavingId(null);
+      return;
+    }
     setStudents(prev => prev.filter(s => s.id !== deleteTarget.id));
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,
       action: "Delete Student", details: `${deleteTarget.student_code} — ${deleteTarget.full_name}`,
     });
+    notify(`Deleted ${deleteTarget.full_name}`);
     setSavingId(null);
     setDeleteTarget(null);
   }
@@ -172,17 +183,21 @@ function StudentsPageInner() {
     // Single round-trip via .in() — the old for-await loop was one HTTP
     // request per selected id, which took multiple seconds on medium sets.
     if (ids.length === 0) return;
-    await supabase.from("students").delete().in("id", ids);
+    const { error } = await supabase.from("students").delete().in("id", ids);
+    if (error) { notify(`Bulk delete failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({
       user_email: profile?.email,
       user_name: profile?.full_name,
       action: "Bulk Delete Students",
       details: `${ids.length} students`,
     });
+    notify(`Deleted ${ids.length} students`);
     load();
   }
   async function bulkDeleteAll() {
-    await supabase.from("students").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    const { error } = await supabase.from("students").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
+    notify("All students deleted");
     load();
   }
 
@@ -401,6 +416,7 @@ function StudentsPageInner() {
           </div>
         </Modal>
       )}
+      <ToastHost />
     </div>
   );
 }

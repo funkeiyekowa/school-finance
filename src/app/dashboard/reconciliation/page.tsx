@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { useToast } from "@/lib/hooks/useToast";
 import { cn } from "@/lib/utils";
 import { Plus, ArrowLeftRight, CheckCircle, Link2, Trash2 } from "lucide-react";
 import type { BankTransaction, IncomeEntry, ExpenseEntry } from "@/lib/types";
@@ -22,6 +23,7 @@ interface SuggestedMatch {
 export default function ReconciliationPage() {
   const { canEdit, profile } = useAuth();
   const supabase = createClient();
+  const { notify, ToastHost } = useToast();
   const [bankTxns, setBankTxns] = useState<BankTransaction[]>([]);
   const [income, setIncome] = useState<IncomeEntry[]>([]);
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
@@ -66,34 +68,40 @@ export default function ReconciliationPage() {
 
   async function confirmMatches() {
     const toConfirm = suggestions.filter(s => s.selectedId);
+    let ok = 0;
+    const errors: string[] = [];
     for (const match of toConfirm) {
       const candidate = match.candidates.find(c => c.id === match.selectedId);
       if (!candidate) continue;
       // Update bank transaction
-      await supabase.from("bank_transactions").update({
+      const { error: btErr } = await supabase.from("bank_transactions").update({
         match_status: "matched",
         matched_income_id: candidate.type === "income" ? candidate.id : null,
         matched_expense_id: candidate.type === "expense" ? candidate.id : null,
         updated_at: new Date().toISOString(),
       }).eq("id", match.bankTxn.id);
+      if (btErr) { errors.push(`Bank ${match.bankTxn.description}: ${btErr.message}`); continue; }
       // Mark ledger entry reconciled
-      if (candidate.type === "income") {
-        await supabase.from("income_entries").update({ reconciled: true, updated_at: new Date().toISOString() }).eq("id", candidate.id);
-      } else {
-        await supabase.from("expense_entries").update({ reconciled: true, updated_at: new Date().toISOString() }).eq("id", candidate.id);
-      }
+      const { error: ledgerErr } = candidate.type === "income"
+        ? await supabase.from("income_entries").update({ reconciled: true, updated_at: new Date().toISOString() }).eq("id", candidate.id)
+        : await supabase.from("expense_entries").update({ reconciled: true, updated_at: new Date().toISOString() }).eq("id", candidate.id);
+      if (ledgerErr) { errors.push(`Ledger ${candidate.ref}: ${ledgerErr.message}`); continue; }
+      ok++;
     }
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,
-      action: "Reconcile", details: `${toConfirm.length} matches confirmed`,
+      action: "Reconcile", details: `${ok} of ${toConfirm.length} matches confirmed`,
     });
     setShowSuggestions(false);
     setSuggestions([]);
+    if (errors.length > 0) notify(`Confirmed ${ok}/${toConfirm.length}. First error: ${errors[0]}`, "error");
+    else if (ok > 0) notify(`Confirmed ${ok} matches`);
     load();
   }
 
   async function deleteBankTxn(id: string) {
-    await supabase.from("bank_transactions").delete().eq("id", id);
+    const { error } = await supabase.from("bank_transactions").delete().eq("id", id);
+    if (error) { notify(`Delete failed: ${error.message}`, "error"); return; }
     setBankTxns(prev => prev.filter(b => b.id !== id));
   }
 
@@ -294,6 +302,7 @@ export default function ReconciliationPage() {
       )}
 
       {showAdd && <AddBankLineModal onClose={() => { setShowAdd(false); load(); }} />}
+      <ToastHost />
     </div>
   );
 }

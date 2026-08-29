@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { StatusBadge } from "@/components/ui/Badge";
+import { useToast } from "@/lib/hooks/useToast";
 import {
   Users, CheckCircle, XCircle, UserPlus, Search, ArrowUpDown,
   Shield, GraduationCap, UserCircle2, Wrench, Sparkles, Download,
@@ -54,6 +55,7 @@ function buildTabs(staffTypes: Record<string, string>): TabDef[] {
 export default function TeamPage() {
   const { isAdmin, profile, orgId } = useAuth();
   const supabase = createClient();
+  const { notify, ToastHost } = useToast();
   const [users, setUsers] = useState<Profile[]>([]);
   const [staffTypes, setStaffTypes] = useState<Record<string, string>>({});
   const tabs = useMemo(() => buildTabs(staffTypes), [staffTypes]);
@@ -114,14 +116,22 @@ export default function TeamPage() {
   useEffect(() => { load(); }, [load]);
 
   async function updateUser(id: string, updates: Partial<Profile>) {
-    await supabase.from("profiles").update({ ...updates, updated_at: new Date().toISOString() }).eq("id", id);
+    const target = users.find((u) => u.id === id);
+    // Optimistic update; roll back on error.
     setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...updates } : u)));
+    const { error } = await supabase.from("profiles").update({ ...updates, updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) {
+      if (target) setUsers((prev) => prev.map((u) => (u.id === id ? target : u)));
+      notify(`Update failed: ${error.message}`, "error");
+      return;
+    }
     await supabase.from("activity_log").insert({
       user_email: profile?.email,
       user_name: profile?.full_name,
       action: "Update User",
-      details: `${users.find((u) => u.id === id)?.email} → ${updates.role || ""}${updates.active !== undefined ? (updates.active ? " (activated)" : " (deactivated)") : ""}`,
+      details: `${target?.email} → ${updates.role || ""}${updates.active !== undefined ? (updates.active ? " (activated)" : " (deactivated)") : ""}`,
     });
+    notify("Saved");
   }
 
   async function approveUser(id: string) {
@@ -376,6 +386,7 @@ export default function TeamPage() {
           onRegenerated={(code) => setJoinCode(code)}
         />
       )}
+      <ToastHost />
     </div>
   );
 }
