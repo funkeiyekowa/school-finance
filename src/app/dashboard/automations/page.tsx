@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, Save, Zap, Play, History, Trash2 } from "lucide-react";
+import { useToast } from "@/lib/hooks/useToast";
+import { Plus, Save, Zap, Play, History, Trash2, AlertTriangle } from "lucide-react";
 
 interface RuleRow { id: string; name: string; description: string | null; trigger_event: string; conditions: unknown[]; actions: unknown[]; enabled: boolean; execution_count: number; last_executed_at: string | null; last_status: string | null; created_at: string; }
 interface LogRow { id: string; rule_name: string | null; trigger_event: string | null; status: string; error_message: string | null; created_at: string; }
@@ -47,6 +48,7 @@ const ACTION_TYPES = [
 export default function AutomationsPage() {
   const { isAdmin, profile, orgId } = useAuth();
   const supabase = createClient();
+  const { notify, ToastHost } = useToast();
   const [loading, setLoading] = useState(true);
   const [rules, setRules] = useState<RuleRow[]>([]);
   const [logs, setLogs] = useState<LogRow[]>([]);
@@ -100,19 +102,26 @@ export default function AutomationsPage() {
       actions: form.actions.filter(a => a.message.trim()),
       organization_id: orgId, updated_at: new Date().toISOString(),
     };
-    if (editing) { await supabase.from("automation_rules").update(payload).eq("id", editing.id); }
-    else { await supabase.from("automation_rules").insert({ ...payload, created_by: profile?.full_name, enabled: true }); }
-    setSaving(false); setShowForm(false); setEditing(null); load();
+    const { error } = editing
+      ? await supabase.from("automation_rules").update(payload).eq("id", editing.id)
+      : await supabase.from("automation_rules").insert({ ...payload, created_by: profile?.full_name, enabled: true });
+    setSaving(false);
+    if (error) { notify(`Save failed: ${error.message}`, "error"); return; }
+    notify(editing ? "Rule updated" : "Rule created");
+    setShowForm(false); setEditing(null); load();
   }
 
   async function toggleRule(id: string, enabled: boolean) {
-    await supabase.from("automation_rules").update({ enabled, updated_at: new Date().toISOString() }).eq("id", id);
+    const { error } = await supabase.from("automation_rules").update({ enabled, updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) { notify(`Toggle failed: ${error.message}`, "error"); return; }
     load();
   }
 
   async function deleteRule(id: string) {
     if (!confirm("Delete this automation rule?")) return;
-    await supabase.from("automation_rules").delete().eq("id", id);
+    const { error } = await supabase.from("automation_rules").delete().eq("id", id);
+    if (error) { notify(`Delete failed: ${error.message}`, "error"); return; }
+    notify("Rule deleted");
     load();
   }
 
@@ -124,6 +133,25 @@ export default function AutomationsPage() {
       <PageHeader title="Automations" subtitle="Configure trigger-based rules that run automatically when events occur">
         <Button variant="gold" onClick={() => openForm()}><Plus size={14} /> New Rule</Button>
       </PageHeader>
+
+      {/*
+        Backend runner status.
+        The automation_rules and automation_logs tables are populated by
+        this UI, but no server-side runner (edge function, database
+        trigger, or scheduled job) is currently wired up to execute the
+        rules. Rules created here are stored but will not fire until
+        the runner is deployed. This banner is here to prevent the
+        misleading appearance of a working system.
+      */}
+      <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
+        <AlertTriangle size={16} className="mt-0.5 text-amber-600 shrink-0" />
+        <div className="text-amber-900">
+          <div className="font-semibold">Preview: rule engine backend not yet deployed</div>
+          <p className="text-xs mt-0.5 text-amber-800">
+            Rules you create here are saved but not fired automatically. Wire up the runner (edge function or database trigger) before relying on any rule for parent notifications or fee reminders. The history tab reflects real execution — it&apos;s currently empty by design.
+          </p>
+        </div>
+      </div>
 
       <div className="flex gap-2">
         <button onClick={() => setTab("rules")} className={cn("flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg", tab === "rules" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}><Zap size={14} /> Rules ({rules.length})</button>
@@ -275,6 +303,7 @@ export default function AutomationsPage() {
           </div>
         </Modal>
       )}
+      <ToastHost />
     </div>
   );
 }

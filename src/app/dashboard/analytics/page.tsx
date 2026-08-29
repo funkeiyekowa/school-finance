@@ -15,7 +15,9 @@ interface Student { id: string; full_name: string; grade: string | null; status:
 interface Income { id: string; date: string; amount: number; category: string; student_name: string | null; }
 interface Expense { id: string; date: string; amount: number; category: string; description: string | null; }
 interface Attendance { id: string; student_id: string; date: string; status_code: string; }
-interface AssessmentScore { id: string; student_id: string; subject_name: string; ca1_score: number | null; ca2_score: number | null; exam_score: number | null; }
+interface StudentScoreRow { id: string; student_id: string; subject_id: string; score: number | null; assessment_type_id: string; }
+interface SubjectLookup { id: string; name: string; }
+interface AssessmentTypeLookup { id: string; max_score: number; }
 
 const COLORS = ["#C9A227", "#0F2A47", "#22c55e", "#3b82f6", "#f59e0b", "#a855f7", "#ec4899", "#14b8a6"];
 
@@ -27,7 +29,9 @@ export default function AnalyticsPage() {
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
-  const [scores, setScores] = useState<AssessmentScore[]>([]);
+  const [scores, setScores] = useState<StudentScoreRow[]>([]);
+  const [subjectsLookup, setSubjectsLookup] = useState<SubjectLookup[]>([]);
+  const [typesLookup, setTypesLookup] = useState<AssessmentTypeLookup[]>([]);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [drillDown, setDrillDown] = useState<{ type: string; value: string } | null>(null);
 
@@ -36,18 +40,26 @@ export default function AnalyticsPage() {
     const yearAgo = new Date();
     yearAgo.setFullYear(yearAgo.getFullYear() - 1);
     const dateStr = yearAgo.toISOString().split("T")[0];
-    const [st, inc, exp, at, sc] = await Promise.all([
+    // Scores previously read from a non-existent `assessment_scores`
+    // table, so the Subject Performance chart was permanently empty.
+    // Read from the real store (student_scores) and lookup subject
+    // names + assessment_type max scores to compute a normalised avg %.
+    const [st, inc, exp, at, sc, subs, types] = await Promise.all([
       supabase.from("students").select("id, full_name, grade, status, gender"),
       supabase.from("income_entries").select("id, date, amount, category, student_name").gte("date", dateStr),
       supabase.from("expense_entries").select("id, date, amount, category, description").gte("date", dateStr),
       supabase.from("attendance_records").select("id, student_id, date, status_code").gte("date", dateStr),
-      supabase.from("assessment_scores").select("id, student_id, subject_name, ca1_score, ca2_score, exam_score"),
+      supabase.from("student_scores").select("id, student_id, subject_id, score, assessment_type_id"),
+      supabase.from("subjects").select("id, name"),
+      supabase.from("assessment_types").select("id, max_score"),
     ]);
     setStudents((st.data ?? []) as Student[]);
     setIncomes((inc.data ?? []) as Income[]);
     setExpenses((exp.data ?? []) as Expense[]);
     setAttendance((at.data ?? []) as Attendance[]);
-    setScores((sc.data ?? []) as AssessmentScore[]);
+    setScores((sc.data ?? []) as StudentScoreRow[]);
+    setSubjectsLookup((subs.data ?? []) as SubjectLookup[]);
+    setTypesLookup((types.data ?? []) as AssessmentTypeLookup[]);
     setLoading(false);
   }, [supabase]);
 
@@ -128,16 +140,28 @@ export default function AnalyticsPage() {
   }, [attendance]);
 
   const subjectPerformance = useMemo(() => {
-    const map = new Map<string, { subject: string; total: number; count: number }>();
-    scores.forEach(s => {
-      const total = (s.ca1_score || 0) + (s.ca2_score || 0) + (s.exam_score || 0);
-      const cur = map.get(s.subject_name) || { subject: s.subject_name, total: 0, count: 0 };
-      cur.total += total;
+    // Aggregate every recorded score per subject and normalise against
+    // its assessment_type max_score so the average is a percentage
+    // rather than a raw sum. Any score whose type is missing is
+    // skipped so a mis-configured type doesn't skew the chart.
+    const subjectNameById = new Map(subjectsLookup.map((s) => [s.id, s.name]));
+    const typeMaxById = new Map(typesLookup.map((t) => [t.id, t.max_score]));
+    const map = new Map<string, { subject: string; sumPct: number; count: number }>();
+    for (const s of scores) {
+      if (s.score == null) continue;
+      const max = typeMaxById.get(s.assessment_type_id) ?? 0;
+      if (max <= 0) continue;
+      const pct = (Number(s.score) / max) * 100;
+      const subjectName = subjectNameById.get(s.subject_id) || "Unknown";
+      const cur = map.get(subjectName) || { subject: subjectName, sumPct: 0, count: 0 };
+      cur.sumPct += pct;
       cur.count += 1;
-      map.set(s.subject_name, cur);
-    });
-    return Array.from(map.values()).map(x => ({ subject: x.subject, avg: x.count > 0 ? Math.round(x.total / x.count) : 0 })).sort((a, b) => b.avg - a.avg);
-  }, [scores]);
+      map.set(subjectName, cur);
+    }
+    return Array.from(map.values())
+      .map((x) => ({ subject: x.subject, avg: x.count > 0 ? Math.round(x.sumPct / x.count) : 0 }))
+      .sort((a, b) => b.avg - a.avg);
+  }, [scores, subjectsLookup, typesLookup]);
 
   if (loading) return <LoadingSpinner />;
 
