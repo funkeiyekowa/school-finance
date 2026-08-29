@@ -27,17 +27,25 @@ interface TabDef {
 
 /* Role tab definitions — grouping profiles by their effective role. */
 function buildTabs(staffTypes: Record<string, string>): TabDef[] {
+  // Prefer staff_type when the user is in staff_members; fall back to profile role.
+  const stype = (p: Profile) => (staffTypes[p.id] || "").toLowerCase();
+  const isAdmin = (p: Profile) => stype(p) === "admin" || (!stype(p) && ["admin","owner","super_admin"].includes(p.role));
+  const isTeaching = (p: Profile) => stype(p) === "teaching" || (!stype(p) && p.role === "teacher");
+  const isNonTeaching = (p: Profile) =>
+    ["non_teaching","nonteaching","non teaching","support"].includes(stype(p)) ||
+    (!stype(p) && ["staff","editor"].includes(p.role));
+  const isParent = (p: Profile) => p.role === "parent";
+  const isStudent = (p: Profile) => p.role === "student";
+  const isPending = (p: Profile) => !p.active || p.role === "pending";
+
   return [
-    { key: "all",     label: "All",         icon: <Users size={14} />,        matches: () => true },
-    { key: "admin",   label: "Admins",      icon: <Shield size={14} />,       matches: (p) => ["admin", "owner", "super_admin"].includes(p.role) },
-    { key: "admin-admin", label: "Admins — Admin", icon: <Shield size={14} />, matches: (p) => ["admin","owner"].includes(p.role) && (staffTypes[p.id] || "") === "admin" },
-    { key: "admin-teaching", label: "Admins — Teaching", icon: <GraduationCap size={14} />, matches: (p) => ["admin","owner"].includes(p.role) && (staffTypes[p.id] || "") === "teaching" },
-    { key: "admin-nonteaching", label: "Admins — Non-teaching", icon: <Wrench size={14} />, matches: (p) => ["admin","owner"].includes(p.role) && ["non_teaching","nonteaching","non teaching","support"].includes(staffTypes[p.id] || "") },
-    { key: "teacher", label: "Teachers",    icon: <GraduationCap size={14} />, matches: (p) => p.role === "teacher" },
-    { key: "parent",  label: "Parents",     icon: <UserCircle2 size={14} />,   matches: (p) => p.role === "parent" },
-    { key: "student", label: "Students",    icon: <Sparkles size={14} />,      matches: (p) => p.role === "student" },
-    { key: "staff",   label: "Non-teaching", icon: <Wrench size={14} />,       matches: (p) => ["staff", "editor"].includes(p.role) },
-    { key: "pending", label: "Pending",     icon: <XCircle size={14} />,       matches: (p) => !p.active || p.role === "pending" },
+    { key: "all",          label: "All",          icon: <Users size={14} />,        matches: () => true },
+    { key: "admin",        label: "Admins",       icon: <Shield size={14} />,       matches: isAdmin },
+    { key: "teaching",     label: "Teaching",     icon: <GraduationCap size={14} />, matches: isTeaching },
+    { key: "non_teaching", label: "Non-teaching", icon: <Wrench size={14} />,       matches: isNonTeaching },
+    { key: "parent",       label: "Parents",      icon: <UserCircle2 size={14} />,   matches: isParent },
+    { key: "student",      label: "Students",     icon: <Sparkles size={14} />,      matches: isStudent },
+    { key: "pending",      label: "Pending",      icon: <XCircle size={14} />,       matches: isPending },
   ];
 }
 
@@ -281,10 +289,25 @@ export default function TeamPage() {
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-600">
                         {(() => {
-                          const st = staffTypes[u.id];
-                          if (!st) return <span className="text-gray-300">—</span>;
-                          const label = st === "admin" ? "Admin" : st === "teaching" ? "Teaching" : "Non-teaching";
-                          return <span className="inline-flex px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-medium">{label}</span>;
+                          const st = (staffTypes[u.id] || "").toLowerCase();
+                          // If the user isn't in staff_members at all, derive a label
+                          // from their profile role so the column is never empty for
+                          // teachers / admins that were provisioned before staff sync.
+                          let label = "";
+                          let color = "bg-gray-100 text-gray-700";
+                          if (st === "admin" || (!st && ["admin","owner","super_admin"].includes(u.role))) {
+                            label = "Admin";
+                            color = "bg-purple-100 text-purple-700";
+                          } else if (st === "teaching" || (!st && u.role === "teacher")) {
+                            label = "Teaching";
+                            color = "bg-emerald-100 text-emerald-700";
+                          } else if (["non_teaching","nonteaching","non teaching","support"].includes(st) || (!st && ["staff","editor"].includes(u.role))) {
+                            label = "Non-teaching";
+                            color = "bg-sky-100 text-sky-700";
+                          } else {
+                            return <span className="text-gray-300">—</span>;
+                          }
+                          return <span className={`inline-flex px-2 py-0.5 rounded-full font-medium ${color}`}>{label}</span>;
                         })()}
                       </td>
                       <td className="px-4 py-3">
