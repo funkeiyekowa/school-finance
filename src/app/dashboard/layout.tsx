@@ -11,7 +11,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   // Fetch profile using maybeSingle to avoid errors when RLS blocks or no row exists
   const { data: profile } = await supabase
-    .from("profiles").select("*").eq("id", user.id).maybeSingle();
+    .from("profiles")
+    .select("id, email, full_name, role, active, organization_id, must_change_password")
+    .eq("id", user.id).maybeSingle();
 
   // If no profile found — could be RLS issue or trigger didn't fire
   // Try to insert one (will succeed if RLS allows, fail silently if not)
@@ -32,9 +34,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
       active: isFirst,
     });
 
-    // Re-fetch
+    // Re-fetch just the fields the shell needs.
     const { data: newProfile } = await supabase
-      .from("profiles").select("*").eq("id", user.id).maybeSingle();
+      .from("profiles")
+      .select("id, email, full_name, role, active, organization_id, must_change_password")
+      .eq("id", user.id).maybeSingle();
 
     if (!newProfile) {
       // RLS is blocking everything — redirect to pending with explanation
