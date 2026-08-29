@@ -82,8 +82,9 @@ export default function StaffLoginForm({ slug, schoolName, logoUrl, found }: Pro
       // 2. Refuse super-admin sign-in here — show generic error to avoid leaking console path.
       //    Each subquery times out after 4 s and soft-fails; the authoritative
       //    gate is still resolve_login_context below.
-      const _to = <T>(pr: Promise<T>, ms: number): Promise<T | null> =>
-        Promise.race<Promise<T | null>>([pr.then(v => v), new Promise<null>(r => setTimeout(() => r(null), ms))]);
+      function _to<T>(pr: Promise<T>, ms: number): Promise<T | null> {
+        return Promise.race<T | null>([pr, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+      }
       const [profRes, superRes] = await Promise.all([
         _to(supabase.from("profiles").select("role").eq("id", authData.user.id).maybeSingle(), 4000),
         _to(supabase.from("org_memberships").select("role").eq("user_id", authData.user.id).eq("role", "super_admin").limit(1), 4000),

@@ -118,8 +118,9 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
       //     tell whether the user is staff, we prefer to let them through
       //     to resolve_login_context, which is the authoritative gate.
       if (signData.user) {
-        const timeoutPromise = <T>(pr: Promise<T>, ms: number): Promise<T | null> =>
-          Promise.race<Promise<T | null>>([pr.then(v => v), new Promise<null>(r => setTimeout(() => r(null), ms))]);
+        function timeoutPromise<T>(pr: Promise<T>, ms: number): Promise<T | null> {
+          return Promise.race<T | null>([pr, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+        }
 
         const [profRes, memRes, staffRes] = await Promise.all([
           timeoutPromise(supabase.from("profiles").select("role").eq("id", signData.user.id).maybeSingle(), 4000),
@@ -155,11 +156,12 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
 
       // 3. Resolve role for THIS school. 8-second timeout so a slow
       //    Postgres reply doesn't leave the button spinning forever.
-      const rpcRace = <T>(pr: Promise<T>, ms: number): Promise<T | { data: null; error: { message: string } }> =>
-        Promise.race<Promise<T | { data: null; error: { message: string } }>>([
-          pr.then(v => v as T),
-          new Promise(resolve => setTimeout(() => resolve({ data: null, error: { message: "timeout" } }), ms)),
+      function rpcRace<T>(pr: Promise<T>, ms: number): Promise<T | { data: null; error: { message: string } }> {
+        return Promise.race<T | { data: null; error: { message: string } }>([
+          pr,
+          new Promise((resolve) => setTimeout(() => resolve({ data: null, error: { message: "timeout" } }), ms)),
         ]);
+      }
       const rpcResult = await rpcRace(
         supabase.rpc("resolve_login_context", { p_slug: slug }),
         8000
