@@ -8,7 +8,7 @@ import { fmtMoney } from "@/lib/utils";
 import { PageHeader, KpiCard, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { TrendingUp, TrendingDown, Receipt, ArrowLeftRight, Wallet, ArrowRight, MessageSquare } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, Legend } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, Legend } from "@/components/charts/LazyRecharts";
 
 interface Income { id: string; date: string; amount: number; category: string; }
 interface Expense { id: string; date: string; amount: number; category: string; }

@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/context/AuthContext";
 import { PageHeader, KpiCard, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { GraduationCap, Users, Clock, BookOpen, FileBarChart, TrendingUp, ArrowRight, UserCheck, AlertCircle, Award } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from "@/components/charts/LazyRecharts";
 
 interface Student { id: string; full_name: string; grade: string | null; status: string; gender: string | null; }
 interface Attendance { student_id: string; date: string; status_code: string; }

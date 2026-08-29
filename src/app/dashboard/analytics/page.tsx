@@ -9,7 +9,7 @@ import { PageHeader, KpiCard, LoadingSpinner, EmptyState } from "@/components/ui
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { TrendingUp, TrendingDown, Users, GraduationCap, Award, DollarSign, ChevronDown, ChevronRight, BarChart3, PieChart as PieIcon, Activity, Clock, BookOpen, FileBarChart } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, PieChart, Pie, Cell, Legend, AreaChart, Area } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, PieChart, Pie, Cell, Legend, AreaChart, Area } from "@/components/charts/LazyRecharts";
 
 interface Student { id: string; full_name: string; grade: string | null; status: string; gender: string | null; }
 interface Income { id: string; date: string; amount: number; category: string; student_name: string | null; }

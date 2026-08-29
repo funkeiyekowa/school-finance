@@ -27,25 +27,27 @@ interface TabDef {
 
 /* Role tab definitions — grouping profiles by their effective role. */
 function buildTabs(staffTypes: Record<string, string>): TabDef[] {
-  // Prefer staff_type when the user is in staff_members; fall back to profile role.
+  // staff_type=admin -> admin role; any other staff_type -> teacher role.
   const stype = (p: Profile) => (staffTypes[p.id] || "").toLowerCase();
-  const isAdmin = (p: Profile) => stype(p) === "admin" || (!stype(p) && ["admin","owner","super_admin"].includes(p.role));
-  const isTeaching = (p: Profile) => stype(p) === "teaching" || (!stype(p) && p.role === "teacher");
-  const isNonTeaching = (p: Profile) =>
-    ["non_teaching","nonteaching","non teaching","support"].includes(stype(p)) ||
-    (!stype(p) && ["staff","editor"].includes(p.role));
+  const isAdmin = (p: Profile) =>
+    stype(p) === "admin" || stype(p) === "administrator" ||
+    (!stype(p) && ["admin","owner","super_admin"].includes(p.role));
+  const isTeacher = (p: Profile) => {
+    const st = stype(p);
+    if (st) return st !== "admin" && st !== "administrator";
+    return ["teacher","staff","editor","bursar","accountant"].includes(p.role);
+  };
   const isParent = (p: Profile) => p.role === "parent";
   const isStudent = (p: Profile) => p.role === "student";
   const isPending = (p: Profile) => !p.active || p.role === "pending";
 
   return [
-    { key: "all",          label: "All",          icon: <Users size={14} />,        matches: () => true },
-    { key: "admin",        label: "Admins",       icon: <Shield size={14} />,       matches: isAdmin },
-    { key: "teaching",     label: "Teaching",     icon: <GraduationCap size={14} />, matches: isTeaching },
-    { key: "non_teaching", label: "Non-teaching", icon: <Wrench size={14} />,       matches: isNonTeaching },
-    { key: "parent",       label: "Parents",      icon: <UserCircle2 size={14} />,   matches: isParent },
-    { key: "student",      label: "Students",     icon: <Sparkles size={14} />,      matches: isStudent },
-    { key: "pending",      label: "Pending",      icon: <XCircle size={14} />,       matches: isPending },
+    { key: "all",     label: "All",      icon: <Users size={14} />,        matches: () => true },
+    { key: "admin",   label: "Admins",   icon: <Shield size={14} />,       matches: isAdmin },
+    { key: "teacher", label: "Teachers", icon: <GraduationCap size={14} />, matches: isTeacher },
+    { key: "parent",  label: "Parents",  icon: <UserCircle2 size={14} />,   matches: isParent },
+    { key: "student", label: "Students", icon: <Sparkles size={14} />,      matches: isStudent },
+    { key: "pending", label: "Pending",  icon: <XCircle size={14} />,       matches: isPending },
   ];
 }
 
@@ -135,6 +137,30 @@ export default function TeamPage() {
     const c: Record<string, number> = {};
     tabs.forEach((t) => { c[t.key] = users.filter(t.matches).length; });
     return c;
+  }, [users, tabs]);
+
+  /* Duplicate detection: users sharing the same email (case-insensitive)
+     or the same full_name. Emails are more reliable than names. */
+  const duplicates = useMemo(() => {
+    const byEmail: Record<string, Profile[]> = {};
+    const byName: Record<string, Profile[]> = {};
+    for (const u of users) {
+      const e = (u.email || "").toLowerCase().trim();
+      if (e) (byEmail[e] ||= []).push(u);
+      const n = (u.full_name || "").toLowerCase().trim();
+      if (n) (byName[n] ||= []).push(u);
+    }
+    const groups: { key: string; kind: "email" | "name"; label: string; profiles: Profile[] }[] = [];
+    for (const [k, list] of Object.entries(byEmail)) {
+      if (list.length > 1) groups.push({ key: "e:" + k, kind: "email", label: k, profiles: list });
+    }
+    const emailIds = new Set(groups.flatMap((g) => g.profiles.map((p) => p.id)));
+    for (const [k, list] of Object.entries(byName)) {
+      if (list.length > 1 && list.some((u) => !emailIds.has(u.id))) {
+        groups.push({ key: "n:" + k, kind: "name", label: k, profiles: list });
+      }
+    }
+    return groups;
   }, [users]);
 
   const filtered = useMemo(() => {
@@ -197,6 +223,9 @@ export default function TeamPage() {
         <Button variant="ghost" onClick={exportCsv}><Download size={14} /> Export CSV</Button>
         <Button onClick={() => setShowInvite(true)}><UserPlus size={14} /> Invite User</Button>
       </PageHeader>
+
+      {/* Duplicates panel (find-duplicates on Team page) */}
+      {duplicates.length > 0 && <DuplicatesPanel groups={duplicates} />}
 
       {/* Role Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-3">
@@ -450,3 +479,65 @@ function InviteModal({ roles, joinCode, orgId, supabase, onClose, onRegenerated 
     </Modal>
   );
 }
+
+/* -------- duplicates helper panel -------- */
+function DuplicatesPanel({
+  groups,
+}: {
+  groups: { key: string; kind: "email" | "name"; label: string; profiles: Profile[] }[];
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-amber-100/60"
+      >
+        <div className="flex items-center gap-2">
+          <span className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xs">
+            {groups.length}
+          </span>
+          <div>
+            <div className="text-sm font-semibold text-amber-900">
+              {groups.length} likely duplicate {groups.length === 1 ? "record" : "records"}
+            </div>
+            <div className="text-xs text-amber-700">
+              Users share the same email or full name. Delete extras from the People &rarr; Staff or People &rarr; Parents pages.
+            </div>
+          </div>
+        </div>
+        <span className="text-xs font-semibold text-amber-800">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-amber-200 divide-y divide-amber-200 bg-white max-h-96 overflow-y-auto">
+          {groups.map((g) => (
+            <div key={g.key} className="p-3 space-y-2">
+              <div className="text-[11px] uppercase tracking-wider text-amber-700 font-semibold">
+                {g.kind === "email" ? "Shared email" : "Same name"}: <span className="font-mono normal-case">{g.label}</span>
+              </div>
+              <div className="grid gap-2">
+                {g.profiles.map((u) => (
+                  <div key={u.id} className="flex items-center gap-2 text-xs bg-amber-50/40 border border-amber-100 rounded p-2">
+                    <span className="w-6 h-6 rounded-full bg-[#0F2A47] text-[#C9A227] font-bold flex items-center justify-center">
+                      {(u.full_name || u.email || "?")[0].toUpperCase()}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium">{u.full_name || u.email.split("@")[0]}</div>
+                      <div className="text-[10px] text-gray-500">{u.email} · {u.role}{u.active ? "" : " · inactive"}</div>
+                    </div>
+                    <span className="text-[10px] text-gray-400 font-mono">{u.id.slice(0, 8)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="text-[11px] text-amber-700">
+                Keep the row whose role and joined date match your records. Delete the others.
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+

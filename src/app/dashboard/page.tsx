@@ -11,7 +11,7 @@ import Link from "next/link";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-} from "recharts";
+} from "@/components/charts/LazyRecharts";
 import { TrendingUp, TrendingDown, Scale, AlertTriangle, RefreshCw } from "lucide-react";
 import type { IncomeEntry, ExpenseEntry, StudentWithBalance } from "@/lib/types";
 

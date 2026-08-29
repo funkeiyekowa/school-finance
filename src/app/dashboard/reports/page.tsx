@@ -11,7 +11,7 @@ import { Download, Printer } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
-} from "recharts";
+} from "@/components/charts/LazyRecharts";
 import type { IncomeEntry, ExpenseEntry, Student, FeeSchedule, Vendor } from "@/lib/types";
 
 const REPORTS = [
