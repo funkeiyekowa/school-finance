@@ -33,6 +33,26 @@ interface LoginContext {
 
 const STUDENT_CODE_RE = /^[A-Za-z]\d+$/;
 
+/* Module-scope helpers so they aren't nested function declarations inside
+   the component (which trips TS strict-mode inside blocks). */
+async function raceWithTimeout<T>(pr: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race<T | null>([
+    pr,
+    new Promise<null>((r) => setTimeout(() => r(null), ms)),
+  ]);
+}
+async function raceWithTimeoutRpc<T>(
+  pr: Promise<T>,
+  ms: number,
+): Promise<T | { data: null; error: { message: string } }> {
+  return Promise.race<T | { data: null; error: { message: string } }>([
+    pr,
+    new Promise((resolve) =>
+      setTimeout(() => resolve({ data: null, error: { message: "timeout" } }), ms),
+    ),
+  ]);
+}
+
 export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Props) {
   const supabase = createClient();
   const router = useRouter();
@@ -118,14 +138,10 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
       //     tell whether the user is staff, we prefer to let them through
       //     to resolve_login_context, which is the authoritative gate.
       if (signData.user) {
-        function timeoutPromise<T>(pr: Promise<T>, ms: number): Promise<T | null> {
-          return Promise.race<T | null>([pr, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
-        }
-
         const [profRes, memRes, staffRes] = await Promise.all([
-          timeoutPromise(supabase.from("profiles").select("role").eq("id", signData.user.id).maybeSingle(), 4000),
-          timeoutPromise(supabase.from("org_memberships").select("role").eq("user_id", signData.user.id).limit(20), 4000),
-          timeoutPromise(supabase.from("staff_members").select("id").eq("user_id", signData.user.id).limit(1), 4000),
+          raceWithTimeout(supabase.from("profiles").select("role").eq("id", signData.user.id).maybeSingle(), 4000),
+          raceWithTimeout(supabase.from("org_memberships").select("role").eq("user_id", signData.user.id).limit(20), 4000),
+          raceWithTimeout(supabase.from("staff_members").select("id").eq("user_id", signData.user.id).limit(1), 4000),
         ]);
 
         const pr = (profRes?.data ?? null) as { role?: string } | null;
@@ -156,13 +172,7 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
 
       // 3. Resolve role for THIS school. 8-second timeout so a slow
       //    Postgres reply doesn't leave the button spinning forever.
-      function rpcRace<T>(pr: Promise<T>, ms: number): Promise<T | { data: null; error: { message: string } }> {
-        return Promise.race<T | { data: null; error: { message: string } }>([
-          pr,
-          new Promise((resolve) => setTimeout(() => resolve({ data: null, error: { message: "timeout" } }), ms)),
-        ]);
-      }
-      const rpcResult = await rpcRace(
+      const rpcResult = await raceWithTimeoutRpc(
         supabase.rpc("resolve_login_context", { p_slug: slug }),
         8000
       );
