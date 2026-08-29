@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * Same visual language as the legacy /staff-portal (deep navy + gold),
  * but the sign-in is bound to a specific school's slug. resolve_login_context
  * is the source of truth for role — students / parents are rejected, and
- * super-admins are told to use /admin-console.
+ * super-admins receive a generic invalid-credentials error.
  */
 export default async function SchoolStaffPortalPage({ params }: Props) {
   const brand = await fetchSchoolBrand(params.slug);

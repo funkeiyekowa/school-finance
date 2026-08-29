@@ -17,7 +17,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { GraduationCap, ChevronRight } from "lucide-react";
-import { readLastSchoolSlug } from "@/lib/auth/signOutToSchoolLogin";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -28,13 +27,10 @@ export default function LegacyLoginPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    const known = readLastSchoolSlug();
-    if (known) {
-      router.replace(`/s/${known}/login`);
-      return;
-    }
+    // Do NOT auto-redirect based on cookie. This is a school chooser only.
+    // Users must explicitly enter their school slug or arrive at /s/<slug>/login directly.
     setChecking(false);
-  }, [router]);
+  }, []);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

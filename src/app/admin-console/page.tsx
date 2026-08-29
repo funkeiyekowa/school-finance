@@ -78,7 +78,7 @@ export default function AdminConsolePage() {
             <Terminal size={20} className="text-emerald-400" />
           </div>
           <div className="text-white">
-            <div className="font-mono font-bold text-sm tracking-wider">GRANT_SCHOOLS</div>
+            <div className="font-mono font-bold text-sm tracking-wider">SMART_AND_THRIVE_OS</div>
             <div className="text-[10px] text-white/40 uppercase tracking-[0.2em]">Admin Console</div>
           </div>
         </Link>

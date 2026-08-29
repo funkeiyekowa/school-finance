@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import LandingSignInChip from "./_landing/SignInChip";
+import { createClient as createServerClient } from "@/lib/supabase/server";
 import type { LucideIcon } from "lucide-react";
 import {
   Users, DollarSign, ClipboardCheck, MonitorPlay,
@@ -51,31 +51,40 @@ const STEPS = [
 const TIERS = [
   {
     name: "Starter",
-    price: "$149",
-    unit: "/month",
     tagline: "For small schools finding their footing.",
     features: ["Up to 150 students", "All core modules", "Standard email support", "Community help centre"],
     highlight: false,
   },
   {
     name: "Growth",
-    price: "$349",
-    unit: "/month",
     tagline: "For established schools scaling up.",
     features: ["Up to 500 students", "All core modules + CBT", "Priority support", "Onboarding session"],
     highlight: true,
   },
   {
     name: "Enterprise",
-    price: "Custom",
-    unit: "",
     tagline: "Groups, chains and international schools.",
     features: ["Unlimited students", "Multi-campus consolidation", "Dedicated success manager", "Custom SLAs & SSO"],
     highlight: false,
   },
 ];
 
-export default function LandingPage() {
+/* Load contact email from platform_settings (Super Admin editable).
+   Fallback to env var, then a compile-time default. */
+async function loadContactEmail(): Promise<string> {
+  const fallback = process.env.NEXT_PUBLIC_LANDING_EMAIL || "hello@smartandthrive.com";
+  try {
+    const supabase = await createServerClient();
+    const { data, error } = await supabase.rpc("get_landing_contact_email");
+    if (error || !data) return fallback;
+    return String(data);
+  } catch {
+    return fallback;
+  }
+}
+
+export default async function LandingPage() {
+  const CONTACT_EMAIL = await loadContactEmail();
   return (
     <div style={{ backgroundColor: CREAM, fontFamily: BODY_FONT, color: "#1a1a1a" }}>
       {/* Google Fonts — loaded via <link> in <head> for the two fonts we use */}
@@ -112,9 +121,8 @@ export default function LandingPage() {
             <a href="/s/grant-schools" className="hover:text-black transition-colors">See it live</a>
           </nav>
           <div className="flex items-center gap-2">
-            <LandingSignInChip />
             <a
-              href="mailto:hello@smartandthrive.example?subject=Book%20a%20demo%20-%20Smart%20%26%20Thrive%20O%2FS"
+              href={`mailto:${CONTACT_EMAIL}?subject=Book%20a%20demo%20-%20Smart%20%26%20Thrive%20O%2FS`}
               className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white transition-transform hover:-translate-y-px"
               style={{ backgroundColor: NAVY }}
             >
@@ -147,7 +155,7 @@ export default function LandingPage() {
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <a
-                href="mailto:hello@smartandthrive.example?subject=Book%20a%20demo%20-%20Smart%20%26%20Thrive%20O%2FS"
+                href={`mailto:${CONTACT_EMAIL}?subject=Book%20a%20demo%20-%20Smart%20%26%20Thrive%20O%2FS`}
                 className="inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-white transition-transform hover:-translate-y-px"
                 style={{ backgroundColor: NAVY, boxShadow: "0 12px 28px -14px rgba(15,42,71,0.5)" }}
               >
@@ -331,9 +339,10 @@ export default function LandingPage() {
                 )}
                 <h3 className="text-lg" style={{ fontFamily: HEADING_FONT, fontWeight: 600 }}>{t.name}</h3>
                 <p className={`text-sm mt-1 ${t.highlight ? "text-white/70" : "text-black/60"}`}>{t.tagline}</p>
-                <div className="mt-5 flex items-baseline gap-1">
-                  <span className="text-4xl" style={{ fontFamily: HEADING_FONT, fontWeight: 700 }}>{t.price}</span>
-                  <span className={t.highlight ? "text-white/70" : "text-black/50"}>{t.unit}</span>
+                <div className="mt-5">
+                  <span className={`text-sm font-medium ${t.highlight ? "text-white/80" : "text-black/55"}`}>
+                    Get a quote tailored to your school
+                  </span>
                 </div>
                 <ul className="mt-5 space-y-2.5 text-sm">
                   {t.features.map((f) => (
@@ -344,7 +353,7 @@ export default function LandingPage() {
                   ))}
                 </ul>
                 <a
-                  href="mailto:hello@smartandthrive.example?subject=Pricing%20enquiry%20-%20Smart%20%26%20Thrive%20O%2FS"
+                  href={`mailto:${CONTACT_EMAIL}?subject=Pricing%20enquiry%20-%20Smart%20%26%20Thrive%20O%2FS`}
                   className="mt-7 inline-flex items-center justify-center w-full gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold transition-transform hover:-translate-y-px"
                   style={{
                     backgroundColor: t.highlight ? GOLD : NAVY,
@@ -357,7 +366,7 @@ export default function LandingPage() {
             ))}
           </div>
           <p className="mt-8 text-center text-xs text-black/40">
-            *Custom quotes for schools &gt; 500 students. Prices in USD; billed monthly, cancel anytime.
+            *Every plan is quoted to your student cap. Ask us for a price sheet — no surprises.
           </p>
         </div>
       </section>
@@ -368,9 +377,6 @@ export default function LandingPage() {
           className="rounded-3xl p-8 md:p-10 border border-black/[0.06] bg-white relative"
           style={{ boxShadow: "0 24px 48px -24px rgba(15,42,71,0.18)" }}
         >
-          <span className="absolute top-4 right-5 text-[10px] uppercase tracking-widest text-black/30">
-            Illustrative — pilot testimonial
-          </span>
           <blockquote className="text-xl md:text-2xl leading-relaxed" style={{ fontFamily: HEADING_FONT, color: NAVY, fontWeight: 500 }}>
             &ldquo;Every term used to end in a wall of spreadsheets. Now report cards
             publish the same night results are entered, and parents can actually
@@ -382,11 +388,11 @@ export default function LandingPage() {
               style={{ background: `linear-gradient(135deg, ${GOLD} 0%, #8a6d1a 100%)` }}
               aria-hidden
             >
-              PA
+              MI
             </div>
             <div>
-              <div className="font-semibold text-sm" style={{ color: NAVY }}>Principal Adeyemi</div>
-              <div className="text-xs text-black/50">Head of School (pilot participant)</div>
+              <div className="font-semibold text-sm" style={{ color: NAVY }}>Mrs. Iyekowa</div>
+              <div className="text-xs text-black/50">Head of School</div>
             </div>
           </figcaption>
         </figure>
@@ -415,13 +421,12 @@ export default function LandingPage() {
               </p>
               <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
                 <a
-                  href="mailto:hello@smartandthrive.example?subject=Book%20a%20demo%20-%20Smart%20%26%20Thrive%20O%2FS"
+                  href={`mailto:${CONTACT_EMAIL}?subject=Book%20a%20demo%20-%20Smart%20%26%20Thrive%20O%2FS`}
                   className="inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold transition-transform hover:-translate-y-px"
                   style={{ backgroundColor: GOLD, color: NAVY }}
                 >
                   Book a demo <ArrowRight size={15} />
                 </a>
-                <LandingSignInChip variant="dark" />
               </div>
             </div>
           </div>
@@ -433,7 +438,7 @@ export default function LandingPage() {
               &copy; {new Date().getFullYear()} Smart &amp; Thrive O/S. All rights reserved.
             </div>
             <div className="flex items-center gap-5">
-              <a href="mailto:hello@smartandthrive.example" className="hover:text-black/80">hello@smartandthrive.example</a>
+              <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-black/80">{CONTACT_EMAIL}</a>
               <a href="/s/grant-schools" className="hover:text-black/80">See it live</a>
             </div>
           </div>

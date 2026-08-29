@@ -201,6 +201,7 @@ const NAV_GROUPS: NavGroup[] = [
     icon: <Shield size={16} />,
     items: [
       { href: "/dashboard/platform", label: "Platform Admin", icon: <Shield size={17} />, superAdminOnly: true },
+      { href: "/dashboard/platform/landing", label: "Landing Page", icon: <Globe size={17} />, superAdminOnly: true },
       { href: "/dashboard/platform/verify", label: "Verify Isolation", icon: <ShieldCheck size={17} />, superAdminOnly: true },
     ],
   },

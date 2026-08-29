@@ -111,9 +111,8 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
         return;
       }
 
-      // 3a. Refuse super-admin sign-in on a school URL. Super-admin lives
-      //     ONLY at /admin-console — sending them to a school portal would
-      //     leak the wrong dashboard.
+      // 3a. Refuse super-admin sign-in on a school URL. Show a generic
+      //     error to avoid revealing the existence of a separate console.
       if (signData.user) {
         const [{ data: prof }, { data: mem }] = await Promise.all([
           supabase.from("profiles").select("role").eq("id", signData.user.id).maybeSingle(),
@@ -124,7 +123,7 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
         const isSuperAdmin = m.length > 0 || p?.role === "super_admin" || p?.role === "developer";
         if (isSuperAdmin) {
           await supabase.auth.signOut();
-          setError("Platform super-admins must sign in at /admin-console, not on a school portal.");
+          setError("Invalid email or password.");
           setLoading(false);
           return;
         }

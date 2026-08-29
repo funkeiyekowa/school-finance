@@ -6,7 +6,7 @@
  * Restricts sign-in to STAFF roles at the school named by the URL slug.
  * Rejected roles:
  *   - student / parent  -> "not a staff member" then sign out
- *   - super_admin       -> "use /admin-console" then sign out
+ *   - super_admin       -> generic invalid-credentials error, then sign out
  *   - anything else     -> "not a staff member" then sign out
  *
  * On success, uses the redirect returned by resolve_login_context so
@@ -79,7 +79,7 @@ export default function StaffLoginForm({ slug, schoolName, logoUrl, found }: Pro
         return;
       }
 
-      // 2. Refuse super-admin sign-in here — that lives only at /admin-console.
+      // 2. Refuse super-admin sign-in here — show generic error to avoid leaking console path.
       const [{ data: prof, error: profErr }, { data: superMem, error: superErr }] = await Promise.all([
         supabase.from("profiles").select("role").eq("id", authData.user.id).maybeSingle(),
         supabase.from("org_memberships").select("role").eq("user_id", authData.user.id).eq("role", "super_admin").limit(1),
@@ -90,7 +90,7 @@ export default function StaffLoginForm({ slug, schoolName, logoUrl, found }: Pro
       const superMemArr = (superMem ?? []) as { role: string }[];
       if (superMemArr.length > 0 || p?.role === "super_admin") {
         await supabase.auth.signOut();
-        setError("Platform super-admins must sign in at /admin-console.");
+        setError("Invalid email or password.");
         setLoading(false);
         return;
       }
