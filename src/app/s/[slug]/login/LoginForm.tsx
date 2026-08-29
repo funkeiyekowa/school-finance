@@ -112,18 +112,25 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
         return;
       }
 
-      // 3a. Refuse super-admin AND staff sign-in on this URL. Staff must
-      //     use /s/<slug>/staff-portal. Show a helpful redirect prompt
-      //     for staff; a generic error for super_admin so /admin-console
-      //     is never leaked.
+      // 3a. Refuse super-admin AND staff sign-in on this URL.
+      //     Each subquery times out after 4 s and soft-fails (returns null)
+      //     rather than blocking the whole login flow. If we truly cannot
+      //     tell whether the user is staff, we prefer to let them through
+      //     to resolve_login_context, which is the authoritative gate.
       if (signData.user) {
-        const [{ data: prof }, { data: mem }, { data: staffRow }] = await Promise.all([
-          supabase.from("profiles").select("role").eq("id", signData.user.id).maybeSingle(),
-          supabase.from("org_memberships").select("role").eq("user_id", signData.user.id).limit(20),
-          supabase.from("staff_members").select("id").eq("user_id", signData.user.id).limit(1),
+        const timeoutPromise = <T>(pr: Promise<T>, ms: number): Promise<T | null> =>
+          Promise.race<Promise<T | null>>([pr.then(v => v), new Promise<null>(r => setTimeout(() => r(null), ms))]);
+
+        const [profRes, memRes, staffRes] = await Promise.all([
+          timeoutPromise(supabase.from("profiles").select("role").eq("id", signData.user.id).maybeSingle(), 4000),
+          timeoutPromise(supabase.from("org_memberships").select("role").eq("user_id", signData.user.id).limit(20), 4000),
+          timeoutPromise(supabase.from("staff_members").select("id").eq("user_id", signData.user.id).limit(1), 4000),
         ]);
-        const pr = prof as { role?: string } | null;
-        const mArr = (mem ?? []) as { role: string }[];
+
+        const pr = (profRes?.data ?? null) as { role?: string } | null;
+        const mArr = (memRes?.data ?? []) as { role: string }[];
+        const staffArr = (staffRes?.data ?? []) as unknown[];
+
         const isSuperAdmin =
           mArr.some((x) => x.role === "super_admin") ||
           pr?.role === "super_admin" ||
@@ -135,7 +142,7 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
           return;
         }
         const isStaff =
-          !!(staffRow && (staffRow as unknown[]).length > 0) ||
+          staffArr.length > 0 ||
           mArr.some((x) => ["owner", "admin", "editor", "staff", "teacher"].includes(x.role)) ||
           (pr?.role ? ["owner", "admin", "editor", "staff", "teacher"].includes(pr.role) : false);
         if (isStaff) {
@@ -146,8 +153,19 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
         }
       }
 
-      // 3. Resolve role for THIS school.
-      const { data: ctxData, error: ctxErr } = await supabase.rpc("resolve_login_context", { p_slug: slug });
+      // 3. Resolve role for THIS school. 8-second timeout so a slow
+      //    Postgres reply doesn't leave the button spinning forever.
+      const rpcRace = <T>(pr: Promise<T>, ms: number): Promise<T | { data: null; error: { message: string } }> =>
+        Promise.race<Promise<T | { data: null; error: { message: string } }>>([
+          pr.then(v => v as T),
+          new Promise(resolve => setTimeout(() => resolve({ data: null, error: { message: "timeout" } }), ms)),
+        ]);
+      const rpcResult = await rpcRace(
+        supabase.rpc("resolve_login_context", { p_slug: slug }),
+        8000
+      );
+      const ctxData = (rpcResult as { data: unknown }).data;
+      const ctxErr = (rpcResult as { error?: { message: string } | null }).error ?? null;
       if (ctxErr) {
         setError(`Could not verify your school access: ${ctxErr.message}`);
         await supabase.auth.signOut();
