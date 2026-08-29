@@ -89,14 +89,19 @@ function SchoolSettingsTab() {
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm(f => ({ ...f, [k]: e.target.value }));
 
+  const [saveError, setSaveError] = useState<string | null>(null);
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setSaveError(null);
     const { data: existing } = await supabase.from("school_settings").select("id").limit(1).single();
-    if (existing) {
-      await supabase.from("school_settings").update({ ...form, updated_at: new Date().toISOString() }).eq("id", existing.id);
-    } else {
-      await supabase.from("school_settings").insert(form);
+    const { error } = existing
+      ? await supabase.from("school_settings").update({ ...form, updated_at: new Date().toISOString() }).eq("id", existing.id)
+      : await supabase.from("school_settings").insert(form);
+    if (error) {
+      setSaveError(error.message);
+      setSaving(false);
+      return;
     }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Update School Settings", details: form.school_name });
     setSaving(false);
@@ -133,6 +138,7 @@ function SchoolSettingsTab() {
               <Save size={14} /> Save Settings
             </Button>
             {saved && <span className="text-green-600 text-sm font-medium">✓ Saved successfully</span>}
+            {saveError && <span className="text-red-600 text-sm font-medium">Save failed: {saveError}</span>}
           </div>
         </form>
       </CardContent>
@@ -157,12 +163,19 @@ function FeeScheduleTab() {
   useEffect(() => { load(); }, [load]);
 
   async function toggleActive(fee: FeeSchedule) {
-    await supabase.from("fee_schedules").update({ active: !fee.active, updated_at: new Date().toISOString() }).eq("id", fee.id);
-    setFees(prev => prev.map(f => f.id === fee.id ? { ...f, active: !f.active } : f));
+    const next = !fee.active;
+    // Optimistic; roll back on error so the UI never lies about state.
+    setFees(prev => prev.map(f => f.id === fee.id ? { ...f, active: next } : f));
+    const { error } = await supabase.from("fee_schedules").update({ active: next, updated_at: new Date().toISOString() }).eq("id", fee.id);
+    if (error) {
+      setFees(prev => prev.map(f => f.id === fee.id ? { ...f, active: fee.active } : f));
+      alert(`Could not toggle fee: ${error.message}`);
+    }
   }
 
   async function deleteFee(id: string) {
-    await supabase.from("fee_schedules").delete().eq("id", id);
+    const { error } = await supabase.from("fee_schedules").delete().eq("id", id);
+    if (error) { alert(`Could not delete fee: ${error.message}`); return; }
     setFees(prev => prev.filter(f => f.id !== id));
   }
 
@@ -298,29 +311,37 @@ function CategoriesTab() {
   async function addCategory(e: React.FormEvent) {
     e.preventDefault();
     if (!newName.trim()) return;
-    await supabase.from("categories").insert({ name: newName.trim(), type: newType, active: true, sort_order: 50, organization_id: orgId });
+    const { error } = await supabase.from("categories").insert({ name: newName.trim(), type: newType, active: true, sort_order: 50, organization_id: orgId });
+    if (error) { alert(`Could not add category: ${error.message}`); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Add Category", details: `${newType}: ${newName}` });
     setNewName("");
     load();
   }
 
   async function deleteCategory(id: string, name: string) {
-    await supabase.from("categories").delete().eq("id", id);
+    const { error } = await supabase.from("categories").delete().eq("id", id);
+    if (error) { alert(`Could not delete category: ${error.message}`); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Delete Category", details: name });
     setCategories(prev => prev.filter(c => c.id !== id));
   }
 
   async function saveEdit(id: string) {
     if (!editName.trim()) { setEditId(null); return; }
-    await supabase.from("categories").update({ name: editName.trim() }).eq("id", id);
+    const { error } = await supabase.from("categories").update({ name: editName.trim() }).eq("id", id);
+    if (error) { alert(`Could not rename category: ${error.message}`); return; }
     setCategories(prev => prev.map(c => c.id === id ? { ...c, name: editName.trim() } : c));
     setEditId(null);
     setEditName("");
   }
 
   async function toggleActive(id: string, active: boolean) {
-    await supabase.from("categories").update({ active: !active }).eq("id", id);
-    setCategories(prev => prev.map(c => c.id === id ? { ...c, active: !active } : c));
+    const next = !active;
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, active: next } : c));
+    const { error } = await supabase.from("categories").update({ active: next }).eq("id", id);
+    if (error) {
+      setCategories(prev => prev.map(c => c.id === id ? { ...c, active } : c));
+      alert(`Could not toggle category: ${error.message}`);
+    }
   }
 
   const incomeCategories = categories.filter(c => c.type === "income");
@@ -1777,12 +1798,10 @@ function AcademicSetupTab() {
       next_class_id: classForm.next_class_id || null,
       updated_at: new Date().toISOString(),
     };
-    if (editingClass) {
-      await supabase.from("classes").update(payload).eq("id", editingClass.id);
-    } else {
-      payload.organization_id = orgId;
-      await supabase.from("classes").insert(payload);
-    }
+    const { error } = editingClass
+      ? await supabase.from("classes").update(payload).eq("id", editingClass.id)
+      : await (async () => { payload.organization_id = orgId; return supabase.from("classes").insert(payload); })();
+    if (error) { setSavingClass(false); alert(`Could not save class: ${error.message}`); return; }
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,
       action: editingClass ? "Update Class" : "Create Class",
@@ -1796,7 +1815,8 @@ function AcademicSetupTab() {
 
   async function deleteClass(id: string) {
     if (!confirm("Deactivate this class? It will no longer appear in promotion options.")) return;
-    await supabase.from("classes").update({ active: false, updated_at: new Date().toISOString() }).eq("id", id);
+    const { error } = await supabase.from("classes").update({ active: false, updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) { alert(`Could not deactivate class: ${error.message}`); return; }
     load();
   }
 
@@ -1828,12 +1848,10 @@ function AcademicSetupTab() {
       status: yearForm.status,
       updated_at: new Date().toISOString(),
     };
-    if (editingYear) {
-      await supabase.from("academic_years").update(payload).eq("id", editingYear.id);
-    } else {
-      payload.organization_id = orgId;
-      await supabase.from("academic_years").insert(payload);
-    }
+    const { error } = editingYear
+      ? await supabase.from("academic_years").update(payload).eq("id", editingYear.id)
+      : await (async () => { payload.organization_id = orgId; return supabase.from("academic_years").insert(payload); })();
+    if (error) { setSavingYear(false); alert(`Could not save academic year: ${error.message}`); return; }
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,
       action: editingYear ? "Update Academic Year" : "Create Academic Year",
@@ -1866,8 +1884,10 @@ function AcademicSetupTab() {
   async function saveSubject() {
     setSavingSubject(true);
     const payload = { name: subjectForm.name.trim(), short_code: subjectForm.short_code.trim() || subjectForm.name.trim().substring(0, 4).toUpperCase(), department: subjectForm.department.trim() || null, class_id: subjectForm.class_id || null, is_elective: subjectForm.is_elective, updated_at: new Date().toISOString(), organization_id: orgId };
-    if (editingSubject) { await supabase.from("subjects").update(payload).eq("id", editingSubject.id); }
-    else { await supabase.from("subjects").insert(payload); }
+    const { error } = editingSubject
+      ? await supabase.from("subjects").update(payload).eq("id", editingSubject.id)
+      : await supabase.from("subjects").insert(payload);
+    if (error) { setSavingSubject(false); alert(`Could not save subject: ${error.message}`); return; }
     setEditingSubject(null); setShowSubjectForm(false); setSavingSubject(false); load();
   }
 
@@ -1886,8 +1906,10 @@ function AcademicSetupTab() {
   async function savePeriod() {
     setSavingPeriod(true);
     const payload = { name: periodForm.name.trim(), short_code: periodForm.short_code.trim() || periodForm.name.trim().substring(0, 3).toUpperCase(), start_time: periodForm.start_time, end_time: periodForm.end_time, is_break: periodForm.is_break, sort_order: parseInt(periodForm.sort_order) || 0, updated_at: new Date().toISOString(), organization_id: orgId };
-    if (editingPeriod) { await supabase.from("periods").update(payload).eq("id", editingPeriod.id); }
-    else { await supabase.from("periods").insert(payload); }
+    const { error } = editingPeriod
+      ? await supabase.from("periods").update(payload).eq("id", editingPeriod.id)
+      : await supabase.from("periods").insert(payload);
+    if (error) { setSavingPeriod(false); alert(`Could not save period: ${error.message}`); return; }
     setEditingPeriod(null); setShowPeriodForm(false); setSavingPeriod(false); load();
   }
 
@@ -1906,13 +1928,16 @@ function AcademicSetupTab() {
   async function saveAt() {
     setSavingAt(true);
     const payload = { name: atForm.name.trim(), short_code: atForm.short_code.trim() || atForm.name.trim().substring(0, 4).toUpperCase(), weight: parseFloat(atForm.weight) || 0, max_score: parseFloat(atForm.max_score) || 10, sort_order: parseInt(atForm.sort_order) || 0, updated_at: new Date().toISOString(), organization_id: orgId };
-    if (editingAt) { await supabase.from("assessment_types").update(payload).eq("id", editingAt.id); }
-    else { await supabase.from("assessment_types").insert(payload); }
+    const { error } = editingAt
+      ? await supabase.from("assessment_types").update(payload).eq("id", editingAt.id)
+      : await supabase.from("assessment_types").insert(payload);
+    if (error) { setSavingAt(false); alert(`Could not save assessment type: ${error.message}`); return; }
     setEditingAt(null); setShowAtForm(false); setSavingAt(false); load();
   }
   async function deleteAt(id: string) {
     if (!confirm("Deactivate this assessment type?")) return;
-    await supabase.from("assessment_types").update({ active: false }).eq("id", id);
+    const { error } = await supabase.from("assessment_types").update({ active: false }).eq("id", id);
+    if (error) { alert(`Could not deactivate: ${error.message}`); return; }
     load();
   }
 
@@ -1931,13 +1956,16 @@ function AcademicSetupTab() {
   async function saveGs() {
     setSavingGs(true);
     const payload = { grade: gsForm.grade.trim(), label: gsForm.label.trim(), min_score: parseFloat(gsForm.min_score) || 0, max_score: parseFloat(gsForm.max_score) || 100, grade_point: parseFloat(gsForm.grade_point) || 0, sort_order: parseInt(gsForm.sort_order) || 0, organization_id: orgId };
-    if (editingGs) { await supabase.from("grading_scales").update(payload).eq("id", editingGs.id); }
-    else { await supabase.from("grading_scales").insert(payload); }
+    const { error } = editingGs
+      ? await supabase.from("grading_scales").update(payload).eq("id", editingGs.id)
+      : await supabase.from("grading_scales").insert(payload);
+    if (error) { setSavingGs(false); alert(`Could not save grade band: ${error.message}`); return; }
     setEditingGs(null); setShowGsForm(false); setSavingGs(false); load();
   }
   async function deleteGs(id: string) {
     if (!confirm("Delete this grade?")) return;
-    await supabase.from("grading_scales").delete().eq("id", id);
+    const { error } = await supabase.from("grading_scales").delete().eq("id", id);
+    if (error) { alert(`Could not delete grade: ${error.message}`); return; }
     load();
   }
 
