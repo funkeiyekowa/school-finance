@@ -169,8 +169,16 @@ function StudentsPageInner() {
   }
 
   async function bulkDeleteSelected(ids: string[]) {
-    for (const id of ids) await supabase.from("students").delete().eq("id", id);
-    await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete Students", details: `${ids.length} students` });
+    // Single round-trip via .in() — the old for-await loop was one HTTP
+    // request per selected id, which took multiple seconds on medium sets.
+    if (ids.length === 0) return;
+    await supabase.from("students").delete().in("id", ids);
+    await supabase.from("activity_log").insert({
+      user_email: profile?.email,
+      user_name: profile?.full_name,
+      action: "Bulk Delete Students",
+      details: `${ids.length} students`,
+    });
     load();
   }
   async function bulkDeleteAll() {

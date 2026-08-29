@@ -54,7 +54,7 @@ export default function ExpensesPage() {
   const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(filtered.map(e => e.id));
 
   async function bulkDeleteSelected(ids: string[]) {
-    for (const id of ids) { await supabase.from("expense_entries").delete().eq("id", id); }
+    if (ids.length > 0) await supabase.from("expense_entries").delete().in("id", ids);
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete Expenses", details: `${ids.length} entries deleted` });
     load();
   }

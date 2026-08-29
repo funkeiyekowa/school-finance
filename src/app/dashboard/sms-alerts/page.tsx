@@ -84,7 +84,7 @@ export default function SmsAlertsPage() {
   const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(filtered.map(a => a.id));
 
   async function bulkDeleteSelected(ids: string[]) {
-    for (const id of ids) { await supabase.from("sms_inbox").delete().eq("id", id); }
+    if (ids.length > 0) await supabase.from("sms_inbox").delete().in("id", ids);
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Bulk Delete Payment Alerts", details: `${ids.length} alerts deleted` });
     load();
   }

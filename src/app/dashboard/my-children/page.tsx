@@ -61,28 +61,37 @@ export default function MyChildrenPage() {
   }, [user, supabase]);
 
   async function loadChildData(stuList: StudentRow[]) {
-    const { data: feeData } = await supabase.from("fee_schedules").select("id, name, amount, grade").eq("active", true);
-    setFees(feeData as FeeRow[] ?? []);
+    const ids = stuList.map((s) => s.id);
+    // 3 queries in parallel — the old for-of loop did 2 * children serially.
+    const [feesRes, paysRes, attRes] = await Promise.all([
+      supabase.from("fee_schedules").select("id, name, amount, grade").eq("active", true),
+      ids.length
+        ? supabase
+            .from("income_entries")
+            .select("id, receipt_no, date, amount, category, student_id")
+            .in("student_id", ids)
+            .order("date", { ascending: false })
+        : Promise.resolve({ data: [] }),
+      ids.length
+        ? supabase.from("attendance_records").select("status_code, student_id").in("student_id", ids)
+        : Promise.resolve({ data: [] }),
+    ]);
+    setFees((feesRes.data as FeeRow[]) ?? []);
 
     const payMap: Record<string, PaymentRow[]> = {};
     const attMap: Record<string, AttendanceRow[]> = {};
-
     for (const stu of stuList) {
-      const { data: payData } = await supabase
-        .from("income_entries")
-        .select("id, receipt_no, date, amount, category")
-        .eq("student_id", stu.id)
-        .order("date", { ascending: false })
-        .limit(10);
-      payMap[stu.id] = payData as PaymentRow[] ?? [];
-
-      const { data: attData } = await supabase
-        .from("attendance_records")
-        .select("status_code")
-        .eq("student_id", stu.id);
-      attMap[stu.id] = attData as AttendanceRow[] ?? [];
+      payMap[stu.id] = [];
+      attMap[stu.id] = [];
     }
-
+    for (const row of ((paysRes.data as (PaymentRow & { student_id: string })[]) ?? [])) {
+      const list = payMap[row.student_id];
+      if (list && list.length < 10) list.push(row);
+    }
+    for (const row of ((attRes.data as (AttendanceRow & { student_id: string })[]) ?? [])) {
+      const list = attMap[row.student_id];
+      if (list) list.push(row);
+    }
     setPayments(payMap);
     setAttendance(attMap);
   }

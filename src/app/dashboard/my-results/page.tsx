@@ -51,7 +51,7 @@ export default function MyResultsPage() {
       supabase.from("grading_scales").select("grade, label, min_score, max_score").order("sort_order"),
       supabase.from("exam_attempts").select("id, exam_id, total_score, percentage, passed, status, submitted_at").eq("student_id", sId).eq("status", "submitted").order("submitted_at", { ascending: false }),
       supabase.from("exams").select("id, title, total_marks"),
-      supabase.from("attendance_records").select("status_code").eq("student_id", sId),
+      supabase.from("attendance_records").select("status_code").eq("student_id", sId).order("date", { ascending: false }).limit(200),
     ]);
 
     setScores(scRes.data as ScoreRow[] ?? []);
