@@ -33,14 +33,37 @@ export default function MyResultsPage() {
   const load = useCallback(async () => {
     if (!user) { setLoading(false); return; }
 
-    // Find student record linked to this user (by email match or parent_students)
-    const { data: stuData } = await supabase
-      .from("students")
-      .select("id")
-      .eq("guardian_email", user.email)
-      .limit(1)
-      .maybeSingle();
-    const sId = stuData?.id;
+    // Match student-portal's lookup order: RPC first, then profile_id, then
+    // guardian_email. RPC-only kept previously-blind students (login e-mails
+    // like <code>@student.local don't match guardian_email) from seeing their
+    // scores. The RPC is SECURITY DEFINER and enforces org scoping.
+    let sId: string | undefined;
+    const { data: rpcData } = await supabase.rpc("get_my_student_context");
+    const first = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+    if (first && typeof first === "object" && "student_id" in first) {
+      sId = (first as { student_id: string }).student_id;
+    }
+
+    if (!sId) {
+      const { data: byProfile } = await supabase
+        .from("students")
+        .select("id")
+        .eq("profile_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      sId = (byProfile as { id?: string } | null)?.id;
+    }
+
+    if (!sId) {
+      const { data: byEmail } = await supabase
+        .from("students")
+        .select("id")
+        .eq("guardian_email", user.email)
+        .limit(1)
+        .maybeSingle();
+      sId = (byEmail as { id?: string } | null)?.id;
+    }
+
     if (!sId) { setLoading(false); return; }
     setStudentId(sId);
 

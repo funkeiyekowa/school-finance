@@ -26,20 +26,36 @@ export default function MyChildrenPage() {
   const load = useCallback(async () => {
     if (!user) { setLoading(false); return; }
 
-    // Find children linked to this parent
-    const { data: links } = await supabase
-      .from("parent_students")
-      .select("student_id")
-      .eq("parent_user_id", user.id);
+    // Canonical link chain (matches parent-portal, parents CRUD, and RLS):
+    //   auth.users.id → parent_profiles.profile_id → parent_student_links.parent_id → students.id
+    // The older parent_students table (linked directly to auth.uid) is
+    // still in the schema for backward compatibility but no longer read
+    // from anywhere — parents/page.tsx writes to parent_student_links so
+    // reading the old table produced empty results on new-user paths.
+    const { data: pp } = await supabase
+      .from("parent_profiles")
+      .select("id")
+      .eq("profile_id", user.id)
+      .maybeSingle();
 
-    if (!links || links.length === 0) {
-      // Fallback: try matching by guardian_email
+    let studentIds: string[] = [];
+    if (pp?.id) {
+      const { data: links } = await supabase
+        .from("parent_student_links")
+        .select("student_id")
+        .eq("parent_id", pp.id);
+      studentIds = (links ?? []).map((l) => l.student_id);
+    }
+
+    if (studentIds.length === 0) {
+      // Fallback: match on guardian_email so pre-provisioning tests
+      // (parent row inserted but not yet linked) still show something.
       const { data: emailMatch } = await supabase
         .from("students")
         .select("*")
         .eq("guardian_email", user.email)
         .eq("status", "active");
-      setChildren(emailMatch as StudentRow[] ?? []);
+      setChildren((emailMatch as StudentRow[]) ?? []);
       if (emailMatch && emailMatch.length > 0) {
         await loadChildData(emailMatch as StudentRow[]);
       }
@@ -47,14 +63,13 @@ export default function MyChildrenPage() {
       return;
     }
 
-    const studentIds = links.map(l => l.student_id);
     const { data: stuData } = await supabase
       .from("students")
       .select("*")
       .in("id", studentIds)
       .order("full_name");
 
-    const stuList = stuData as StudentRow[] ?? [];
+    const stuList = (stuData as StudentRow[]) ?? [];
     setChildren(stuList);
     await loadChildData(stuList);
     setLoading(false);

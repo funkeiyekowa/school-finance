@@ -206,6 +206,7 @@ export default function PromotionPage() {
     if (!batch) { setExecuting(false); return; }
 
     let promoted = 0, repeated = 0, graduated = 0, demoted = 0, failed = 0;
+    const failures: string[] = [];
 
     for (const item of actionableStudents) {
       const action = item.selectedAction || item.recommendedAction;
@@ -217,46 +218,61 @@ export default function PromotionPage() {
             ? item.selectedDestClass || item.prevClass
             : item.selectedDestClass || item.nextClass;
 
-      try {
-        // Create enrollment for destination year
-        let toEnrollmentId: string | null = null;
-        if (destClass && action !== "graduate") {
-          const { data: newEnrollment } = await supabase.from("student_enrollments").insert({
-            student_id: item.student.id,
-            class_id: destClass.id,
-            academic_year_id: toYearId,
-            status: "active",
-            promoted_from_id: item.currentEnrollment?.id || null,
-            organization_id: orgId,
-          }).select("id").single();
+      // Each per-student write is checked explicitly. Supabase queries
+      // return { error } rather than throwing, so the previous try/catch
+      // never counted RLS or constraint denials — they were silently
+      // treated as success and only visible as "0 failed" while the
+      // enrollment write never actually happened. Fail fast on the first
+      // error for this student and record which stage broke.
+      let stepError: { stage: string; message: string } | null = null;
+
+      // 1. Create enrollment for destination year
+      let toEnrollmentId: string | null = null;
+      if (destClass && action !== "graduate") {
+        const { data: newEnrollment, error: enrollErr } = await supabase.from("student_enrollments").insert({
+          student_id: item.student.id,
+          class_id: destClass.id,
+          academic_year_id: toYearId,
+          status: "active",
+          promoted_from_id: item.currentEnrollment?.id || null,
+          organization_id: orgId,
+        }).select("id").single();
+        if (enrollErr) {
+          stepError = { stage: "new-enrollment", message: enrollErr.message };
+        } else {
           toEnrollmentId = newEnrollment?.id || null;
         }
+      }
 
-        // Mark current enrollment as completed/repeated/graduated/demoted
-        if (item.currentEnrollment) {
-          const newStatus =
-            action === "repeat" ? "repeated" :
-            action === "graduate" ? "graduated" :
-            action === "demote" ? "demoted" :
-            "completed";
-          await supabase.from("student_enrollments")
-            .update({ status: newStatus, updated_at: new Date().toISOString() })
-            .eq("id", item.currentEnrollment.id);
-        }
+      // 2. Mark current enrollment as completed/repeated/graduated/demoted
+      if (!stepError && item.currentEnrollment) {
+        const newStatus =
+          action === "repeat" ? "repeated" :
+          action === "graduate" ? "graduated" :
+          action === "demote" ? "demoted" :
+          "completed";
+        const { error: curErr } = await supabase.from("student_enrollments")
+          .update({ status: newStatus, updated_at: new Date().toISOString() })
+          .eq("id", item.currentEnrollment.id);
+        if (curErr) stepError = { stage: "close-current-enrollment", message: curErr.message };
+      }
 
-        // Update student's grade field to the new class (preserves the current-class lookup)
-        if (destClass && action !== "graduate") {
-          await supabase.from("students")
-            .update({ grade: destClass.name, updated_at: new Date().toISOString() })
-            .eq("id", item.student.id);
-        } else if (action === "graduate") {
-          await supabase.from("students")
-            .update({ status: "graduated", updated_at: new Date().toISOString() })
-            .eq("id", item.student.id);
-        }
+      // 3. Update student's grade / status
+      if (!stepError && destClass && action !== "graduate") {
+        const { error: stuErr } = await supabase.from("students")
+          .update({ grade: destClass.name, updated_at: new Date().toISOString() })
+          .eq("id", item.student.id);
+        if (stuErr) stepError = { stage: "update-student-grade", message: stuErr.message };
+      } else if (!stepError && action === "graduate") {
+        const { error: gradErr } = await supabase.from("students")
+          .update({ status: "graduated", updated_at: new Date().toISOString() })
+          .eq("id", item.student.id);
+        if (gradErr) stepError = { stage: "mark-graduated", message: gradErr.message };
+      }
 
-        // Record promotion event
-        await supabase.from("promotion_events").insert({
+      // 4. Record promotion event (audit source of truth)
+      if (!stepError) {
+        const { error: eventErr } = await supabase.from("promotion_events").insert({
           batch_id: batch.id,
           student_id: item.student.id,
           from_enrollment_id: item.currentEnrollment?.id || null,
@@ -276,24 +292,30 @@ export default function PromotionPage() {
           created_by_name: profile?.full_name,
           organization_id: orgId,
         });
-
-        if (action === "promote" || action === "skip") promoted++;
-        else if (action === "repeat") repeated++;
-        else if (action === "graduate") graduated++;
-        else if (action === "demote") demoted++;
-      } catch {
-        failed++;
+        if (eventErr) stepError = { stage: "record-event", message: eventErr.message };
       }
+
+      if (stepError) {
+        failed++;
+        failures.push(`${item.student.full_name} (${stepError.stage}): ${stepError.message}`);
+      } else if (action === "promote" || action === "skip") promoted++;
+      else if (action === "repeat") repeated++;
+      else if (action === "graduate") graduated++;
+      else if (action === "demote") demoted++;
     }
 
-    // Update batch summary. promotion_batches has no dedicated "demoted"
-    // column (this feature was added without a schema migration), so the
-    // demoted count is recorded in notes for the audit trail; the
-    // per-student truth lives in promotion_events (action='demoted').
+    // Update batch summary. `demoted` now has a dedicated column
+    // (see supabase/promotion_add_demoted_column.sql); the free-text
+    // `notes` field is now used to surface up to a few failure
+    // details from the run, so admins can see what actually broke
+    // rather than only a bare "N failed" number.
+    const notesText = failures.length > 0
+      ? failures.slice(0, 5).join(" | ") + (failures.length > 5 ? ` … (+${failures.length - 5} more)` : "")
+      : null;
     await supabase.from("promotion_batches").update({
-      status: "completed",
-      promoted, repeated, graduated, failed,
-      notes: demoted > 0 ? `${demoted} student(s) demoted` : null,
+      status: failed > 0 ? "partial" : "completed",
+      promoted, repeated, graduated, demoted, failed,
+      notes: notesText,
       updated_at: new Date().toISOString(),
     }).eq("id", batch.id);
 
