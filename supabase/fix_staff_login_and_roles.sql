@@ -349,6 +349,40 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.auth_email_exists(text) TO anon, authenticated;
 
+
+-- ============================================================
+-- 9. admin_create_parent_user(email) — provisions the parent auth
+--     row (item 7). Client-side create_auth_user is unsafe to
+--     expose, so this thin admin-guarded RPC is used instead.
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.admin_create_parent_user(p_email text)
+RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_uid uuid;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.org_memberships
+     WHERE user_id = auth.uid()
+       AND role IN ('super_admin','owner','admin')
+  ) THEN
+    RAISE EXCEPTION 'not_authorized';
+  END IF;
+
+  v_uid := public.create_auth_user(LOWER(TRIM(p_email)), 'ChangeMe123!', 'parent');
+
+  -- Seed the base profile in must-change state.
+  INSERT INTO public.profiles (id, email, role, must_change_password)
+  VALUES (v_uid, LOWER(TRIM(p_email)), 'parent', TRUE)
+  ON CONFLICT (id) DO UPDATE
+    SET role = COALESCE(NULLIF(public.profiles.role,'pending'), 'parent'),
+        must_change_password = COALESCE(public.profiles.must_change_password, TRUE);
+
+  RETURN v_uid;
+END $$;
+
+GRANT EXECUTE ON FUNCTION public.admin_create_parent_user(text) TO authenticated;
+
 -- ============================================================
 -- VERIFY
 -- ============================================================

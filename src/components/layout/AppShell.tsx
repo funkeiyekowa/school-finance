@@ -149,6 +149,7 @@ const NAV_GROUPS: NavGroup[] = [
     icon: <Briefcase size={16} />,
     items: [
       { href: "/dashboard/staff", label: "Staff", icon: <Users size={17} />, module: "hr" },
+      { href: "/dashboard/parents", label: "Parents", icon: <Users size={17} /> },
       { href: "/dashboard/team", label: "Team", icon: <Users size={17} />, feature: "team", adminOnly: true },
       { href: "/dashboard/roles", label: "Roles", icon: <Shield size={17} />, feature: "roles", adminOnly: true },
     ],
