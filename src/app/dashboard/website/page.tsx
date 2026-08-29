@@ -280,9 +280,12 @@ export default function WebsiteStudioPage() {
   async function togglePublish() {
     if (!site) return;
     const next = site.status === "published" ? "draft" : "published";
-    // Snapshot before going live so there is always something to roll back to.
+    // Snapshot before going live so there is always something to roll
+    // back to. If the snapshot itself fails, don't proceed to publish —
+    // otherwise we've lost the pre-publish safety net.
     if (next === "published") {
-      await supabase.rpc("snapshot_website", { p_label: "Before publish" });
+      const { error: snapErr } = await supabase.rpc("snapshot_website", { p_label: "Before publish" });
+      if (snapErr) { setError(`Snapshot failed, publish aborted: ${snapErr.message}`); return; }
     }
     await patchSite({
       status: next,
@@ -2626,14 +2629,20 @@ function DomainsTab({
 
   async function remove(d: DomainRow) {
     if (!confirm(`Remove ${d.hostname}?`)) return;
-    await supabase.from("website_domains").delete().eq("id", d.id);
+    const { error } = await supabase.from("website_domains").delete().eq("id", d.id);
+    if (error) { setError(`Could not remove domain: ${error.message}`); return; }
     flash("Domain removed.");
     await reload();
   }
 
   async function makePrimary(d: DomainRow) {
-    await supabase.from("website_domains").update({ is_primary: false }).eq("website_id", site.id);
-    await supabase.from("website_domains").update({ is_primary: true }).eq("id", d.id);
+    // Clear the primary flag on every other row for this website
+    // first, then set it on the target row. If the clear fails we
+    // don't want to leave two rows flagged primary, so bail early.
+    const { error: clearErr } = await supabase.from("website_domains").update({ is_primary: false }).eq("website_id", site.id);
+    if (clearErr) { setError(`Could not switch primary domain: ${clearErr.message}`); return; }
+    const { error: setErr } = await supabase.from("website_domains").update({ is_primary: true }).eq("id", d.id);
+    if (setErr) { setError(`Could not switch primary domain: ${setErr.message}`); return; }
     flash(`${d.hostname} is now the primary address.`);
     await reload();
   }
@@ -2752,11 +2761,12 @@ function DomainsTab({
                         size="sm"
                         variant="secondary"
                         onClick={async () => {
-                          await supabase.from("website_domains").update({
+                          const { error } = await supabase.from("website_domains").update({
                             verified: true,
                             verified_at: new Date().toISOString(),
                             ssl_status: "active",
                           }).eq("id", d.id);
+                          if (error) { setError(`Could not mark verified: ${error.message}`); return; }
                           flash(`${d.hostname} marked as verified.`);
                           await reload();
                         }}
