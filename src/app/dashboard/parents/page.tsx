@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import {
   Plus, Save, Users, Search, KeyRound, Mail, Phone, AlertTriangle,
-  ArrowUpDown, Download, X, User,
+  ArrowUpDown, Download, X, User, Trash2,
 } from "lucide-react";
 
 interface ParentRow {
@@ -248,6 +248,14 @@ export default function ParentsPage() {
     load();
   }
 
+  async function deleteParent(p: ParentRow) {
+    if (!confirm(`Delete ${p.full_name}?\n\nRemoves the parent row, all child links, and (if unused elsewhere) their auth login.`)) return;
+    const { data, error } = await supabase.rpc("admin_delete_parent", { p_parent_id: p.id });
+    if (error) { alert("Delete failed: " + error.message); return; }
+    if (data !== "ok") { alert("Delete: " + data); return; }
+    load();
+  }
+
   async function resetPassword(p: ParentRow) {
     if (!confirm(`Reset ${p.full_name}'s password to the default? They will have to change it on next sign-in.`)) return;
     const { data, error } = await supabase.rpc("admin_reset_parent_password", { p_parent_profile_id: p.id });
@@ -379,6 +387,13 @@ export default function ParentsPage() {
                       <div className="flex items-center gap-1 justify-end">
                         <Button size="sm" variant="ghost" onClick={() => openEdit(p)}><User size={12} /> Edit</Button>
                         <Button size="sm" variant="ghost" onClick={() => resetPassword(p)}><KeyRound size={12} /> Reset PW</Button>
+                        <button
+                          onClick={() => deleteParent(p)}
+                          className="text-xs text-red-600 hover:text-red-800 hover:underline inline-flex items-center gap-1 px-2 py-1"
+                          title="Delete parent (removes auth login if unused elsewhere)"
+                        >
+                          <Trash2 size={11} /> Delete
+                        </button>
                       </div>
                     </td>
                   </tr>

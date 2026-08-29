@@ -42,8 +42,8 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       const [incomeRes, expenseRes, studentsRes, feesRes, smsRes] = await Promise.all([
-        supabase.from("income_entries").select("*").order("date", { ascending: false }),
-        supabase.from("expense_entries").select("*").order("date", { ascending: false }),
+        supabase.from("income_entries").select("*").order("date", { ascending: false }).limit(500),
+        supabase.from("expense_entries").select("*").order("date", { ascending: false }).limit(500),
         supabase.from("students").select("*").eq("status", "active"),
         supabase.from("fee_schedules").select("*").eq("active", true),
         supabase.from("sms_inbox").select("id", { count: "exact", head: true }).eq("match_status", "needs_review"),

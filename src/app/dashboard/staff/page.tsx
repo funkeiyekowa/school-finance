@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, Save, Users, Search } from "lucide-react";
+import { Plus, Save, Users, Search, Trash2 } from "lucide-react";
 
 interface DeptRow { id: string; name: string; }
 interface StaffRow { id: string; staff_code: string; full_name: string; email: string | null; phone: string | null; job_title: string | null; staff_type: string; department_id: string | null; status: string; date_joined: string | null; }
@@ -58,6 +58,15 @@ export default function StaffPage() {
     }
     setSaveError(null);
     setShowForm(true);
+  }
+
+  async function deleteStaff(s: StaffRow) {
+    const label = `${s.full_name} (${s.staff_code}${s.email ? " / " + s.email : ""})`;
+    if (!confirm(`Delete ${label}?\n\nThis removes the staff row and, if this user has no other org memberships, their login is deleted too.`)) return;
+    const { data, error } = await supabase.rpc("admin_delete_staff", { p_staff_id: s.id });
+    if (error) { alert("Delete failed: " + error.message); return; }
+    if (data !== "ok") { alert("Delete: " + data); return; }
+    load();
   }
 
   async function saveStaff() {
@@ -202,7 +211,20 @@ export default function StaffPage() {
                   <td className="px-4 py-2.5"><span className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase", s.staff_type === "teaching" ? "bg-green-100 text-green-700" : s.staff_type === "admin" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700")}>{s.staff_type.replace("_", " ")}</span></td>
                   <td className="px-4 py-2.5 text-gray-500">{s.phone || "—"}</td>
                   <td className="px-4 py-2.5"><span className={cn("px-2 py-0.5 rounded text-[10px] font-bold", s.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>{s.status}</span></td>
-                  <td className="px-4 py-2.5 text-right">{canEdit && <button onClick={() => openForm(s)} className="text-xs text-[#0F2A47] hover:underline">Edit</button>}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    {canEdit && (
+                      <div className="inline-flex items-center gap-2">
+                        <button onClick={() => openForm(s)} className="text-xs text-[#0F2A47] hover:underline">Edit</button>
+                        <button
+                          onClick={() => deleteStaff(s)}
+                          className="text-xs text-red-600 hover:text-red-800 hover:underline inline-flex items-center gap-1"
+                          title="Delete staff (removes auth login if unused elsewhere)"
+                        >
+                          <Trash2 size={11} /> Delete
+                        </button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
