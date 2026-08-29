@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { htmlToText } from "@/lib/alerts/parser";
 import { processAlert } from "@/lib/alerts/processor";
 import { createServiceClient, extractSecret, verifyEmailSecret } from "@/lib/alerts/service";
+import { rateLimit, callerKey } from "@/lib/api/rateLimit";
+import { logError, requestContext } from "@/lib/errors/logError";
+
+// Per-caller: 60 requests per minute. Gmail Apps Script forwards at
+// most one message per email received; a healthy school gets a
+// handful per day. Anything above this window is a runaway retry
+// or an abuse attempt.
+const EMAIL_RATE_MAX = 60;
+const EMAIL_RATE_WINDOW_MS = 60_000;
 
 /**
  * Receives bank alert emails forwarded by the Gmail Apps Script.
@@ -10,6 +19,22 @@ import { createServiceClient, extractSecret, verifyEmailSecret } from "@/lib/ale
  * is authenticating the caller and reducing the message to plain text.
  */
 export async function POST(request: Request) {
+  const ip = callerKey(request);
+  const rl = rateLimit({ name: "email-webhook", key: ip, max: EMAIL_RATE_MAX, windowMs: EMAIL_RATE_WINDOW_MS });
+  if (!rl.allowed) {
+    await logError({
+      source: "email-webhook",
+      severity: "warn",
+      message: `Rate limit exceeded (${rl.currentCount} requests in the current window)`,
+      context: { limit: EMAIL_RATE_MAX, windowMs: EMAIL_RATE_WINDOW_MS },
+      ...requestContext(request),
+    });
+    return NextResponse.json(
+      { error: "Rate limit exceeded." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } },
+    );
+  }
+
   const supabase = createServiceClient();
 
   let body: Record<string, unknown>;
@@ -21,6 +46,13 @@ export async function POST(request: Request) {
 
   const check = await verifyEmailSecret(supabase, extractSecret(request, body));
   if (!check.ok) {
+    await logError({
+      source: "email-webhook",
+      severity: "warn",
+      message: `Unauthorized: ${check.message ?? "no secret"}`,
+      context: { status: check.status },
+      ...requestContext(request),
+    });
     return NextResponse.json({ error: check.message }, { status: check.status });
   }
 
@@ -137,7 +169,14 @@ export async function POST(request: Request) {
     return NextResponse.json(result, { status: result.error ? 500 : 200 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Internal error";
-    console.error("Email webhook error:", err);
+    await logError({
+      source: "email-webhook",
+      severity: "error",
+      message,
+      stack: err instanceof Error ? err.stack : null,
+      context: { from, subject, messageLen: messageText?.length ?? 0 },
+      ...requestContext(request),
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
