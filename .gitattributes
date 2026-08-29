@@ -1,0 +1,14 @@
+# Normalise line endings so Windows/macOS/Linux checkouts don't produce
+# spurious CRLF diffs. Text files are stored LF in the repo; binaries are
+# left untouched.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
