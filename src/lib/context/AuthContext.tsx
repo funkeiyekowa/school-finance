@@ -100,6 +100,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /** Guards against overlapping loads racing each other into state. */
   const loadToken = useRef(0);
+  /** The user id we have already fully loaded, so repeated SIGNED_IN
+   *  events (which fire on tab refocus) don't re-run the whole
+   *  profile+org+permissions bundle needlessly. */
+  const loadedUserId = useRef<string | null>(null);
 
   const loadOrganization = useCallback(async (userId: string) => {
     // Fire org list AND the active membership in parallel — they don't
@@ -279,8 +283,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (cancelled) return;
       setUser(u);
       if (u) {
+        loadedUserId.current = u.id;
         loadProfile(u.id).finally(() => { if (!cancelled) setLoading(false); });
       } else {
+        loadedUserId.current = null;
         setLoading(false);
       }
     });
@@ -291,10 +297,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (event === "TOKEN_REFRESHED") return;
 
         const newUser = session?.user ?? null;
-        setUser(newUser);
+
         if (newUser) {
+          // If this is the same user we've already loaded (e.g. a
+          // SIGNED_IN re-emitted on tab refocus or an INITIAL_SESSION
+          // that follows the getUser() call above), don't re-run the
+          // whole profile+org+permissions bundle — just make sure the
+          // user object is current. This is the difference between a
+          // snappy tab switch and a 3-query stall on every refocus.
+          if (loadedUserId.current === newUser.id) {
+            setUser(newUser);
+            setLoading(false);
+            return;
+          }
+          loadedUserId.current = newUser.id;
+          setUser(newUser);
           await loadProfile(newUser.id);
         } else {
+          loadedUserId.current = null;
+          setUser(null);
           clearSession();
         }
         setLoading(false);

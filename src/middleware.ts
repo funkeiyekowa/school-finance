@@ -114,8 +114,26 @@ export async function middleware(request: NextRequest) {
       url.search = "";
       return NextResponse.redirect(url);
     }
-    // Only /dashboard/* pays the session-refresh cost — capped at 8 s.
-    const refreshed = await withTimeout(updateSession(request), 8000);
+
+    // Perf: skip the server-side session refresh for prefetches and
+    // soft (RSC) navigations. These fire constantly as the user hovers
+    // and clicks links, and each one used to trigger a getUser() network
+    // round-trip to Supabase auth — the main cause of laggy/hanging
+    // navigation. They don't need it: dashboard pages are client-rendered
+    // and the browser Supabase client auto-refreshes its own token, and
+    // the server auth gate in dashboard/layout.tsx only runs on full
+    // document loads anyway. So we only pay the refresh cost on a real
+    // document navigation (hard load / refresh), and even then cap it at
+    // 3 s so a slow auth reply can never hang the request.
+    const isPrefetch =
+      request.headers.get("next-router-prefetch") === "1" ||
+      request.headers.get("purpose") === "prefetch";
+    const isRscNav = request.headers.get("rsc") === "1";
+    if (isPrefetch || isRscNav) {
+      return NextResponse.next();
+    }
+
+    const refreshed = await withTimeout(updateSession(request), 3000);
     return refreshed ?? NextResponse.next();
   }
 
