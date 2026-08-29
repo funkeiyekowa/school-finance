@@ -17,6 +17,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/context/AuthContext";
 import { signOutToSchoolLogin } from "@/lib/auth/signOutToSchoolLogin";
 import { OrgSwitcher, ActiveOrgBadge } from "@/components/layout/OrgSwitcher";
+import ForcePasswordChange from "@/components/auth/ForcePasswordChange";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2,
@@ -396,6 +397,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
+    <>
+    <ForcePasswordChange />
     <div className="flex h-screen overflow-hidden bg-[#F7F5F0]">
       {/* Desktop sidebar */}
       <div className="hidden lg:flex shrink-0">
@@ -448,6 +451,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
     </div>
+    </>
   );
 }
 

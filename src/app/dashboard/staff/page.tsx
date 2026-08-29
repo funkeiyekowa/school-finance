@@ -25,6 +25,7 @@ export default function StaffPage() {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<StaffRow | null>(null);
   const [form, setForm] = useState({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active" });
+  const [credNotice, setCredNotice] = useState<{ email: string; name: string } | null>(null);
 
   const load = useCallback(async () => {
     const [stRes, dpRes] = await Promise.all([
@@ -67,7 +68,10 @@ export default function StaffPage() {
     if (editing) {
       await supabase.from("staff_members").update(payload).eq("id", editing.id);
     } else {
-      await supabase.from("staff_members").insert(payload);
+      const { error: insErr } = await supabase.from("staff_members").insert(payload);
+      if (!insErr && payload.email) {
+        setCredNotice({ email: String(payload.email), name: String(payload.full_name) });
+      }
     }
     setSaving(false);
     setShowForm(false);
@@ -87,6 +91,30 @@ export default function StaffPage() {
       <PageHeader title="Staff Directory" subtitle="Manage teaching and non-teaching staff">
         {canEdit && <Button variant="gold" onClick={() => openForm()}><Plus size={14} /> Add Staff</Button>}
       </PageHeader>
+
+      {credNotice && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex items-start gap-3">
+          <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 font-bold">✓</div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-emerald-900">
+              {credNotice.name} — login created
+            </div>
+            <div className="text-sm text-emerald-800 mt-1">
+              Share these credentials with them. They will be prompted to change the password on first login.
+            </div>
+            <div className="mt-2 rounded-md bg-white border border-emerald-200 p-2 text-xs font-mono flex flex-wrap gap-x-6 gap-y-1">
+              <span><span className="text-gray-500">Email:</span> <strong>{credNotice.email}</strong></span>
+              <span><span className="text-gray-500">Password:</span> <strong>ChangeMe123!</strong></span>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard?.writeText(`${credNotice.email} / ChangeMe123!`)}
+                className="ml-auto text-emerald-700 hover:underline"
+              >Copy</button>
+            </div>
+          </div>
+          <button onClick={() => setCredNotice(null)} className="text-emerald-700 hover:text-emerald-900 p-1">✕</button>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
