@@ -106,6 +106,22 @@ export default function PlatformAdminPage() {
     setTimeout(() => setNotice(null), 4000);
   }
 
+  /**
+   * Client-side preview only — mirrors the exact canonicalization
+   * update_organization() (and provision_organization()) apply server-side:
+   * lowercase, any run of non-alphanumerics -> a single hyphen, trim
+   * leading/trailing hyphens. Shown so an admin sees what will actually be
+   * saved before submitting; the RPC re-derives this itself and is the
+   * real source of truth, so a mismatch here can never cause a bad save.
+   */
+  function previewSlug(raw: string, fallbackName: string): string {
+    const base = raw.trim() || fallbackName;
+    return base
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
   if (!isSuperAdmin) {
     return (
       <div className="p-6">
@@ -146,18 +162,46 @@ export default function PlatformAdminPage() {
     setFormError(null);
 
     if (editingOrg) {
-      const { error: err } = await supabase.from("organizations").update({
-        name: orgForm.name.trim(),
-        slug: orgForm.slug.trim(),
-        email: orgForm.email.trim() || null,
-        plan: orgForm.plan,
-        status: orgForm.status,
-        updated_at: new Date().toISOString(),
-      }).eq("id", editingOrg.id);
+      // Routed through the update_organization SECURITY DEFINER RPC (not a
+      // raw table .update()) so an edited slug goes through the SAME
+      // canonicalization provision_organization already applies when
+      // creating a school (lowercase, non-alphanumerics -> hyphens, trim
+      // leading/trailing hyphens) plus a uniqueness check. Every login/
+      // lookup path (resolve_school_brand_by_slug, resolve_site_by_slug,
+      // resolve_login_context) only does slug = lower(trim(p_slug)) — it
+      // does NOT re-slugify — so a slug saved raw (e.g. "Greenfield
+      // Academy" instead of "greenfield-academy") could never resolve on
+      // any login page. See supabase/fix_org_slug_edit.sql.
+      const { data, error: err } = await supabase.rpc("update_organization", {
+        p_org: editingOrg.id,
+        p_name: orgForm.name.trim(),
+        p_slug: orgForm.slug.trim(),
+        p_email: orgForm.email.trim() || null,
+        p_plan: orgForm.plan,
+        p_status: orgForm.status,
+      });
 
       setSaving(false);
-      if (err) { setFormError(err.message); return; }
-      flash(`${orgForm.name} updated.`);
+      if (err) {
+        if (err.code === "23505" || /already used by another school/i.test(err.message)) {
+          setFormError(
+            `That slug is already used by another school. Pick a different one — ` +
+              `it's what the school's login and website URLs are built from.`,
+          );
+        } else if (err.message.includes("does not exist")) {
+          setFormError("The update_organization RPC is missing. Run supabase/fix_org_slug_edit.sql first.");
+        } else {
+          setFormError(err.message);
+        }
+        return;
+      }
+
+      const result = data as { slug?: string } | null;
+      flash(
+        result?.slug && result.slug !== editingOrg.slug
+          ? `${orgForm.name} updated. Slug saved as "${result.slug}".`
+          : `${orgForm.name} updated.`,
+      );
     } else {
       // One transactional call: creates the org, its roles, settings row and
       // core entitlements, and optionally assigns the owner. The old
@@ -567,7 +611,15 @@ export default function PlatformAdminPage() {
               value={orgForm.slug}
               onChange={e => setOrgForm(f => ({ ...f, slug: e.target.value }))}
               placeholder="greenfield-academy"
-              helpText="Used for the school's site address. Left blank, it is derived from the name."
+              helpText={
+                (() => {
+                  const preview = previewSlug(orgForm.slug, orgForm.name);
+                  const base = "Used for the school's site address. Left blank, it is derived from the name.";
+                  return orgForm.slug.trim() && preview !== orgForm.slug.trim()
+                    ? `${base} Will be saved as "${preview}".`
+                    : base;
+                })()
+              }
             />
             <Input
               label="Contact email"
