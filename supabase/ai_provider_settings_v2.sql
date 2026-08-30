@@ -74,7 +74,45 @@ ALTER TABLE public.org_ai_settings ENABLE ROW LEVEL SECURITY;
 -- the browser.
 
 -- --------------------------------------------------------------
--- 2. Read RPC — what a school's admin screen needs to render.
+-- 2. Helper: is the caller an admin of this specific org?
+--    (org-scoped version of the platform-wide _is_org_admin from
+--    admin_delete_and_merge.sql, which checks admin-of-anywhere.)
+-- --------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public._is_org_admin_for(p_org uuid)
+RETURNS boolean
+LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.org_memberships
+     WHERE user_id = auth.uid()
+       AND organization_id = p_org
+       AND role IN ('super_admin', 'owner', 'admin')
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public._is_org_admin_for(uuid) TO authenticated;
+
+-- --------------------------------------------------------------
+-- 3. Helper: is the caller a platform super admin (cross-tenant)?
+--    Mirrors the check already used by platform_settings' RLS
+--    policy in ai_provider_settings.sql / platform_settings_migration.sql.
+-- --------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public._is_platform_super_admin()
+RETURNS boolean
+LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles p
+     WHERE p.id = auth.uid() AND p.role IN ('super_admin', 'developer')
+  )
+  OR EXISTS (
+    SELECT 1 FROM public.org_memberships m
+     WHERE m.user_id = auth.uid() AND m.role = 'super_admin'
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public._is_platform_super_admin() TO authenticated;
+
+-- --------------------------------------------------------------
+-- 4. Read RPC — what a school's admin screen needs to render.
 --    Never returns override_api_key_ciphertext. Reports only
 --    whether a key override exists (boolean), so the UI can show
 --    "using platform key" vs "using your own key" without ever
@@ -114,7 +152,7 @@ $$;
 GRANT EXECUTE ON FUNCTION public.get_org_ai_settings(uuid) TO authenticated;
 
 -- --------------------------------------------------------------
--- 3. Resolution RPC — used server-side by /api/ai/generate to
+-- 5. Resolution RPC — used server-side by /api/ai/generate to
 --    decide the effective provider+model for a request, in
 --    priority order: org override > platform DB toggle > caller
 --    passes AI_PROVIDER env var as a last fallback in Node.
@@ -144,44 +182,6 @@ SET search_path = public AS $$
 $$;
 
 GRANT EXECUTE ON FUNCTION public.resolve_ai_provider_for_org(uuid) TO authenticated;
-
--- --------------------------------------------------------------
--- 4. Helper: is the caller an admin of this specific org?
---    (org-scoped version of the platform-wide _is_org_admin from
---    admin_delete_and_merge.sql, which checks admin-of-anywhere.)
--- --------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public._is_org_admin_for(p_org uuid)
-RETURNS boolean
-LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.org_memberships
-     WHERE user_id = auth.uid()
-       AND organization_id = p_org
-       AND role IN ('super_admin', 'owner', 'admin')
-  );
-$$;
-
-GRANT EXECUTE ON FUNCTION public._is_org_admin_for(uuid) TO authenticated;
-
--- --------------------------------------------------------------
--- 5. Helper: is the caller a platform super admin (cross-tenant)?
---    Mirrors the check already used by platform_settings' RLS
---    policy in ai_provider_settings.sql / platform_settings_migration.sql.
--- --------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public._is_platform_super_admin()
-RETURNS boolean
-LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.profiles p
-     WHERE p.id = auth.uid() AND p.role IN ('super_admin', 'developer')
-  )
-  OR EXISTS (
-    SELECT 1 FROM public.org_memberships m
-     WHERE m.user_id = auth.uid() AND m.role = 'super_admin'
-  );
-$$;
-
-GRANT EXECUTE ON FUNCTION public._is_platform_super_admin() TO authenticated;
 
 -- --------------------------------------------------------------
 -- 6. Per-school usage rollup RPC — reads the existing
