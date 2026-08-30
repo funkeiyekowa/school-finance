@@ -6,9 +6,11 @@
  * Uses two SECURITY DEFINER RPCs (start_exam_attempt / submit_exam_attempt)
  * so assignment, release-window, max-attempts and grading are enforced on
  * the server, not the client. The take page still auto-saves answers as
- * they are chosen — those upserts are authorised by the
- * `student_own_answers_all` RLS policy which permits writes only while the
- * owning attempt is still in_progress.
+ * they are chosen — those upserts are authorised by the `answers_self_all`
+ * RLS policy, which permits writes only while the owning attempt is still
+ * in_progress AND inside its time budget (see attempt_is_open() in
+ * cbt_grading_and_time_migration.sql). A resumed-but-expired attempt is
+ * auto-submitted server-side so it can never hang open.
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -85,6 +87,10 @@ export default function TakeExamPage() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Set the instant a submit starts so the countdown, the expired-resume
+  // effect and the manual Submit button can never fire submit_exam_attempt
+  // more than once for the same attempt.
+  const submitStartedRef = useRef(false);
   const [tabWarnings, setTabWarnings] = useState(0);
   const [proctored, setProctored] = useState(false);
   const MAX_TAB_WARNINGS = 3;
@@ -291,6 +297,19 @@ export default function TakeExamPage() {
     };
   }, [attempt, submitted, timeLeft > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* ---------- Auto-submit an expired, resumed attempt ---------- */
+  //
+  // If a student reopens an attempt whose time has already run out, init()
+  // computes timeLeft = 0 and the timer effect above bails immediately
+  // (it returns when timeLeft <= 0), leaving the attempt frozen at 0:00 and
+  // never submitted. Close it out once, server-side, so it can't hang open.
+  // duration_minutes === 0 means "no time limit" — timeLeft is always 0 in
+  // that case and must NOT trigger a submit.
+  useEffect(() => {
+    if (loading || submitted || !attempt || !exam) return;
+    if ((exam.duration_minutes ?? 0) > 0 && timeLeft <= 0) void submitExam(true);
+  }, [loading, submitted, attempt, exam, timeLeft]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function formatTime(seconds: number): string {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -345,6 +364,12 @@ export default function TakeExamPage() {
   /* ---------- Submit ---------- */
   async function submitExam(timedOut = false) {
     if (!attempt) return;
+    // First caller wins. submit_exam_attempt is idempotent server-side
+    // (an already-submitted attempt just returns its stored totals), but
+    // this avoids redundant round-trips and state thrash when the countdown,
+    // the expired-resume effect and the manual button race each other.
+    if (submitStartedRef.current) return;
+    submitStartedRef.current = true;
     setSubmitting(true);
     if (timerRef.current) clearInterval(timerRef.current);
 
@@ -354,13 +379,18 @@ export default function TakeExamPage() {
     });
 
     if (err) {
+      submitStartedRef.current = false; // let the student retry on failure
       setError(err.message);
       setSubmitting(false);
       return;
     }
-    const res = data as { ok: boolean; total_score: number; total_marks: number; percentage: number; passed: boolean | null };
+    // Trust the server's verdict: submit_exam_attempt records a submission
+    // that arrives past the deadline as timed_out even if the client claimed
+    // otherwise, and returns that in `timed_out`.
+    const res = data as { ok: boolean; timed_out?: boolean; total_score: number; total_marks: number; percentage: number; passed: boolean | null };
+    const finalTimedOut = res.timed_out ?? timedOut;
     setAttempt(prev => prev ? {
-      ...prev, status: timedOut ? "timed_out" : "submitted",
+      ...prev, status: finalTimedOut ? "timed_out" : "submitted",
       total_score: res.total_score, total_marks: res.total_marks,
       percentage: res.percentage, passed: res.passed,
     } : null);

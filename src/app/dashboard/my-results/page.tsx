@@ -72,7 +72,7 @@ export default function MyResultsPage() {
       supabase.from("subjects").select("id, name, short_code").eq("active", true).order("name"),
       supabase.from("assessment_types").select("id, name, short_code, max_score, sort_order").eq("active", true).order("sort_order"),
       supabase.from("grading_scales").select("grade, label, min_score, max_score").order("sort_order"),
-      supabase.from("exam_attempts").select("id, exam_id, total_score, percentage, passed, status, submitted_at").eq("student_id", sId).eq("status", "submitted").order("submitted_at", { ascending: false }),
+      supabase.from("exam_attempts").select("id, exam_id, total_score, percentage, passed, status, submitted_at").eq("student_id", sId).in("status", ["submitted", "timed_out", "graded"]).order("submitted_at", { ascending: false }),
       supabase.from("exams").select("id, title, total_marks"),
       supabase.from("attendance_records").select("status_code").eq("student_id", sId).order("date", { ascending: false }).limit(200),
     ]);

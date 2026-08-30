@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { fmtDateTime, cn } from "@/lib/utils";
@@ -49,8 +50,12 @@ essay,"Explain photosynthesis.","","","","","","","hard","10","Biology","","",""
 matching,"Match the country to its capital.","","","","","","","medium","3","Geography","","","Nigeria=Abuja; Ghana=Accra; Kenya=Nairobi"`;
 
 export default function CbtPage() {
-  const { canEdit, profile, orgId } = useAuth();
+  const { canEdit, profile, orgId, membership } = useAuth();
   const supabase = createClient();
+  // Mirrors the submissions page's canGrade / the server can_grade_org():
+  // admins & editors (canEdit) plus teachers may open the grading view.
+  // The grading RPCs re-authorize server-side regardless.
+  const canGrade = canEdit || membership?.role === "teacher";
 
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"exams" | "questions">("exams");
@@ -514,6 +519,7 @@ export default function CbtPage() {
                       <td className="px-3 py-2 text-right">
                         <div className="flex items-center gap-1 justify-end">
                           <button onClick={() => openExamQuestions(exam)} className="text-xs text-[#0F2A47] hover:underline">Qs</button>
+                          {canGrade && <Link href={`/dashboard/cbt/${exam.id}/submissions`} className="text-xs text-emerald-700 hover:underline">Grade</Link>}
                           {canEdit && <button onClick={() => openAssignModal(exam)} className="text-xs text-purple-700 hover:underline">Assign</button>}
                           {canEdit && <button onClick={() => openExamForm(exam)} className="text-xs text-blue-700 hover:underline">Edit</button>}
                           {exam.status === "published" && <button onClick={() => copyLink(exam.id)} className="text-xs text-[#C9A227] hover:underline flex items-center gap-0.5"><Link2 size={10} />{copiedLink ? "Copied" : "Link"}</button>}
