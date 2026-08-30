@@ -6,22 +6,21 @@
  *     OpenAI-compatible /chat/completions endpoint (same request and
  *     response shape), so one code path can drive any of them.
  *   • We want to be able to configure several providers' API keys at
- *     once (e.g. keep OpenAI configured but run on Groq's free tier
- *     day-to-day) and flip between them with a single env var instead
- *     of a code change or redeploy-with-different-code.
+ *     once and let EACH SCHOOL pick its own active provider + model,
+ *     optionally overriding with its own API key, instead of one
+ *     platform-wide toggle.
  *
- * How to switch providers:
- *   1. Set the API key env var for whichever provider(s) you want
- *      available (see PROVIDER_KEY_ENV below).
- *   2. Set AI_PROVIDER to that provider's id ("openai" | "groq" |
- *      "gemini" | "openrouter") in the server environment.
- *   3. Redeploy. That's it — no code touches needed to switch again
- *      later, just change AI_PROVIDER and redeploy.
+ * Resolution order (see resolveForOrg in src/lib/ai/resolve.ts):
+ *   1. org_ai_settings row for the caller's org (provider + model +
+ *      optional key override) — set from Dashboard → AI Provider.
+ *   2. platform_settings.active_ai_provider (platform-wide default,
+ *      set from Dashboard → Platform → AI Provider by a super admin).
+ *   3. AI_PROVIDER env var.
+ *   4. First provider below — in registry order — that has a
+ *      platform key configured in Vercel.
  *
- * If AI_PROVIDER is unset (or points at a provider with no key
- * configured), resolveActiveProvider() falls back to the first
- * provider below — in registry order — that has a key set, so the
- * app still works if the toggle is forgotten.
+ * If nothing resolves, the app tells the caller AI isn't configured
+ * rather than silently failing.
  */
 
 export type AiProviderId = "openai" | "groq" | "gemini" | "openrouter";
@@ -31,17 +30,19 @@ export interface AiProviderConfig {
   label: string;
   /** Full chat-completions endpoint URL. */
   baseUrl: string;
-  /** Env var holding this provider's API key. */
+  /** Env var holding this provider's platform-wide (shared) API key. */
   apiKeyEnv: string;
   /** Env var that can override the default model for this provider. */
   modelEnv: string;
   defaultModel: string;
   /** Extra headers some providers require beyond Authorization + Content-Type. */
   extraHeaders?: Record<string, string>;
+  /** True if this provider publishes fixed $0-cost model ids we can offer as "free". */
+  supportsFreeModelDiscovery?: boolean;
 }
 
 // Registry order also doubles as fallback preference order when
-// AI_PROVIDER isn't set or its key is missing.
+// nothing more specific resolves.
 export const AI_PROVIDERS: Record<AiProviderId, AiProviderConfig> = {
   openai: {
     id: "openai",
@@ -80,6 +81,7 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderConfig> = {
       "HTTP-Referer": "https://school-finance.vercel.app",
       "X-Title": "Smart & Thrive O/S",
     },
+    supportsFreeModelDiscovery: true,
   },
 };
 
@@ -89,17 +91,22 @@ export interface ResolvedProvider {
   config: AiProviderConfig;
   apiKey: string;
   model: string;
+  /** true when apiKey came from an org's own override rather than the shared platform key. */
+  usingOrgKey: boolean;
 }
 
 /**
- * Picks a provider given a preferred id (which may come from the
- * platform_settings.active_ai_provider DB toggle, or from the
- * AI_PROVIDER env var, or be empty/invalid). If the preferred id
- * names a provider with a key configured, that one wins. Otherwise
- * falls back to the first configured provider in registry order.
- * Returns null if no provider has a key set anywhere.
+ * Picks a provider given a preferred id and an optional org-supplied
+ * key override. If the preferred id names a provider, that provider
+ * is tried first — using the org key if given, else the platform's
+ * shared env-var key — before falling back through the rest of the
+ * registry using only platform keys. Returns null if nothing resolves.
  */
-export function pickProvider(preferredId?: string | null): ResolvedProvider | null {
+export function pickProvider(
+  preferredId?: string | null,
+  preferredModel?: string | null,
+  orgOverrideKey?: string | null,
+): ResolvedProvider | null {
   const requested = (preferredId || "").trim().toLowerCase() as AiProviderId;
   const order: AiProviderId[] =
     requested && AI_PROVIDERS[requested]
@@ -108,10 +115,14 @@ export function pickProvider(preferredId?: string | null): ResolvedProvider | nu
 
   for (const id of order) {
     const config = AI_PROVIDERS[id];
-    const apiKey = process.env[config.apiKeyEnv];
+    const isPreferred = id === requested;
+    const apiKey = (isPreferred && orgOverrideKey) || process.env[config.apiKeyEnv];
     if (apiKey) {
-      const model = process.env[config.modelEnv] || config.defaultModel;
-      return { config, apiKey, model };
+      const model =
+        (isPreferred && preferredModel) ||
+        process.env[config.modelEnv] ||
+        config.defaultModel;
+      return { config, apiKey, model, usingOrgKey: Boolean(isPreferred && orgOverrideKey) };
     }
   }
   return null;
@@ -125,7 +136,7 @@ export function resolveActiveProvider(): ResolvedProvider | null {
   return pickProvider(process.env.AI_PROVIDER);
 }
 
-/** Which providers currently have a key configured — useful for diagnostics/UI. */
+/** Which providers currently have a platform-wide key configured in Vercel. */
 export function listConfiguredProviders(): AiProviderId[] {
   return AI_PROVIDER_IDS.filter((id) => !!process.env[AI_PROVIDERS[id].apiKeyEnv]);
 }

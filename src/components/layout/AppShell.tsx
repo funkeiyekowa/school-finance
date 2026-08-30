@@ -19,7 +19,7 @@ import {
   ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users,
   Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen,
   Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown,
-  Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles,
+  Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -159,6 +159,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/vendors", label: "Vendors", icon: <Building2 size={17} />, feature: "vendors", module: "finance" },
       { href: "/dashboard/automations", label: "Automations", icon: <Settings size={17} />, adminOnly: true },
       { href: "/dashboard/ai", label: "AI Studio", icon: <Sparkles size={17} /> },
+      { href: "/dashboard/ai-provider", label: "AI Provider", icon: <KeyRound size={17} />, adminOnly: true },
     ],
   },
   {

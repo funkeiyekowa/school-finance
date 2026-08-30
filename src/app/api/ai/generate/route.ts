@@ -4,21 +4,23 @@
  * Why this exists:
  *   • We never want an OPENAI_API_KEY (or any other model key) to
  *     leave the server. All AI calls originate here so the key stays
- *     in the server env only.
+ *     in the server env (or, for a school with its own key, encrypted
+ *     in the DB and decrypted here) only.
  *   • Gives us one place to enforce staff-only access, rate limits,
  *     and structured logging into ai_generation_log.
- *   • Lets us swap providers (OpenAI, Anthropic, a local model)
- *     without touching every caller — the presets in @/lib/ai/prompts
- *     stay stable.
+ *   • Lets us swap providers (OpenAI, Groq, Gemini, OpenRouter, or a
+ *     school's own key) without touching every caller — the presets
+ *     in @/lib/ai/prompts stay stable.
  *
- * Provider: any OpenAI-compatible chat-completions API — OpenAI,
- * Groq, Google Gemini, or OpenRouter. The active one is chosen, in
- * priority order, by: (1) platform_settings.active_ai_provider — set
- * from Dashboard → Platform → AI Provider, no redeploy needed; (2)
- * the AI_PROVIDER env var; (3) the first provider below with a key
- * configured. Falls back to a helpful error when no provider has a
- * key configured so a school can still install the app without
- * wiring AI on day 1.
+ * Provider resolution (see @/lib/ai/resolve — resolveProviderForOrg):
+ *   1. org_ai_settings for the caller's school — provider + model,
+ *      optionally with that school's own API key (Dashboard → AI Provider).
+ *   2. platform_settings.active_ai_provider — platform-wide default
+ *      (Dashboard → Platform → AI Provider, super-admin only).
+ *   3. AI_PROVIDER env var.
+ *   4. First provider below with a platform-shared key configured.
+ * Falls back to a helpful error when nothing resolves so a school
+ * can still install the app without wiring AI on day 1.
  */
 
 import { NextResponse } from "next/server";
@@ -26,7 +28,7 @@ import { requireStaffSession } from "@/lib/api/requireStaff";
 import { rateLimit, callerKey } from "@/lib/api/rateLimit";
 import { logError, requestContext } from "@/lib/errors/logError";
 import { AI_PRESETS, type AiTaskKind } from "@/lib/ai/prompts";
-import { pickProvider } from "@/lib/ai/providers";
+import { resolveProviderForOrg } from "@/lib/ai/resolve";
 import { createClient } from "@/lib/supabase/server";
 
 const AI_RATE_MAX = 30;
@@ -71,9 +73,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Prompt input is empty." }, { status: 400 });
   }
 
-  // Resolve org + user for logging, and check the dashboard's DB
-  // toggle for the active provider. The staff session guard already
-  // verified auth, so this only errors under Supabase outages.
+  // Resolve org + user for logging and per-school provider resolution.
+  // The staff session guard already verified auth, so this only errors
+  // under Supabase outages.
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user
@@ -81,27 +83,14 @@ export async function POST(request: Request) {
     : { data: null };
   const orgId = (profile as { organization_id?: string | null } | null)?.organization_id ?? null;
 
-  // A super admin's choice in Dashboard → Platform → AI Provider
-  // (stored in platform_settings.active_ai_provider) takes priority
-  // over the AI_PROVIDER env var if it names a provider that has a
-  // key configured; otherwise pickProvider() falls back to the env
-  // var, then to the first configured provider. Never let a missing
-  // RPC (e.g. migration not yet applied) block AI generation.
-  let dbPreferred: string | null = null;
-  try {
-    const { data: rpcData } = await supabase.rpc("get_active_ai_provider");
-    dbPreferred = (rpcData as string | null) ?? null;
-  } catch {
-    // RPC not present yet (migration not applied) — fall through to env var.
-  }
-
-  const provider = pickProvider(dbPreferred || process.env.AI_PROVIDER);
+  const provider = await resolveProviderForOrg({ supabase, organizationId: orgId });
   if (!provider) {
     return NextResponse.json(
       {
         error:
           "AI is not configured on this deployment. Set an API key for at least one provider " +
-          "(OPENAI_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY) in the server environment.",
+          "(OPENAI_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY) in the server environment, " +
+          "or add your school's own key under Dashboard → AI Provider.",
       },
       { status: 503 },
     );
@@ -157,7 +146,11 @@ export async function POST(request: Request) {
       source: "ai-generate",
       severity: "error",
       message: errorMsg,
-      context: { kind, source, promptLen: userTurn.length, model: `${provider.config.id}:${provider.model}` },
+      context: {
+        kind, source, promptLen: userTurn.length,
+        model: `${provider.config.id}:${provider.model}`,
+        usingOrgKey: provider.usingOrgKey,
+      },
       organizationId: orgId,
       ...requestContext(request),
     });
@@ -195,6 +188,8 @@ export async function POST(request: Request) {
   return NextResponse.json({
     output,
     kind,
+    model: `${provider.config.id}:${provider.model}`,
+    usingOrgKey: provider.usingOrgKey,
     tokens: { prompt: promptTokens, response: responseTokens },
     elapsed_ms: Date.now() - started,
   });

@@ -3,19 +3,21 @@
 /**
  * /dashboard/platform/ai-provider — Super Admin only.
  *
- * Lets a super admin pick which AI backend (OpenAI, Groq, Gemini,
- * OpenRouter) powers the /dashboard/ai module and every "Ask AI"
- * affordance, without touching env vars or redeploying.
+ * Sets the PLATFORM-WIDE default AI backend (OpenAI, Groq, Gemini,
+ * OpenRouter + model) that every school inherits unless it picks its
+ * own under Dashboard → AI Provider (see /dashboard/ai-provider,
+ * school-scoped, any org admin).
  *
- * Persisted to platform_settings.active_ai_provider (see
- * supabase/ai_provider_settings.sql). Row-level policy on
- * platform_settings restricts writes to super_admin / developer, so
- * a non-super-admin who lands here by URL guessing will see an
- * empty form and a save error.
+ * Persisted to platform_settings.active_ai_provider / active_ai_model
+ * (see supabase/ai_provider_settings.sql + ai_provider_settings_v2.sql).
+ * Row-level policy on platform_settings restricts writes to
+ * super_admin / developer.
  *
- * "Configured" badges come from /api/ai/providers, which reports
- * only whether each provider's API key env var is set on the
- * server — it never exposes the key itself.
+ * "Configured" badges and the OpenRouter free-model list come from
+ * /api/ai/providers, which reports only whether each provider's API
+ * key env var is set on the server, plus OpenRouter's live catalog
+ * of $0-priced models and (if a platform OpenRouter key exists) that
+ * key's live quota — never the key itself.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -23,12 +25,28 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Sparkles, ShieldAlert, CheckCircle2, KeyRound, Lock } from "lucide-react";
+import { Sparkles, ShieldAlert, CheckCircle2, KeyRound, Lock, Gauge, AlertTriangle } from "lucide-react";
 
 interface ProviderStatus {
   id: string;
   label: string;
   configured: boolean;
+}
+
+interface FreeModelOption {
+  id: string;
+  label: string;
+  contextLength: number | null;
+}
+
+interface OpenRouterKeyStatus {
+  ok: boolean;
+  label?: string;
+  usage?: number;
+  limit?: number | null;
+  isFreeTier?: boolean;
+  rateLimit?: { requests: number; interval: string } | null;
+  error?: string;
 }
 
 export default function AiProviderSettingsPage() {
@@ -41,7 +59,10 @@ export default function AiProviderSettingsPage() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [freeModels, setFreeModels] = useState<FreeModelOption[]>([]);
+  const [keyStatus, setKeyStatus] = useState<OpenRouterKeyStatus | null>(null);
   const [selected, setSelected] = useState<string>(""); // "" = auto (env var / first configured)
+  const [selectedModel, setSelectedModel] = useState<string>(""); // "" = provider default
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -51,7 +72,7 @@ export default function AiProviderSettingsPage() {
     const [settingsRes, statusRes] = await Promise.all([
       supabase
         .from("platform_settings")
-        .select("id, active_ai_provider, updated_at")
+        .select("id, active_ai_provider, active_ai_model, updated_at")
         .eq("id", "default")
         .maybeSingle(),
       fetch("/api/ai/providers").then((r) => r.json()).catch(() => null),
@@ -60,12 +81,16 @@ export default function AiProviderSettingsPage() {
     if (settingsRes.error) {
       setError(settingsRes.error.message);
     } else if (settingsRes.data) {
-      setSelected(settingsRes.data.active_ai_provider ?? "");
-      setUpdatedAt(settingsRes.data.updated_at ?? null);
+      const row = settingsRes.data as { active_ai_provider: string | null; active_ai_model?: string | null; updated_at: string | null };
+      setSelected(row.active_ai_provider ?? "");
+      setSelectedModel(row.active_ai_model ?? "");
+      setUpdatedAt(row.updated_at ?? null);
     }
 
     if (statusRes?.providers) {
       setProviders(statusRes.providers as ProviderStatus[]);
+      setFreeModels((statusRes.openRouterFreeModels as FreeModelOption[]) ?? []);
+      setKeyStatus((statusRes.openRouterKeyStatus as OpenRouterKeyStatus | null) ?? null);
     } else {
       setError((prev) => prev ?? "Could not load provider status from the server.");
     }
@@ -77,7 +102,7 @@ export default function AiProviderSettingsPage() {
     load();
   }, [load]);
 
-  async function save(nextValue: string) {
+  async function save(nextProvider: string, nextModel: string) {
     setSaving(true);
     setError(null);
     setSavedAt(null);
@@ -85,14 +110,15 @@ export default function AiProviderSettingsPage() {
     const { error: upErr } = await supabase
       .from("platform_settings")
       .upsert(
-        { id: "default", active_ai_provider: nextValue || null },
+        { id: "default", active_ai_provider: nextProvider || null, active_ai_model: nextModel || null },
         { onConflict: "id" },
       );
 
     if (upErr) {
       setError(upErr.message);
     } else {
-      setSelected(nextValue);
+      setSelected(nextProvider);
+      setSelectedModel(nextModel);
       setSavedAt(new Date().toISOString());
       await load();
     }
@@ -109,8 +135,9 @@ export default function AiProviderSettingsPage() {
           <div>
             <div className="font-semibold text-red-800">Super Admin only</div>
             <p className="text-sm text-red-700 mt-1">
-              This screen controls which AI provider powers the whole platform —
-              only platform super admins can view or edit it.
+              This screen controls the platform-wide default AI provider —
+              only platform super admins can view or edit it. Individual
+              schools can still pick their own under Dashboard → AI Provider.
             </p>
           </div>
         </div>
@@ -119,12 +146,13 @@ export default function AiProviderSettingsPage() {
   }
 
   const configuredCount = providers.filter((p) => p.configured).length;
+  const isOpenRouter = selected === "openrouter";
 
   return (
     <div className="space-y-6 max-w-3xl">
       <PageHeader
-        title="AI Provider"
-        subtitle="Choose which AI backend powers AI Studio and every 'Ask AI' helper across the platform"
+        title="AI Provider (Platform Default)"
+        subtitle="Choose the fallback AI backend every school inherits unless it sets its own"
       />
 
       <Card>
@@ -148,7 +176,7 @@ export default function AiProviderSettingsPage() {
             <ProviderOption
               active={selected === ""}
               disabled={saving}
-              onSelect={() => save("")}
+              onSelect={() => save("", "")}
               label="Auto"
               description="Uses the AI_PROVIDER environment variable, or the first provider below with a key configured."
               configured
@@ -162,7 +190,7 @@ export default function AiProviderSettingsPage() {
                 key={p.id}
                 active={selected === p.id}
                 disabled={saving || !p.configured}
-                onSelect={() => save(p.id)}
+                onSelect={() => save(p.id, p.id === selected ? selectedModel : "")}
                 label={p.label}
                 description={
                   p.configured
@@ -173,6 +201,53 @@ export default function AiProviderSettingsPage() {
               />
             ))}
           </div>
+
+          {isOpenRouter && freeModels.length > 0 && (
+            <div className="pt-3 border-t border-gray-100">
+              <div className="text-xs font-semibold text-gray-700 mb-2">Model (OpenRouter free models)</div>
+              <select
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                value={selectedModel}
+                disabled={saving}
+                onChange={(e) => save(selected, e.target.value)}
+              >
+                <option value="">Default (Llama 3.3 70B)</option>
+                {freeModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}{m.contextLength ? ` · ${Math.round(m.contextLength / 1000)}K context` : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Fetched live from OpenRouter — only models currently priced at $0 are listed.
+              </p>
+            </div>
+          )}
+
+          {isOpenRouter && keyStatus && (
+            <div className={`rounded-lg border p-3 text-sm flex items-start gap-2 ${
+              keyStatus.ok ? "border-blue-200 bg-blue-50 text-blue-800" : "border-red-200 bg-red-50 text-red-700"
+            }`}>
+              {keyStatus.ok ? <Gauge size={16} className="mt-0.5 shrink-0" /> : <AlertTriangle size={16} className="mt-0.5 shrink-0" />}
+              {keyStatus.ok ? (
+                <div>
+                  <div className="font-semibold">Platform OpenRouter key usage</div>
+                  <div className="text-xs mt-0.5">
+                    {typeof keyStatus.usage === "number" ? `$${keyStatus.usage.toFixed(4)} used` : "Usage unknown"}
+                    {keyStatus.limit != null ? ` of $${keyStatus.limit} limit` : " · no hard limit set"}
+                    {keyStatus.isFreeTier ? " · free tier" : ""}
+                  </div>
+                  {keyStatus.rateLimit && (
+                    <div className="text-xs mt-0.5">
+                      Rate limit: {keyStatus.rateLimit.requests} requests / {keyStatus.rateLimit.interval}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>{keyStatus.error || "Could not read OpenRouter key status."}</div>
+              )}
+            </div>
+          )}
 
           {error && (
             <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
