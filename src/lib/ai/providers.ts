@@ -67,7 +67,13 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderConfig> = {
     baseUrl: "https://api.groq.com/openai/v1/chat/completions",
     apiKeyEnvCandidates: ["GROQ_API_KEY", "GRANTSCHOOL_GROQ_API_KEY", "GRANTSCHOOL_GROK_API_KEY", "GROK_API_KEY"],
     modelEnv: "GROQ_MODEL",
-    defaultModel: "llama-3.3-70b-versatile",
+    // llama-3.3-70b-versatile 404s on some Groq accounts ("does not exist
+    // or you do not have access to it"). Groq retires/gates preview models
+    // without much notice. llama-3.1-8b-instant is their long-standing
+    // generally-available small model, far less likely to be gated.
+    // Override via GROQ_MODEL in Vercel if this changes again - check
+    // https://console.groq.com/docs/models for the current list.
+    defaultModel: "llama-3.1-8b-instant",
   },
   gemini: {
     id: "gemini",
@@ -76,7 +82,10 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderConfig> = {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
     apiKeyEnvCandidates: ["GEMINI_API_KEY", "GRANTSCHOOL_GEMINI_API_KEY"],
     modelEnv: "GEMINI_MODEL",
-    defaultModel: "gemini-2.5-flash",
+    // gemini-2.5-flash was retired for new API keys (404, "no longer
+    // available to new users"). Google's own error names this replacement.
+    // Override via GEMINI_MODEL in Vercel any time Google renames again.
+    defaultModel: "gemini-3.6-flash",
   },
   openrouter: {
     id: "openrouter",

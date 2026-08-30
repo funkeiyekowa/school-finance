@@ -25,7 +25,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Sparkles, ShieldAlert, CheckCircle2, KeyRound, Lock, Gauge, AlertTriangle } from "lucide-react";
+import { Sparkles, ShieldAlert, CheckCircle2, KeyRound, Lock, Gauge, AlertTriangle, PlayCircle, Loader2, XCircle } from "lucide-react";
 
 interface ProviderStatus {
   id: string;
@@ -64,6 +64,8 @@ export default function AiProviderSettingsPage() {
   const [selected, setSelected] = useState<string>(""); // "" = auto (env var / first configured)
   const [selectedModel, setSelectedModel] = useState<string>(""); // "" = provider default
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string; model?: string; elapsed_ms?: number } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,6 +125,23 @@ export default function AiProviderSettingsPage() {
       await load();
     }
     setSaving(false);
+  }
+
+  async function testConnection() {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const resp = await fetch("/api/ai/test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: selected || null, model: selectedModel || null }),
+      });
+      const payload = await resp.json().catch(() => ({}));
+      setTestResult(payload);
+    } catch (err) {
+      setTestResult({ ok: false, error: err instanceof Error ? err.message : "Network error running the test." });
+    }
+    setTesting(false);
   }
 
   if (loading) return <LoadingSpinner />;
@@ -248,6 +267,47 @@ export default function AiProviderSettingsPage() {
               )}
             </div>
           )}
+
+          <div className="pt-2 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={testConnection}
+              disabled={testing || configuredCount === 0}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {testing ? <Loader2 size={15} className="animate-spin" /> : <PlayCircle size={15} />}
+              {testing ? "Testing…" : "Test connection"}
+            </button>
+            <p className="text-xs text-gray-400 mt-1">
+              Sends one tiny real request through the currently-selected provider and model
+              — catches a bad model id or a rejected key immediately, without needing to
+              save first or go find it later in AI Studio.
+            </p>
+
+            {testResult && (
+              <div
+                role="alert"
+                className={`mt-3 rounded-lg border p-3 text-sm flex items-start gap-2 ${
+                  testResult.ok ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"
+                }`}
+              >
+                {testResult.ok ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> : <XCircle size={16} className="mt-0.5 shrink-0" />}
+                <div>
+                  {testResult.ok ? (
+                    <>
+                      <div className="font-semibold">Working — {testResult.model}</div>
+                      <div className="text-xs mt-0.5">Responded in {testResult.elapsed_ms}ms.</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="font-semibold">Test failed{testResult.model ? ` — ${testResult.model}` : ""}</div>
+                      <div className="text-xs mt-0.5 break-words">{testResult.error}</div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {error && (
             <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">

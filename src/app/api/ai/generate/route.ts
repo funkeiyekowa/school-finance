@@ -69,7 +69,7 @@ export async function POST(request: Request) {
   if (!kind || !(kind in AI_PRESETS)) {
     return NextResponse.json({ error: "Unknown AI task kind." }, { status: 400 });
   }
-  if (!input && kind !== "principal_comment" && kind !== "class_teacher_comment") {
+  if (!input && kind !== "principal_comment" && kind !== "class_teacher_comment" && kind !== "connection_test") {
     return NextResponse.json({ error: "Prompt input is empty." }, { status: 400 });
   }
 
@@ -134,11 +134,24 @@ export async function POST(request: Request) {
       choices?: Array<{ message?: { content?: string } }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
-    output = payload.choices?.[0]?.message?.content?.trim() ?? "";
+    const choice = payload.choices?.[0] as
+      | { message?: { content?: string }; finish_reason?: string }
+      | undefined;
+    output = choice?.message?.content?.trim() ?? "";
     promptTokens = payload.usage?.prompt_tokens ?? 0;
     responseTokens = payload.usage?.completion_tokens ?? 0;
     if (!output) {
-      throw new Error("AI returned an empty response.");
+      // A 200 OK with no content usually means: the model hit its token
+      // limit before producing visible output, a content filter silently
+      // dropped the reply, or (for OpenRouter free models specifically)
+      // the model is temporarily overloaded. Naming the model and finish
+      // reason here turns a generic "empty response" into something an
+      // admin can actually act on from the AI Provider page.
+      const reason = choice?.finish_reason ? ` (finish_reason: ${choice.finish_reason})` : "";
+      throw new Error(
+        `${provider.config.label} (${provider.model}) returned an empty response${reason}. ` +
+          "Try a different model on Dashboard → AI Provider, or try again in a moment.",
+      );
     }
   } catch (err) {
     errorMsg = err instanceof Error ? err.message : "AI call failed";

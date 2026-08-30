@@ -25,7 +25,8 @@ export type AiTaskKind =
   | "website_tagline"
   | "website_paragraph"
   | "seo_description"
-  | "free_form";
+  | "free_form"
+  | "connection_test";
 
 export interface AiPreset {
   kind: AiTaskKind;
@@ -169,6 +170,19 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
     system: CORE_STYLE,
     compose: (input) => input,
     maxTokens: 600,
+  },
+  // Internal only — used by the "Test connection" button on the AI Provider
+  // settings pages (platform + school-level), never shown in AI Studio's
+  // preset picker. Deliberately tiny maxTokens: this exists purely to prove
+  // the provider/model/key combination actually works end to end, not to
+  // produce useful output.
+  connection_test: {
+    kind: "connection_test",
+    label: "Connection test",
+    description: "Internal: verifies a provider/model/key actually works.",
+    system: "Reply with exactly one word: OK",
+    compose: () => "Reply with exactly one word: OK",
+    maxTokens: 10,
   },
 };
 
