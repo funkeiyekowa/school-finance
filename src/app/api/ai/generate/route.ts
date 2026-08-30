@@ -11,9 +11,13 @@
  *     without touching every caller — the presets in @/lib/ai/prompts
  *     stay stable.
  *
- * Provider: OpenAI Chat Completions. Falls back to a helpful error
- * message when no key is configured so a school can still install
- * the app without wiring an AI provider on day 1.
+ * Provider: any OpenAI-compatible chat-completions API — OpenAI,
+ * Groq, Google Gemini, or OpenRouter — selected at runtime by the
+ * AI_PROVIDER env var (see @/lib/ai/providers). You can configure
+ * several providers' keys at once and flip the active one with just
+ * that env var + a redeploy, no code change required. Falls back to
+ * a helpful error when no provider has a key configured so a school
+ * can still install the app without wiring AI on day 1.
  */
 
 import { NextResponse } from "next/server";
@@ -21,13 +25,11 @@ import { requireStaffSession } from "@/lib/api/requireStaff";
 import { rateLimit, callerKey } from "@/lib/api/rateLimit";
 import { logError, requestContext } from "@/lib/errors/logError";
 import { AI_PRESETS, type AiTaskKind } from "@/lib/ai/prompts";
+import { resolveActiveProvider } from "@/lib/ai/providers";
 import { createClient } from "@/lib/supabase/server";
 
 const AI_RATE_MAX = 30;
 const AI_RATE_WINDOW_MS = 60_000; // 30 requests/minute per user IP
-
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 interface Body {
   kind?: AiTaskKind;
@@ -68,11 +70,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Prompt input is empty." }, { status: 400 });
   }
 
-  if (!OPENAI_API_KEY) {
+  const provider = resolveActiveProvider();
+  if (!provider) {
     return NextResponse.json(
       {
         error:
-          "AI is not configured on this deployment. Set OPENAI_API_KEY in the server environment.",
+          "AI is not configured on this deployment. Set an API key for at least one provider " +
+          "(OPENAI_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY) in the server environment.",
       },
       { status: 503 },
     );
@@ -98,14 +102,15 @@ export async function POST(request: Request) {
   let responseTokens = 0;
 
   try {
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    const resp = await fetch(provider.config.baseUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        Authorization: `Bearer ${provider.apiKey}`,
         "Content-Type": "application/json",
+        ...(provider.config.extraHeaders ?? {}),
       },
       body: JSON.stringify({
-        model: OPENAI_MODEL,
+        model: provider.model,
         temperature: 0.6,
         max_tokens: maxTokens,
         messages: [
@@ -117,7 +122,7 @@ export async function POST(request: Request) {
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => "");
-      throw new Error(`OpenAI error ${resp.status}: ${text.slice(0, 300)}`);
+      throw new Error(`${provider.config.label} error ${resp.status}: ${text.slice(0, 300)}`);
     }
 
     const payload = (await resp.json()) as {
@@ -136,7 +141,7 @@ export async function POST(request: Request) {
       source: "ai-generate",
       severity: "error",
       message: errorMsg,
-      context: { kind, source, promptLen: userTurn.length, model: OPENAI_MODEL },
+      context: { kind, source, promptLen: userTurn.length, model: `${provider.config.id}:${provider.model}` },
       organizationId: orgId,
       ...requestContext(request),
     });
@@ -158,7 +163,7 @@ export async function POST(request: Request) {
         category: kind,
         prompt_len: userTurn.length,
         response_len: output.length,
-        model: OPENAI_MODEL,
+        model: `${provider.config.id}:${provider.model}`,
         tokens_prompt: promptTokens,
         tokens_response: responseTokens,
         error: errorMsg,
