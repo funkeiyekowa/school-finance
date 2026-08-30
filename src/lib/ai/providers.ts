@@ -112,7 +112,7 @@ export const AI_PROVIDER_IDS = Object.keys(AI_PROVIDERS) as AiProviderId[];
  * "GRANTSCHOOL_openrouter_API_KEY" with a lowercase provider name) without
  * requiring anyone to go rename them in the dashboard.
  */
-function readEnvCandidates(names: string[]): string | undefined {
+export function readEnvCandidates(names: string[]): string | undefined {
   const lowerToActualKey = new Map<string, string>();
   for (const key of Object.keys(process.env)) {
     lowerToActualKey.set(key.toLowerCase(), key);
@@ -177,4 +177,9 @@ export function resolveActiveProvider(): ResolvedProvider | null {
 /** Which providers currently have a platform-wide key configured in Vercel. */
 export function listConfiguredProviders(): AiProviderId[] {
   return AI_PROVIDER_IDS.filter((id) => !!readEnvCandidates(AI_PROVIDERS[id].apiKeyEnvCandidates));
+}
+
+/** The actual configured platform-wide key for one provider, if any (never logged/returned to clients). */
+export function getConfiguredKey(id: AiProviderId): string | undefined {
+  return readEnvCandidates(AI_PROVIDERS[id].apiKeyEnvCandidates);
 }

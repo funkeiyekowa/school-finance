@@ -74,6 +74,8 @@ export default function SchoolAiProviderPage() {
 
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [freeModels, setFreeModels] = useState<FreeModelOption[]>([]);
+  const [groqModels, setGroqModels] = useState<FreeModelOption[]>([]);
+  const [geminiModels, setGeminiModels] = useState<FreeModelOption[]>([]);
   const [settings, setSettings] = useState<OrgAiSettings | null>(null);
   const [usage, setUsage] = useState<UsageDay[]>([]);
 
@@ -97,6 +99,8 @@ export default function SchoolAiProviderPage() {
     if (statusRes?.providers) {
       setProviders(statusRes.providers as ProviderStatus[]);
       setFreeModels((statusRes.openRouterFreeModels as FreeModelOption[]) ?? []);
+      setGroqModels((statusRes.groqModels as FreeModelOption[]) ?? []);
+      setGeminiModels((statusRes.geminiModels as FreeModelOption[]) ?? []);
     } else {
       setError((prev) => prev ?? "Could not load provider status.");
     }
@@ -298,6 +302,50 @@ export default function SchoolAiProviderPage() {
               </select>
               <p className="text-xs text-gray-400 mt-1">
                 Fetched live from OpenRouter — only models currently priced at $0 are listed.
+              </p>
+            </div>
+          )}
+
+          {selectedProvider === "groq" && groqModels.length > 0 && (
+            <div className="pt-3 border-t border-gray-100">
+              <div className="text-xs font-semibold text-gray-700 mb-2">Model (Groq)</div>
+              <select
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                value={selectedModel}
+                disabled={saving}
+                onChange={(e) => saveChoice(selectedProvider, e.target.value)}
+              >
+                <option value="">Default (Llama 3.1 8B Instant)</option>
+                {groqModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}{m.contextLength ? ` · ${Math.round(m.contextLength / 1000)}K context` : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Fetched live from Groq using the platform&apos;s configured key. If you add your own key below, its available models may differ slightly — use Test connection to confirm your chosen model works with your key.
+              </p>
+            </div>
+          )}
+
+          {selectedProvider === "gemini" && geminiModels.length > 0 && (
+            <div className="pt-3 border-t border-gray-100">
+              <div className="text-xs font-semibold text-gray-700 mb-2">Model (Google Gemini)</div>
+              <select
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                value={selectedModel}
+                disabled={saving}
+                onChange={(e) => saveChoice(selectedProvider, e.target.value)}
+              >
+                <option value="">Default (Gemini 3.6 Flash)</option>
+                {geminiModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}{m.contextLength ? ` · ${Math.round(m.contextLength / 1000)}K context` : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Fetched live from Google using the platform&apos;s configured key. If you add your own key below, its available models may differ slightly — use Test connection to confirm your chosen model works with your key.
               </p>
             </div>
           )}

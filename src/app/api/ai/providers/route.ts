@@ -16,8 +16,9 @@
 
 import { NextResponse } from "next/server";
 import { requireStaffSession } from "@/lib/api/requireStaff";
-import { AI_PROVIDERS, AI_PROVIDER_IDS, listConfiguredProviders } from "@/lib/ai/providers";
+import { AI_PROVIDERS, AI_PROVIDER_IDS, listConfiguredProviders, getConfiguredKey } from "@/lib/ai/providers";
 import { listOpenRouterFreeModels, getOpenRouterKeyStatus } from "@/lib/ai/openrouter";
+import { listGroqModels, listGeminiModels } from "@/lib/ai/modelCatalog";
 
 export async function GET() {
   const guard = await requireStaffSession();
@@ -32,11 +33,30 @@ export async function GET() {
 
   const freeModels = await listOpenRouterFreeModels();
 
+  // Live model lists for Groq and Gemini too — same reasoning as OpenRouter's
+  // free-model list: a hardcoded single "default model" string is exactly
+  // what caused this deployment's earlier 404s (Groq and Google each retired
+  // the previous default without much warning). These endpoints require a
+  // real key (unlike OpenRouter's public /models list), so only fetch when
+  // the platform actually has one configured for that provider.
+  const groqKey = getConfiguredKey("groq");
+  const geminiKey = getConfiguredKey("gemini");
+  const [groqModels, geminiModels] = await Promise.all([
+    groqKey ? listGroqModels(groqKey) : Promise.resolve([]),
+    geminiKey ? listGeminiModels(geminiKey) : Promise.resolve([]),
+  ]);
+
   let openRouterKeyStatus = null;
-  const orKey = process.env.OPENROUTER_API_KEY;
+  const orKey = getConfiguredKey("openrouter");
   if (orKey) {
     openRouterKeyStatus = await getOpenRouterKeyStatus(orKey);
   }
 
-  return NextResponse.json({ providers, openRouterFreeModels: freeModels, openRouterKeyStatus });
+  return NextResponse.json({
+    providers,
+    openRouterFreeModels: freeModels,
+    openRouterKeyStatus,
+    groqModels,
+    geminiModels,
+  });
 }

@@ -60,6 +60,8 @@ export default function AiProviderSettingsPage() {
 
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [freeModels, setFreeModels] = useState<FreeModelOption[]>([]);
+  const [groqModels, setGroqModels] = useState<FreeModelOption[]>([]);
+  const [geminiModels, setGeminiModels] = useState<FreeModelOption[]>([]);
   const [keyStatus, setKeyStatus] = useState<OpenRouterKeyStatus | null>(null);
   const [selected, setSelected] = useState<string>(""); // "" = auto (env var / first configured)
   const [selectedModel, setSelectedModel] = useState<string>(""); // "" = provider default
@@ -92,6 +94,8 @@ export default function AiProviderSettingsPage() {
     if (statusRes?.providers) {
       setProviders(statusRes.providers as ProviderStatus[]);
       setFreeModels((statusRes.openRouterFreeModels as FreeModelOption[]) ?? []);
+      setGroqModels((statusRes.groqModels as FreeModelOption[]) ?? []);
+      setGeminiModels((statusRes.geminiModels as FreeModelOption[]) ?? []);
       setKeyStatus((statusRes.openRouterKeyStatus as OpenRouterKeyStatus | null) ?? null);
     } else {
       setError((prev) => prev ?? "Could not load provider status from the server.");
@@ -239,6 +243,51 @@ export default function AiProviderSettingsPage() {
               </select>
               <p className="text-xs text-gray-400 mt-1">
                 Fetched live from OpenRouter — only models currently priced at $0 are listed.
+              </p>
+            </div>
+          )}
+
+          {selected === "groq" && groqModels.length > 0 && (
+            <div className="pt-3 border-t border-gray-100">
+              <div className="text-xs font-semibold text-gray-700 mb-2">Model (Groq)</div>
+              <select
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                value={selectedModel}
+                disabled={saving}
+                onChange={(e) => save(selected, e.target.value)}
+              >
+                <option value="">Default (Llama 3.1 8B Instant)</option>
+                {groqModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}{m.contextLength ? ` · ${Math.round(m.contextLength / 1000)}K context` : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Fetched live from Groq using the configured platform key — this is exactly
+                what stops a retired model (like the old default) from silently 404ing again.
+              </p>
+            </div>
+          )}
+
+          {selected === "gemini" && geminiModels.length > 0 && (
+            <div className="pt-3 border-t border-gray-100">
+              <div className="text-xs font-semibold text-gray-700 mb-2">Model (Google Gemini)</div>
+              <select
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                value={selectedModel}
+                disabled={saving}
+                onChange={(e) => save(selected, e.target.value)}
+              >
+                <option value="">Default (Gemini 3.6 Flash)</option>
+                {geminiModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}{m.contextLength ? ` · ${Math.round(m.contextLength / 1000)}K context` : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Fetched live from Google using the configured platform key.
               </p>
             </div>
           )}
