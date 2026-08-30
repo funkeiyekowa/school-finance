@@ -9,6 +9,7 @@ import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/lib/hooks/useToast";
+import { AiAssistButton } from "@/components/ai/AiAssistButton";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, Printer, CheckCircle2, Award, GraduationCap, Users } from "lucide-react";
 
@@ -188,7 +189,24 @@ export default function ReportCardDetailPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1 uppercase">Class Teacher&apos;s Comment</label>
+              <div className="flex items-center justify-between mb-1 print:hidden">
+                <label className="block text-xs font-bold text-gray-600 uppercase">Class Teacher&apos;s Comment</label>
+                {isAdmin && !rc.published && (
+                  <AiAssistButton
+                    compact
+                    kinds={["class_teacher_comment", "polish", "rewrite_encouraging", "rewrite_positive", "shorten"]}
+                    currentValue={teacherComment}
+                    extra={{
+                      student_name: student.full_name,
+                      average_score: `${Number(rc.average_score).toFixed(1)}%`,
+                      position: rc.position_in_class ? `${rc.position_in_class} of ${rc.class_size ?? "?"}` : "",
+                    }}
+                    onApply={(text) => setTeacherComment(text)}
+                    source="report_card_teacher_comment"
+                    label="AI"
+                  />
+                )}
+              </div>
               {isAdmin && !rc.published ? (
                 <textarea
                   value={teacherComment}
@@ -201,7 +219,24 @@ export default function ReportCardDetailPage() {
               )}
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1 uppercase">Principal&apos;s Comment</label>
+              <div className="flex items-center justify-between mb-1 print:hidden">
+                <label className="block text-xs font-bold text-gray-600 uppercase">Principal&apos;s Comment</label>
+                {isAdmin && !rc.published && (
+                  <AiAssistButton
+                    compact
+                    kinds={["principal_comment", "polish", "rewrite_positive", "shorten"]}
+                    currentValue={principalComment}
+                    extra={{
+                      student_name: student.full_name,
+                      average_score: `${Number(rc.average_score).toFixed(1)}%`,
+                      position: rc.position_in_class ? `${rc.position_in_class} of ${rc.class_size ?? "?"}` : "",
+                    }}
+                    onApply={(text) => setPrincipalComment(text)}
+                    source="report_card_principal_comment"
+                    label="AI"
+                  />
+                )}
+              </div>
               {isAdmin && !rc.published ? (
                 <textarea
                   value={principalComment}

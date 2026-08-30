@@ -17,6 +17,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/context/AuthContext";
 import { signOutToSchoolLogin } from "@/lib/auth/signOutToSchoolLogin";
 import { OrgSwitcher, ActiveOrgBadge } from "@/components/layout/OrgSwitcher";
+import { SchoolBrandBar } from "@/components/layout/SchoolBrandBar";
 import ForcePasswordChange from "@/components/auth/ForcePasswordChange";
 import { cn } from "@/lib/utils";
 import {
@@ -24,7 +25,7 @@ import {
   ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users,
   Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen,
   Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown,
-  Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle,
+  Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -163,6 +164,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/inventory", label: "Inventory", icon: <Package size={17} />, module: "inventory" },
       { href: "/dashboard/vendors", label: "Vendors", icon: <Building2 size={17} />, feature: "vendors", module: "finance" },
       { href: "/dashboard/automations", label: "Automations", icon: <Settings size={17} />, adminOnly: true },
+      { href: "/dashboard/ai", label: "AI Studio", icon: <Sparkles size={17} /> },
     ],
   },
   {
@@ -445,6 +447,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
           </div>
         )}
+
+        {/* Persistent school-brand header — makes the current school context obvious on every page. */}
+        <SchoolBrandBar />
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto">

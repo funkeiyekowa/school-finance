@@ -25,6 +25,24 @@ export default function RouteError({
     // failure isn't silent. `digest` is Next's stable error id.
     // eslint-disable-next-line no-console
     console.error("Route error:", error);
+    // Best-effort ship to our server-side error_log so ops can see it
+    // without needing the user's console. Rate-limited on the server.
+    try {
+      void fetch("/api/client-error", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: error?.message ?? "Client route error",
+          stack: error?.stack ?? null,
+          digest: error?.digest ?? null,
+          source: "ui:route-error",
+          path: typeof window !== "undefined" ? window.location.pathname : null,
+          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+        }),
+      });
+    } catch {
+      // Never let a logging error crash the boundary itself.
+    }
   }, [error]);
 
   return (

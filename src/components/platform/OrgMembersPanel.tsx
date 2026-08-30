@@ -24,7 +24,7 @@ import { Badge } from "@/components/ui/Badge";
 import { LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { cn, fmtDateTime } from "@/lib/utils";
 import {
-  UserPlus, Trash2, Star, Users, AlertTriangle, CheckCircle2, Search,
+  UserPlus, Trash2, Star, Users, AlertTriangle, CheckCircle2, Search, Pencil,
 } from "lucide-react";
 
 export interface OrgMemberRow {
@@ -32,6 +32,7 @@ export interface OrgMemberRow {
   user_id: string;
   email: string | null;
   full_name: string | null;
+  phone: string | null;
   profile_role: string | null;
   profile_active: boolean | null;
   membership_role: string;
@@ -233,6 +234,53 @@ export function OrgMembersPanel({
     onChanged?.();
   }
 
+  // Inline profile editing (full_name / phone / active on profiles).
+  // Routed through the update_member_profile SECURITY DEFINER RPC which
+  // enforces is_org_admin on the target membership's org, so this works
+  // even against the profiles-lockdown RLS.
+  const [editTarget, setEditTarget] = useState<OrgMemberRow | null>(null);
+  const [editFullName, setEditFullName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editActive, setEditActive] = useState(true);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  function openEdit(m: OrgMemberRow) {
+    setEditTarget(m);
+    setEditFullName(m.full_name ?? "");
+    setEditPhone(m.phone ?? "");
+    setEditActive(m.profile_active ?? true);
+    setEditError(null);
+  }
+
+  async function saveEditProfile() {
+    if (!editTarget) return;
+    setEditSaving(true);
+    setEditError(null);
+    const { error: err } = await supabase.rpc("update_member_profile", {
+      p_membership_id: editTarget.membership_id,
+      p_full_name: editFullName.trim() || null,
+      p_phone: editPhone.trim() || null,
+      p_active: editActive,
+      p_touch_full_name: true,
+      p_touch_phone: true,
+      p_touch_active: true,
+    });
+    setEditSaving(false);
+    if (err) {
+      setEditError(
+        err.message.includes("does not exist")
+          ? "The update_member_profile RPC is missing. Run supabase/upgrades_2026_08.sql first."
+          : err.message,
+      );
+      return;
+    }
+    flash("Profile updated.");
+    setEditTarget(null);
+    await load();
+    onChanged?.();
+  }
+
   if (loading) return <LoadingSpinner />;
 
   const filteredMembers = (() => {
@@ -373,6 +421,7 @@ export function OrgMembersPanel({
                         {isSelf && <span className="ml-1.5 text-[10px] text-gray-400">(you)</span>}
                       </div>
                       <div className="text-xs text-gray-500">{m.email}</div>
+                      {m.phone && <div className="text-xs text-gray-400 font-mono">{m.phone}</div>}
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
@@ -426,14 +475,25 @@ export function OrgMembersPanel({
                       {m.joined_at ? fmtDateTime(m.joined_at) : "—"}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => remove(m)}
-                        disabled={busy}
-                        aria-label={`Remove ${m.email ?? "member"}`}
-                        className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 disabled:opacity-40"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => openEdit(m)}
+                          disabled={busy}
+                          aria-label={`Edit ${m.email ?? "member"} profile`}
+                          className="text-gray-500 hover:text-[#0F2A47] p-1 rounded hover:bg-gray-100 disabled:opacity-40"
+                          title="Edit name, phone, active"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => remove(m)}
+                          disabled={busy}
+                          aria-label={`Remove ${m.email ?? "member"}`}
+                          className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 disabled:opacity-40"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -448,6 +508,59 @@ export function OrgMembersPanel({
         row-level security reads, so a user with two schools sees exactly one of them at a
         time and switches with the org picker in the sidebar.
       </p>
+
+      {editTarget && (
+        <Modal open onClose={() => setEditTarget(null)} title={`Edit ${editTarget.email || "member"}`} size="md">
+          <div className="space-y-4">
+            <p className="text-xs text-gray-500">
+              Editing the underlying profile of this member. Changes apply to every school
+              this user belongs to. Membership role and default-school are controlled from
+              the row itself, not here.
+            </p>
+            <Input
+              label="Full name"
+              value={editFullName}
+              onChange={(e) => setEditFullName(e.target.value)}
+              placeholder="Jane Doe"
+              autoComplete="off"
+            />
+            <Input
+              label="Phone"
+              value={editPhone}
+              onChange={(e) => setEditPhone(e.target.value)}
+              placeholder="+234…"
+              autoComplete="off"
+            />
+            <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editActive}
+                onChange={(e) => setEditActive(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-[#C9A227] focus:ring-[#C9A227]"
+              />
+              <span>
+                Profile active
+                <span className="block text-xs text-gray-500">
+                  Uncheck to disable this user across every school. Suspending a single
+                  membership without disabling the profile is done from the row.
+                </span>
+              </span>
+            </label>
+
+            {editError && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+                <AlertTriangle size={14} className="mt-px shrink-0" />
+                <span>{editError}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>
+              <Button variant="gold" loading={editSaving} onClick={saveEditProfile}>Save</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {showAdd && (
         <Modal open onClose={() => setShowAdd(false)} title={`Add a member to ${orgName}`} size="lg">

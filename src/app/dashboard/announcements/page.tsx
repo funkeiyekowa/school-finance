@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { AiAssistButton } from "@/components/ai/AiAssistButton";
 import { Plus, Save, Send, Bell } from "lucide-react";
 
 interface ClassRow { id: string; name: string; }
@@ -144,9 +145,19 @@ export default function AnnouncementsPage() {
           <div className="space-y-4">
             <Input label="Title" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="School resumes on..." />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">Message</label>
+                <AiAssistButton
+                  compact
+                  kinds={["announcement_draft", "polish", "shorten", "translate_formal", "sms_reminder"]}
+                  currentValue={form.body || form.title}
+                  onApply={(text) => setForm((f) => ({ ...f, body: text }))}
+                  source="announcement"
+                  label="AI draft"
+                />
+              </div>
               <textarea rows={4} value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]" placeholder="Write your announcement..." />
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]" placeholder="Write your announcement, or use AI draft on the right..." />
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>

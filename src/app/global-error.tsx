@@ -22,6 +22,24 @@ export default function GlobalError({
   useEffect(() => {
     // eslint-disable-next-line no-console
     console.error("Global error:", error);
+    // Report to server-side error_log via the shared client sink so ops
+    // are aware of layout-level crashes without user cooperation.
+    try {
+      void fetch("/api/client-error", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: error?.message ?? "Root layout error",
+          stack: error?.stack ?? null,
+          digest: error?.digest ?? null,
+          source: "ui:global-error",
+          path: typeof window !== "undefined" ? window.location.pathname : null,
+          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+        }),
+      });
+    } catch {
+      // Never crash the last-resort boundary.
+    }
   }, [error]);
 
   return (

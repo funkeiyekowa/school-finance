@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/Badge";
 import { OrgMembersPanel } from "@/components/platform/OrgMembersPanel";
 import {
   Plus, Building2, Package, Users, ShieldCheck, LogIn, AlertTriangle,
-  CheckCircle2, Globe,
+  CheckCircle2, Globe, ExternalLink, Copy,
 } from "lucide-react";
 
 interface OrgRow {
@@ -43,7 +43,7 @@ interface SubRow {
   status: string;
 }
 
-type Tab = "orgs" | "members" | "modules";
+type Tab = "orgs" | "school" | "members" | "modules";
 
 export default function PlatformAdminPage() {
   const { isSuperAdmin, profile, orgId, switchOrg } = useAuth();
@@ -287,6 +287,7 @@ export default function PlatformAdminPage() {
       <div className="flex flex-wrap gap-2">
         {([
           { id: "orgs", label: "Schools", icon: <Building2 size={14} /> },
+          { id: "school", label: "School details", icon: <ExternalLink size={14} /> },
           { id: "members", label: "Members", icon: <Users size={14} /> },
           { id: "modules", label: "Module catalogue", icon: <Package size={14} /> },
         ] as const).map(t => (
@@ -362,6 +363,8 @@ export default function PlatformAdminPage() {
                           <div className="flex items-center justify-end gap-2 whitespace-nowrap">
                             <button onClick={() => openEdit(org)}
                               className="text-xs text-[#0F2A47] hover:underline">Edit</button>
+                            <button onClick={() => { setFocusOrgId(org.id); setTab("school"); }}
+                              className="text-xs text-[#0F2A47] hover:underline">URLs</button>
                             <button onClick={() => { setFocusOrgId(org.id); setTab("members"); }}
                               className="text-xs text-[#0F2A47] hover:underline">Members</button>
                             <button onClick={() => setFocusOrgId(focusOrgId === org.id ? null : org.id)}
@@ -417,6 +420,40 @@ export default function PlatformAdminPage() {
                     );
                   })}
                 </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {tab === "school" && (
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <CardTitle>School details & URLs</CardTitle>
+              <select
+                value={focusOrgId ?? ""}
+                onChange={(e) => setFocusOrgId(e.target.value || null)}
+                aria-label="Choose a school"
+                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white"
+              >
+                <option value="">Choose a school…</option>
+                {orgs.map(o => (
+                  <option key={o.id} value={o.id}>{o.name} ({o.slug})</option>
+                ))}
+              </select>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {focusOrg ? (
+              <SchoolUrlsPanel org={focusOrg} />
+            ) : (
+              <div className="py-12 text-center">
+                <ExternalLink size={32} className="mx-auto text-gray-300 mb-3" />
+                <p className="text-sm text-gray-500 mb-1">Pick a school to see its public URLs.</p>
+                <p className="text-xs text-gray-400">
+                  Each school has a public website, a staff portal, and a login for students &amp; parents.
+                </p>
               </div>
             )}
           </CardContent>
@@ -607,6 +644,143 @@ export default function PlatformAdminPage() {
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+
+/**
+ * Per-school detail card: renders the four canonical URLs so a
+ * super-admin can copy or open them for a specific school
+ * without leaving the platform admin surface.
+ *
+ * URL sources:
+ *   • Public website:     /s/<slug>            (route src/app/s/[slug]/[[...path]]/)
+ *   • Staff login:        /s/<slug>/staff-portal
+ *   • Student/parent login: /s/<slug>/login    (persona tab in the form)
+ *   • Custom domain:      populated from website_domains where is_primary AND verified.
+ *
+ * The origin for absolute URLs is the current window origin, with
+ * an override via NEXT_PUBLIC_PLATFORM_HOST if the school has a
+ * subdomain-style deployment. The panel gracefully degrades to
+ * relative paths if we're on the server (SSR) or window is
+ * unavailable.
+ */
+function SchoolUrlsPanel({ org }: { org: OrgRow }) {
+  const [primaryDomain, setPrimaryDomain] = useState<string | null>(null);
+  const supabaseClient = useMemo(() => createClient(), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabaseClient
+        .from("website_domains")
+        .select("hostname")
+        .eq("organization_id", org.id)
+        .eq("is_primary", true)
+        .eq("verified", true)
+        .maybeSingle();
+      if (!cancelled) {
+        const row = data as { hostname?: string } | null;
+        setPrimaryDomain(row?.hostname ?? null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [supabaseClient, org.id]);
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const platformHost = process.env.NEXT_PUBLIC_PLATFORM_HOST || "";
+  const subdomainRoot = platformHost && origin
+    ? `${origin.startsWith("https") ? "https" : "http"}://${org.slug}.${platformHost}`
+    : "";
+
+  const urls: Array<{ label: string; path: string; url: string; note?: string; kind: "site" | "staff" | "login" | "domain" }> = [
+    {
+      label: "Public website",
+      path: `/s/${org.slug}`,
+      url: `${origin}/s/${org.slug}`,
+      kind: "site",
+      note: "The school's public brochure. Editable in Website Studio.",
+    },
+    {
+      label: "Staff / teacher portal",
+      path: `/s/${org.slug}/staff-portal`,
+      url: `${origin}/s/${org.slug}/staff-portal`,
+      kind: "staff",
+      note: "Staff sign-in — teachers, bursars, admins.",
+    },
+    {
+      label: "Student & parent login",
+      path: `/s/${org.slug}/login`,
+      url: `${origin}/s/${org.slug}/login`,
+      kind: "login",
+      note: "One page with a Student / Parent persona tab.",
+    },
+  ];
+  if (subdomainRoot) {
+    urls.push({
+      label: "Subdomain",
+      path: `${org.slug}.${platformHost}`,
+      url: subdomainRoot,
+      kind: "domain",
+      note: `Set NEXT_PUBLIC_PLATFORM_HOST to route ${org.slug} at this subdomain.`,
+    });
+  }
+  if (primaryDomain) {
+    urls.push({
+      label: "Primary custom domain",
+      path: primaryDomain,
+      url: `https://${primaryDomain}`,
+      kind: "domain",
+      note: "Verified custom hostname configured in Website Studio → Domains.",
+    });
+  }
+
+  async function copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // clipboard blocked — best-effort only, users can select and Ctrl+C.
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
+        <Building2 size={16} className="text-[#0F2A47] mt-0.5" />
+        <div>
+          <div className="font-semibold text-[#0F2A47]">{org.name}</div>
+          <div className="text-xs text-gray-500 font-mono">{org.slug}</div>
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        {urls.map(u => (
+          <div key={u.label} className="rounded-lg border border-gray-200 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+              <div className="font-medium text-sm text-[#0F2A47]">{u.label}</div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => copy(u.url)}
+                  className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-[#0F2A47]"
+                >
+                  <Copy size={12} /> Copy
+                </button>
+                <a
+                  href={u.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-[#C9A227] hover:underline"
+                >
+                  <ExternalLink size={12} /> Open
+                </a>
+              </div>
+            </div>
+            <div className="font-mono text-xs text-gray-500 break-all">{u.url}</div>
+            {u.note && <div className="text-xs text-gray-400 mt-1">{u.note}</div>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
