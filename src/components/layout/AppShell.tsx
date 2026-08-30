@@ -1,14 +1,8 @@
 "use client";
 
 /**
- * Application shell — collapsible grouped sidebar navigation.
- *
- * NAVIGATION REFACTORING ONLY:
- * - All existing routes are preserved.
- * - All permissions/module/feature checks are preserved.
- * - No pages, APIs, database logic, or permissions were changed.
- * - The sidebar is now organized into 8 logical sections with
- *   accordion behaviour so only the active section is expanded.
+ * Application shell — collapsible grouped sidebar navigation with active-org
+ * role, permission, and module visibility checks.
  */
 
 import { useState, useEffect } from "react";
@@ -40,9 +34,9 @@ interface NavItem {
   module?: string;
   adminOnly?: boolean;
   superAdminOnly?: boolean;
-  /** If set, the item is only visible when the current user's role is in this list.
-   * Roles are taken from profiles.role AND org_memberships.role: student, parent,
-   * teacher, staff, admin, owner, editor, viewer, bursar, accountant, developer. */
+  /** If set, the item is only visible when the active organization role is in
+   * this list: student, parent, teacher, staff, admin, owner, editor, viewer,
+   * bursar, accountant, developer. */
   roles?: string[];
 }
 
@@ -246,18 +240,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [activeHref]);
 
-  /**
-   * Resolve which roles the caller currently holds — union of
-   * profiles.role AND org_memberships.role, plus a "super_admin" tag
-   * when applicable. Both count, because provisioning may set one and
-   * a later add-to-org may set the other.
-   */
+  /** Resolve roles from the active organization only. Platform super-admin
+   * remains global so support sessions can reach platform tooling. */
   const activeRoles = new Set<string>();
-  if (profile?.role)     activeRoles.add(profile.role);
-  if (membership?.role)  activeRoles.add(membership.role);
-  if (isSuperAdmin)      activeRoles.add("super_admin");
-  const isStaffy = ["owner","admin","editor","staff","bursar","accountant","developer"]
-    .some(r => activeRoles.has(r));
+  if (membership?.role) activeRoles.add(membership.role);
+  if (isSuperAdmin) activeRoles.add("super_admin");
 
   function isRoleAllowed(allowed?: string[]): boolean {
     if (!allowed || allowed.length === 0) return true;
@@ -274,10 +261,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (item.superAdminOnly && !isSuperAdmin) return false;
     if (item.adminOnly && !isAdmin) return false;
     if (!isRoleAllowed(item.roles)) return false;
-    // Staffy roles bypass the permissions map (extends the old isAdmin
-    // bypass to bursar/accountant/editor/staff too, so a bursar without
-    // an explicit 'income' permission still sees Finance).
-    if (item.feature && !isStaffy && !hasFeature(item.feature)) return false;
+    if (item.feature && !hasFeature(item.feature)) return false;
     if (item.module && !hasModule(item.module)) return false;
     return true;
   }

@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireStaffSession } from "@/lib/api/requireStaff";
+import {
+  ExternalRequestError,
+  fetchExternalHttps,
+  readExternalJson,
+  validateExternalHttpsUrl,
+} from "@/lib/api/externalRequest";
+
+export const runtime = "nodejs";
 
 // Verifies that the given SMS Gate (or compatible) credentials actually
 // authenticate, without registering anything. Credentials are supplied
@@ -9,7 +17,7 @@ import { requireStaffSession } from "@/lib/api/requireStaff";
 // Guarded by requireStaffSession so this cannot be used as an anonymous
 // credential-probing proxy against arbitrary SMS Gate servers.
 export async function POST(request: Request) {
-  const guard = await requireStaffSession();
+  const guard = await requireStaffSession({ permission: "setup" });
   if (guard) return guard;
 
   try {
@@ -19,10 +27,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Server address, username, and password are all required." }, { status: 400 });
     }
 
-    const baseUrl = normalizeBaseUrl(serverAddress);
+    const baseUrl = await validateExternalHttpsUrl(serverAddress);
+    const endpoint = new URL(baseUrl);
+    endpoint.pathname = `${endpoint.pathname.replace(/\/+$/, "")}/3rdparty/v1/webhooks`;
     const auth = Buffer.from(`${username}:${password}`).toString("base64");
 
-    const res = await fetch(`${baseUrl}/3rdparty/v1/webhooks`, {
+    const res = await fetchExternalHttps(endpoint.href, {
       method: "GET",
       headers: { Authorization: `Basic ${auth}` },
     });
@@ -34,16 +44,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: `Gateway responded with status ${res.status}.` }, { status: 200 });
     }
 
-    const webhooks = await res.json();
+    const webhooks = await readExternalJson<unknown>(res);
     return NextResponse.json({ ok: true, message: "Connection successful.", existingWebhooks: Array.isArray(webhooks) ? webhooks.length : 0 });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Could not reach the gateway server.";
-    return NextResponse.json({ ok: false, error: message }, { status: 200 });
+    const invalidRequest = err instanceof ExternalRequestError;
+    return NextResponse.json(
+      { ok: false, error: invalidRequest ? err.message : "Could not securely reach the gateway server." },
+      { status: invalidRequest ? 400 : 502 },
+    );
   }
-}
-
-function normalizeBaseUrl(serverAddress: string): string {
-  let addr = serverAddress.trim();
-  if (!/^https?:\/\//i.test(addr)) addr = `https://${addr}`;
-  return addr.replace(/\/+$/, "");
 }

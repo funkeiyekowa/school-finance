@@ -901,7 +901,7 @@ function SmsGatewayTab() {
         <CardContent className="space-y-3 text-sm text-gray-600">
           <div className="flex items-start gap-3">
             <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">1</span>
-            <p>Open the SMS Gateway app on your school's Android phone and copy the Cloud server (or Local server) credentials into the form above.</p>
+            <p>Open the SMS Gateway app on your school&apos;s Android phone and copy the Cloud server (or Local server) credentials into the form above.</p>
           </div>
           <div className="flex items-start gap-3">
             <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-xs font-bold">2</span>
@@ -1296,7 +1296,7 @@ function EmailAlertsTab() {
                 <p className="text-xs text-red-800">
                   Save failed � {saveError}. If this mentions a missing column, the fix migration
                   (<code className="bg-red-100 px-1 rounded">email_alerts_fix_migration.sql</code>)
-                  hasn't been run yet in Supabase.
+                  hasn&apos;t been run yet in Supabase.
                 </p>
               </div>
             )}
@@ -1397,7 +1397,7 @@ function EmailAlertsTab() {
         <CardContent className="space-y-4">
           <ol className="space-y-3 text-sm text-gray-600">
             {[
-              <>In Gmail, create a filter for your bank's alert address and apply the label <strong>{form.email_gmail_label || "BankAlerts"}</strong>. Tick &ldquo;Also apply to matching conversations&rdquo;.</>,
+              <>In Gmail, create a filter for your bank&apos;s alert address and apply the label <strong>{form.email_gmail_label || "BankAlerts"}</strong>. Tick &ldquo;Also apply to matching conversations&rdquo;.</>,
               <>Go to <a href="https://script.google.com" target="_blank" rel="noreferrer" className="text-[#0F2A47] underline font-medium">script.google.com</a> and create a new project.</>,
               <>Paste the script below. The secret is already filled in — nothing else to edit.</>,
               <>Click the clock icon (Triggers) → Add Trigger → function <code className="bg-gray-100 px-1 rounded">processBankEmails</code>, time-driven, minutes timer, every 5 minutes.</>,

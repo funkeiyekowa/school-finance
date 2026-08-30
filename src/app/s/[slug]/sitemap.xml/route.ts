@@ -12,9 +12,9 @@ function publicClient() {
 
 export async function GET(
   _request: Request,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
-  const { slug } = params;
+  const { slug } = await params;
   const resolution = await resolveBySlug(slug);
 
   if (!resolution?.available || !resolution.website_id) {

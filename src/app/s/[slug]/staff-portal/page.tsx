@@ -6,11 +6,12 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 interface Props {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const brand = await fetchSchoolBrand(params.slug);
+  const { slug } = await params;
+  const brand = await fetchSchoolBrand(slug);
   return {
     title: `${brand.name} - Staff Portal`,
     description: `Staff sign in for ${brand.name}.`,
@@ -27,10 +28,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * super-admins receive a generic invalid-credentials error.
  */
 export default async function SchoolStaffPortalPage({ params }: Props) {
-  const brand = await fetchSchoolBrand(params.slug);
+  const { slug } = await params;
+  const brand = await fetchSchoolBrand(slug);
   return (
     <StaffLoginForm
-      slug={brand.slug || params.slug}
+      slug={brand.slug || slug}
       schoolName={brand.name}
       logoUrl={brand.logo_url}
       found={brand.found}

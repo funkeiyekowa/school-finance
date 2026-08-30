@@ -13,6 +13,7 @@ import {
   SiteShell, SiteUnavailable, fetchPage, fetchArticle, fetchAllNews, fetchAllEvents,
 } from "@/components/website/SitePage";
 import type { SiteResolution, PagePayload } from "@/lib/website/types";
+import { serializeJsonLd } from "@/lib/website/security";
 
 function publicClient() {
   return createClient(
@@ -104,7 +105,7 @@ function schemaOrg(payload: PagePayload, origin: string) {
       ? { "@type": "PostalAddress", streetAddress: contact.address }
       : undefined,
   };
-  return JSON.stringify(json, (_k, v) => (v === undefined ? undefined : v));
+  return serializeJsonLd(json);
 }
 
 /**

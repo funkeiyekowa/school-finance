@@ -12,6 +12,8 @@
  */
 
 import type { ThemeTokens, WebsiteTheme, PublicSite } from "./types";
+import { safeStyleSheet } from "./security";
+import { validateThemeTokens } from "./theme-validator";
 
 /** Fonts the studio offers. Kept curated so every site stays fast and legible. */
 export const FONT_LIBRARY = {
@@ -143,9 +145,14 @@ export function resolveTheme(
   theme: Partial<WebsiteTheme> | null | undefined,
   site?: Pick<PublicSite, "brand" | "typography"> | null
 ): ResolvedTheme {
-  const t: ThemeTokens = theme?.tokens ?? {};
-  const brand: ThemeTokens = site?.brand ?? {};
-  const typo = site?.typography ?? {};
+  // Revalidate database values at the rendering boundary. Editor-side checks
+  // are not sufficient for legacy rows or values written outside the UI.
+  const themeResult = validateThemeTokens(theme?.tokens ?? {});
+  const brandResult = validateThemeTokens(site?.brand ?? {});
+  const typographyResult = validateThemeTokens({ fonts: site?.typography ?? {} });
+  const t: ThemeTokens = themeResult.valid ? themeResult.tokens! : {};
+  const brand: ThemeTokens = brandResult.valid ? brandResult.tokens! : {};
+  const typo = typographyResult.valid ? typographyResult.tokens?.fonts ?? {} : {};
 
   const mergeGroup = (
     group: "colors" | "scale" | "radius" | "spacing" | "button" | "shadow"
@@ -232,6 +239,9 @@ function pick(...vals: (string | undefined)[]): string {
  * a theme without it bleeding into the dashboard chrome.
  */
 export function themeToCss(theme: ResolvedTheme, selector = ".site-root"): string {
+  // Callers currently use a fixed class selector; retain a safe fallback if
+  // this API is ever passed CMS-controlled selector text.
+  const safeSelector = /^\.[a-zA-Z][a-zA-Z0-9_-]*$/.test(selector) ? selector : ".site-root";
   const vars: string[] = [];
 
   for (const [k, v] of Object.entries(theme.colors)) vars.push(`--c-${kebab(k)}: ${v};`);
@@ -258,9 +268,9 @@ export function themeToCss(theme: ResolvedTheme, selector = ".site-root"): strin
   vars.push(`--motif-image: ${motifBackground(theme.motif, motifColor)};`);
   vars.push(`--motif-size: ${motifSize(theme.motif)};`);
 
-  const S = selector; // shorthand
+  const S = safeSelector; // shorthand
 
-  return `
+  return safeStyleSheet(`
 /* ============ TOKENS ============ */
 ${S}{${vars.join("")}}
 
@@ -1176,7 +1186,7 @@ ${S} .stat-item b{
 ${S} .stat-item span{
   font-size:.82rem;text-transform:uppercase;letter-spacing:.08em;opacity:.82;
 }
-`.trim();
+`.trim());
 }
 
 /** Add an alpha channel to a hex colour. */

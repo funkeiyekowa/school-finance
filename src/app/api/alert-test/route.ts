@@ -23,7 +23,7 @@ import { requireStaffSession } from "@/lib/api/requireStaff";
  * caller can't fish the student directory by pasting text.
  */
 export async function POST(request: Request) {
-  const guard = await requireStaffSession();
+  const guard = await requireStaffSession({ permission: "sms_alerts" });
   if (guard) return guard;
   const supabase = createServiceClient();
 

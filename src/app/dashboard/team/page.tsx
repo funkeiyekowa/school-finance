@@ -196,7 +196,7 @@ export default function TeamPage() {
       }
     };
     return list.slice().sort(cmp);
-  }, [users, activeTab, search, sortKey, sortDir]);
+  }, [users, tabs, activeTab, search, sortKey, sortDir]);
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));

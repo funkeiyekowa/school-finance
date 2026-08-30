@@ -160,7 +160,8 @@ function minutesBetween(a: string, b: string): number {
 export async function detectDuplicate(
   supabase: SupabaseClient,
   incoming: IncomingAlert,
-  settings: DedupSettings
+  settings: DedupSettings,
+  organizationId?: string,
 ): Promise<DuplicateResult> {
   const noMatch: DuplicateResult = {
     status: "NOT_DUPLICATE",
@@ -181,7 +182,7 @@ export async function detectDuplicate(
   // ---------- Step 1: Find candidates ----------
   // Query recent records that could be the same transaction.
   // Candidates must: same amount, created within the window, and ACTIVE.
-  const { data: candidates } = await supabase
+  let candidatesQuery = supabase
     .from("sms_inbox")
     .select(
       "id, event_id, parsed_reference, parsed_amount, parsed_student_number, " +
@@ -190,7 +191,9 @@ export async function detectDuplicate(
     )
     .eq("parsed_amount", incoming.amount)
     .gte("created_at", windowStart)
-    .or("archive_status.eq.ACTIVE,archive_status.is.null")
+    .or("archive_status.eq.ACTIVE,archive_status.is.null");
+  if (organizationId) candidatesQuery = candidatesQuery.eq("organization_id", organizationId);
+  const { data: candidates } = await candidatesQuery
     .order("created_at", { ascending: false })
     .limit(20);
 

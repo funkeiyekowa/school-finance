@@ -45,9 +45,8 @@ export default function RolesPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (!isAdmin) return <div className="p-6 text-gray-500">Admin access required.</div>;
-
   const existingNames = useMemo(() => new Set(roles.map(r => r.name.toLowerCase())), [roles]);
+  if (!isAdmin) return <div className="p-6 text-gray-500">Admin access required.</div>;
   const missingCanonical = CANONICAL.filter(n => !existingNames.has(n));
 
   async function togglePermission(role: Role, featureKey: string, value: boolean) {

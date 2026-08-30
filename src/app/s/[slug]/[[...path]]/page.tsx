@@ -13,19 +13,21 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 interface Props {
-  params: { slug: string; path?: string[] };
+  params: Promise<{ slug: string; path?: string[] }>;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const resolution = await resolveBySlug(params.slug);
-  return buildMetadata(resolution, params.path);
+  const { slug, path } = await params;
+  const resolution = await resolveBySlug(slug);
+  return buildMetadata(resolution, path);
 }
 
 export default async function TenantSiteBySlug({ params }: Props) {
-  const resolution = await resolveBySlug(params.slug);
+  const { slug, path } = await params;
+  const resolution = await resolveBySlug(slug);
   return renderSite({
     resolution,
-    segments: params.path,
-    basePath: `/s/${params.slug}`,
+    segments: path,
+    basePath: `/s/${slug}`,
   });
 }

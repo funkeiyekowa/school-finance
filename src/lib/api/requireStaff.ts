@@ -1,51 +1,69 @@
 import { createClient } from "@/lib/supabase/server";
 
+interface StaffSessionOptions {
+  /** Effective permission required for this action in the active organization. */
+  permission?: string;
+}
+
+const STAFF_ROLES = new Set([
+  "owner", "admin", "editor", "staff", "bursar", "accountant",
+  "teacher", "developer", "super_admin",
+]);
+const PRIVILEGED_ROLES = new Set(["owner", "admin", "super_admin"]);
+
 /**
- * Guard for API routes that should only accept requests from a
- * signed-in staff member (owner/admin/editor/staff/bursar/accountant/
- * teacher/developer/super_admin). Returns a Response to short-circuit
- * on failure, or null when the caller may proceed.
- *
- * Usage:
- *
- *   const guard = await requireStaffSession();
- *   if (guard) return guard;
- *   // ... proceed
+ * Guard for staff API routes. Authorization is based only on the active
+ * (default) organization membership; a role in another organization cannot
+ * grant access. Viewers and users without an active organization are denied.
  */
-export async function requireStaffSession(): Promise<Response | null> {
+export async function requireStaffSession(
+  options: StaffSessionOptions = {},
+): Promise<Response | null> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     return Response.json({ error: "Not signed in." }, { status: 401 });
   }
 
-  const [{ data: memberships }, { data: profile }] = await Promise.all([
-    supabase
-      .from("org_memberships")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("active", true),
-    supabase
-      .from("profiles")
-      .select("role, active")
-      .eq("id", user.id)
-      .maybeSingle(),
-  ]);
+  const { data: membership, error: membershipError } = await supabase
+    .from("org_memberships")
+    .select("organization_id, role")
+    .eq("user_id", user.id)
+    .eq("active", true)
+    .eq("is_default", true)
+    .maybeSingle();
 
-  const staffRoles = new Set([
-    "owner", "admin", "editor", "staff", "bursar", "accountant",
-    "teacher", "developer", "super_admin", "viewer",
-  ]);
-  const membershipRole = (memberships ?? []).map((m: { role: string }) => m.role);
-  const profileRole = (profile as { role?: string; active?: boolean } | null)?.role;
-  const profileActive = (profile as { active?: boolean } | null)?.active ?? true;
-
-  const isStaff =
-    membershipRole.some(r => staffRoles.has(r)) ||
-    (profileRole ? staffRoles.has(profileRole) && profileActive : false);
-
-  if (!isStaff) {
+  const activeMembership = membership as {
+    organization_id?: string;
+    role?: string;
+  } | null;
+  const role = activeMembership?.role;
+  if (
+    membershipError ||
+    !activeMembership?.organization_id ||
+    !role ||
+    !STAFF_ROLES.has(role)
+  ) {
     return Response.json({ error: "Not authorized." }, { status: 403 });
   }
+
+  if (options.permission && !PRIVILEGED_ROLES.has(role)) {
+    const { data: roleConfig, error: permissionsError } = await supabase
+      .from("roles")
+      .select("permissions")
+      .eq("organization_id", activeMembership.organization_id)
+      .eq("name", role)
+      .limit(1)
+      .maybeSingle();
+    const permissions = roleConfig?.permissions as Record<string, boolean> | null;
+
+    if (permissionsError || permissions?.[options.permission] !== true) {
+      return Response.json(
+        { error: `Permission required: ${options.permission}.` },
+        { status: 403 },
+      );
+    }
+  }
+
   return null;
 }

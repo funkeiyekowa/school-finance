@@ -401,7 +401,7 @@ function StudentsPageInner() {
       )}
 
       {showAdd && <AddStudentModal onClose={() => { setShowAdd(false); load(); }} />}
-      {showImport && <ImportStudentsModal onClose={() => { setShowImport(false); load(); }} />}
+      {showImport && <ImportStudentsModal onCloseAction={() => { setShowImport(false); load(); }} />}
       {deleteTarget && (
         <Modal open onClose={() => setDeleteTarget(null)} title="Delete Student" size="sm">
           <div className="space-y-4">

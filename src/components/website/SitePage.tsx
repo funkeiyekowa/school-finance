@@ -19,6 +19,7 @@ import { RenderSection, type SectionContext } from "@/components/website/section
 import { SiteForm } from "@/components/website/SiteForm";
 import { SiteInteractive } from "@/components/website/SiteInteractive";
 import type { PagePayload, NewsItem, EventItem } from "@/lib/website/types";
+import { safeExternalUrl } from "@/lib/website/security";
 
 /** Anon client: the public site is read with the same privileges a visitor has. */
 function publicClient() {
@@ -75,27 +76,6 @@ export async function fetchAllEvents(orgId: string): Promise<EventItem[]> {
   return (data ?? []) as EventItem[];
 }
 
-/* ------------------------------------------------------------------ */
-/* Structured Data                                                     */
-/* ------------------------------------------------------------------ */
-
-function schemaOrg(payload: PagePayload, origin: string) {
-  const contact = payload.site.contact ?? {};
-  const json = {
-    "@context": "https://schema.org",
-    "@type": "School",
-    name: payload.site.site_name,
-    description: payload.site.tagline ?? undefined,
-    url: origin || undefined,
-    logo: payload.site.logo_url ?? undefined,
-    telephone: contact.phone ?? undefined,
-    email: contact.email ?? undefined,
-    address: contact.address
-      ? { "@type": "PostalAddress", streetAddress: contact.address }
-      : undefined,
-  };
-  return JSON.stringify(json, (_k, v) => (v === undefined ? undefined : v));
-}
 
 /* ------------------------------------------------------------------ */
 /* Social link SVG icons                                               */
@@ -182,9 +162,10 @@ export function SiteShell({
   const slugMatch = /^\/s\/([^\/]+)/.exec(basePath || "");
   const signInHref = slugMatch ? `/s/${slugMatch[1]}/login` : "/login";
 
-  const socialEntries = Object.entries(social).filter(
-    ([, url]) => typeof url === "string" && url.trim() !== ""
-  ) as [string, string][];
+  const socialEntries = Object.entries(social).flatMap(([network, value]) => {
+    const url = typeof value === "string" ? safeExternalUrl(value) : null;
+    return url ? [[network, url] as [string, string]] : [];
+  });
 
   return (
     <>

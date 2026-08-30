@@ -70,9 +70,9 @@ function hasSupabaseSession(request: NextRequest): boolean {
 }
 
 /** Wrap a promise with a hard timeout so the edge budget is never exceeded. */
-async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
-  return await Promise.race<Promise<T | null>>([
-    p.then((v) => v),
+function withTimeout(p: Promise<NextResponse>, ms: number): Promise<NextResponse | null> {
+  return Promise.race([
+    p,
     new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
   ]);
 }

@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
-import { fmtMoney, fmtDate, today, generateCode, exportCSV } from "@/lib/utils";
+import { fmtMoney, fmtDate, today, exportCSV } from "@/lib/utils";
+import { insertIncomeWithReceipt } from "@/lib/finance/numberedEntries";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -454,12 +455,7 @@ function AddIncomeModal({ students, fees, defaultStudentId, onClose }: AddIncome
     setLoading(true);
     setError("");
 
-    // Get next receipt number
-    const { data: existing } = await supabase.from("income_entries").select("receipt_no");
-    const receiptNo = generateCode("RCT-", (existing ?? []).map(e => e.receipt_no));
-
-    const { error: insertError } = await supabase.from("income_entries").insert({
-      receipt_no: receiptNo,
+    const { receiptNo, error: insertError } = await insertIncomeWithReceipt(supabase, {
       date: form.date,
       student_id: selectedStudentId || null,
       student_name: selectedStudent?.full_name || null,
@@ -474,7 +470,11 @@ function AddIncomeModal({ students, fees, defaultStudentId, onClose }: AddIncome
       notes: form.notes || null,
     });
 
-    if (insertError) { setError(insertError.message); setLoading(false); return; }
+    if (insertError || !receiptNo) {
+      setError(insertError?.message || "The database did not return a receipt number.");
+      setLoading(false);
+      return;
+    }
 
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,

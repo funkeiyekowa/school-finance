@@ -57,6 +57,10 @@ export async function POST(request: Request) {
   }
 
   const settings = check.settings!;
+  const organizationId = settings.organization_id;
+  if (typeof organizationId !== "string") {
+    return NextResponse.json({ error: "School settings are missing an organization." }, { status: 500 });
+  }
   if (settings.email_alerts_enabled !== true) {
     return NextResponse.json({
       success: false,
@@ -146,6 +150,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await processAlert(supabase, {
+      organizationId,
       channel: "email",
       sender: from,
       messageText,

@@ -34,10 +34,16 @@ import {
   loadPolicy,
   type PolicyDecisionResult,
 } from "./policy";
+import {
+  insertExpenseWithVoucher,
+  insertIncomeWithReceipt,
+} from "@/lib/finance/numberedEntries";
 
 export type AlertChannel = "sms" | "email";
 
 export interface AlertInput {
+  /** Tenant resolved from the webhook secret before service-role processing. */
+  organizationId: string;
   channel: AlertChannel;
   /** Phone number for SMS, from-address for email. */
   sender: string | null;
@@ -78,7 +84,7 @@ export async function processAlert(
   supabase: SupabaseClient,
   input: AlertInput
 ): Promise<AlertResult> {
-  const { channel, sender, messageText, receivedAt, externalId, messageId } = input;
+  const { organizationId, channel, sender, messageText, receivedAt, externalId, messageId } = input;
 
   if (!messageText?.trim()) {
     return { success: false, error: "No message text provided" };
@@ -88,7 +94,7 @@ export async function processAlert(
   const { data: settingsRow } = await supabase
     .from("school_settings")
     .select("*")
-    .limit(1)
+    .eq("organization_id", organizationId)
     .single();
   const settings = (settingsRow ?? {}) as Record<string, unknown>;
 
@@ -98,6 +104,7 @@ export async function processAlert(
   const { data: alreadySeen } = await supabase
     .from("sms_inbox")
     .select("id")
+    .eq("organization_id", organizationId)
     .or(`event_id.eq.${externalId},message_id.eq.${messageId}`)
     .limit(1);
   if (alreadySeen && alreadySeen.length > 0) {
@@ -152,13 +159,19 @@ export async function processAlert(
     receivedAt,
   };
 
-  const dupResult: DuplicateResult = await detectDuplicate(supabase, dedupInput, dedupSettings);
+  const dupResult: DuplicateResult = await detectDuplicate(
+    supabase,
+    dedupInput,
+    dedupSettings,
+    organizationId,
+  );
 
   if (dupResult.status === "PLATFORM_DUPLICATE") {
     // Confirmed duplicate — insert the record as archived, skip matching/posting.
     const { data: inserted } = await supabase
       .from("sms_inbox")
       .insert({
+        organization_id: organizationId,
         event_id: externalId,
         message_id: messageId,
         device_id: input.deviceId ?? null,
@@ -212,20 +225,6 @@ export async function processAlert(
     : processCredit(supabase, input, parsed, settings, dupResult);
 }
 
-/** Next sequence number for a prefixed document series (RCT-0007, VCH-0012). */
-async function nextDocumentNumber(
-  supabase: SupabaseClient,
-  table: "income_entries" | "expense_entries",
-  column: "receipt_no" | "voucher_no",
-  prefix: string
-): Promise<string> {
-  const { data } = await supabase.from(table).select(column);
-  const max = (data ?? []).reduce((acc: number, row: Record<string, unknown>) => {
-    const n = parseInt(String(row[column] ?? "").replace(prefix, ""), 10);
-    return !isNaN(n) && n > acc ? n : acc;
-  }, 0);
-  return `${prefix}${String(max + 1).padStart(4, "0")}`;
-}
 
 // ============================================================
 // DEBIT (DR) → EXPENSE
@@ -237,13 +236,17 @@ async function processDebit(
   settings: Record<string, unknown>,
   dupResult: DuplicateResult
 ): Promise<AlertResult> {
-  const { channel, sender, messageText, receivedAt, externalId, messageId } = input;
+  const { organizationId, channel, sender, messageText, receivedAt, externalId, messageId } = input;
 
   const expenseCategory = detectExpenseCategory(parsed.payeeName, parsed.purpose, parsed.reference);
   const autoExpenseEnabled = settings.sms_auto_expense === true;
 
   // --- New matching engine: evaluate ALL vendor candidates, score, decide ---
-  const vendorResult: VendorMatchResult = await matchVendor(supabase, parsed.payeeName);
+  const vendorResult: VendorMatchResult = await matchVendor(
+    supabase,
+    parsed.payeeName,
+    organizationId,
+  );
   const matchedVendorId = vendorResult.matchedId;
   const matchedVendorName = vendorResult.matchedName;
 
@@ -276,6 +279,7 @@ async function processDebit(
   const { data: inserted, error: insertError } = await supabase
     .from("sms_inbox")
     .insert({
+      organization_id: organizationId,
       event_id: externalId,
       message_id: messageId,
       device_id: input.deviceId ?? null,
@@ -309,15 +313,12 @@ async function processDebit(
 
   let autoPosted = false;
   if (willAutoPost && inserted?.id && parsed.amount) {
-    const voucherNo = await nextDocumentNumber(
-      supabase, "expense_entries", "voucher_no", "VCH-"
-    );
     const expenseDate =
       parseBankDate(parsed.transactionDate) ??
       new Date(receivedAt).toISOString().substring(0, 10);
 
-    await supabase.from("expense_entries").insert({
-      voucher_no: voucherNo,
+    const { voucherNo, error: expenseError } = await insertExpenseWithVoucher(supabase, {
+      organization_id: organizationId,
       date: expenseDate,
       vendor_id: matchedVendorId,
       vendor_name: matchedVendorName || parsed.payeeName,
@@ -330,12 +331,23 @@ async function processDebit(
       notes: messageText.substring(0, 500),
     });
 
+    if (expenseError || !voucherNo) {
+      const reason = expenseError?.message || "The database did not allocate a voucher number.";
+      await supabase.from("sms_inbox").update({
+        processing_status: "received",
+        match_status: "needs_review",
+        match_reason: `Automatic expense posting failed: ${reason}`,
+      }).eq("id", inserted.id);
+      return { success: false, id: inserted.id, type: "expense", autoPosted: false, error: reason };
+    }
+
     await supabase
       .from("sms_inbox")
       .update({ parsed_reference: `${expRef} / ${voucherNo}` })
       .eq("id", inserted.id);
 
     await supabase.from("activity_log").insert({
+      organization_id: organizationId,
       action: `Auto-Post Expense (${channelLabel} DR Alert)`,
       details: `${voucherNo} — ${parsed.payeeName || "Unknown"} — ₦${parsed.amount.toLocaleString()} — ${expenseCategory} [${vendorResult.method}]`,
     });
@@ -373,10 +385,15 @@ async function processCredit(
   settings: Record<string, unknown>,
   dupResult: DuplicateResult
 ): Promise<AlertResult> {
-  const { channel, sender, messageText, receivedAt, externalId, messageId } = input;
+  const { organizationId, channel, sender, messageText, receivedAt, externalId, messageId } = input;
 
   // --- New matching engine: evaluate ALL student candidates, score, decide ---
-  const studentResult: MatchResult = await matchStudent(supabase, parsed.studentNumber, parsed.studentName);
+  const studentResult: MatchResult = await matchStudent(
+    supabase,
+    parsed.studentNumber,
+    parsed.studentName,
+    organizationId,
+  );
 
   const matchedStudentId = studentResult.matchedId;
   const matchedStudentName = studentResult.matchedName;
@@ -438,6 +455,7 @@ async function processCredit(
   const { data: inserted, error: insertError } = await supabase
     .from("sms_inbox")
     .insert({
+      organization_id: organizationId,
       event_id: externalId,
       message_id: messageId,
       device_id: input.deviceId ?? null,
@@ -471,15 +489,12 @@ async function processCredit(
 
   let autoPosted = false;
   if (willAutoCredit && inserted?.id && parsed.amount) {
-    const receiptNo = await nextDocumentNumber(
-      supabase, "income_entries", "receipt_no", "RCT-"
-    );
     const paymentDate =
       parseBankDate(parsed.transactionDate) ??
       new Date(receivedAt).toISOString().substring(0, 10);
 
-    await supabase.from("income_entries").insert({
-      receipt_no: receiptNo,
+    const { receiptNo, error: incomeError } = await insertIncomeWithReceipt(supabase, {
+      organization_id: organizationId,
       date: paymentDate,
       student_id: matchedStudentId,
       student_name: matchedStudentName || parsed.studentName,
@@ -493,7 +508,18 @@ async function processCredit(
       sms_inbox_id: inserted.id,
     });
 
+    if (incomeError || !receiptNo) {
+      const reason = incomeError?.message || "The database did not allocate a receipt number.";
+      await supabase.from("sms_inbox").update({
+        processing_status: "received",
+        match_status: "needs_review",
+        match_reason: `Automatic income posting failed: ${reason}`,
+      }).eq("id", inserted.id);
+      return { success: false, id: inserted.id, type: "income", autoPosted: false, error: reason };
+    }
+
     await supabase.from("activity_log").insert({
+      organization_id: organizationId,
       action: `Auto-Credit Payment (${channelLabel} CR Alert)`,
       details: `${receiptNo} — ${matchedStudentName} — ₦${parsed.amount.toLocaleString()} (confidence ${confidence}%, rule: ${policyResult.rule || studentResult.method})`,
     });

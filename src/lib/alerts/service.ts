@@ -85,29 +85,42 @@ async function verifySchoolSecret(
   column: "email_webhook_secret" | "sms_webhook_secret",
   channel: "Email" | "SMS"
 ): Promise<SecretCheck> {
+  if (!provided) {
+    return { ok: false, status: 401, message: "Invalid or missing webhook secret." };
+  }
+
+  // The service role bypasses RLS, so never use `.limit(1)` here: that would
+  // bind every webhook to whichever school's settings row Postgres returned
+  // first. Compare against every configured tenant and return only the row
+  // whose secret authenticated this request.
   const { data, error } = await supabase
     .from("school_settings")
     .select("*")
-    .limit(1)
-    .single();
+    .not(column, "is", null);
 
-  if (error || !data) {
-    return { ok: false, status: 500, message: "School settings not found." };
+  if (error) {
+    return { ok: false, status: 500, message: "School settings could not be loaded." };
   }
 
-  const settings = data as Record<string, unknown>;
-  const expected = settings[column] as string | null;
+  const matches = (data ?? []).filter(row => {
+    const expected = (row as Record<string, unknown>)[column];
+    return typeof expected === "string" && safeEqual(provided, expected);
+  });
 
-  if (!expected) {
+  if (matches.length === 0) {
+    return { ok: false, status: 401, message: "Invalid or missing webhook secret." };
+  }
+  if (matches.length > 1) {
     return {
       ok: false,
-      status: 503,
-      message:
-        `${channel} alerts are not configured yet. Open Setup and generate a webhook secret.`,
+      status: 409,
+      message: `${channel} webhook secret is assigned to more than one school. Generate a unique secret for each school.`,
     };
   }
-  if (!provided || !safeEqual(provided, expected)) {
-    return { ok: false, status: 401, message: "Invalid or missing webhook secret." };
+
+  const settings = matches[0] as Record<string, unknown>;
+  if (typeof settings.organization_id !== "string") {
+    return { ok: false, status: 500, message: "School settings are missing an organization." };
   }
 
   return { ok: true, status: 200, settings };

@@ -16,7 +16,7 @@ import { useToast } from "@/lib/hooks/useToast";
 import { MessageSquare, Search, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
 import type { SmsInbox, Student, FeeSchedule } from "@/lib/types";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
-import { generateCode } from "@/lib/utils";
+import { insertExpenseWithVoucher, insertIncomeWithReceipt } from "@/lib/finance/numberedEntries";
 
 type AlertStatus = "all" | "needs_review" | "matched" | "unmatched" | "duplicate" | "rejected" | "archive";
 
@@ -386,17 +386,13 @@ function AlertDetailModal({
 
         if (isExpense) {
           // ========== EXPENSE APPROVAL ==========
-          // Generate voucher number
-          const { data: existing } = await supabase.from("expense_entries").select("voucher_no");
-          const voucherNo = generateCode("VCH-", (existing ?? []).map(e => e.voucher_no));
           const selectedVendor = vendors.find(v => v.id === selectedVendorId);
 
           // Insert expense first; if it fails don't flip the alert to
           // "matched" — a matched alert with no expense entry is a
           // reconciliation ghost. Supabase queries don't throw, so an
           // { error } check is required here.
-          const { error: expErr } = await supabase.from("expense_entries").insert({
-            voucher_no: voucherNo,
+          const { voucherNo, error: expErr } = await insertExpenseWithVoucher(supabase, {
             date: (alert.received_at || alert.created_at).substring(0, 10),
             vendor_id: selectedVendorId || null,
             vendor_name: selectedVendor?.name || alert.parsed_student_name || "Unknown",
@@ -408,7 +404,11 @@ function AlertDetailModal({
             reconciled: false,
             notes: reviewNote || null,
           });
-          if (expErr) { setError(`Could not record expense: ${expErr.message}`); setLoading(false); return; }
+          if (expErr || !voucherNo) {
+            setError(`Could not record expense: ${expErr?.message || "the database did not return a voucher number"}`);
+            setLoading(false);
+            return;
+          }
 
           const { error: alertErr } = await supabase.from("sms_inbox").update({
             match_status: "matched",
@@ -430,11 +430,7 @@ function AlertDetailModal({
           // ========== INCOME APPROVAL (student payment) ==========
           if (!selectedStudentId) { setError("Select a student to apply the payment."); setLoading(false); return; }
 
-          const { data: existing } = await supabase.from("income_entries").select("receipt_no");
-          const receiptNo = generateCode("RCT-", (existing ?? []).map(e => e.receipt_no));
-
-          const { error: incErr } = await supabase.from("income_entries").insert({
-            receipt_no: receiptNo,
+          const { receiptNo, error: incErr } = await insertIncomeWithReceipt(supabase, {
             date: (alert.received_at || alert.created_at).substring(0, 10),
             student_id: selectedStudentId,
             student_name: selectedStudent?.full_name,
@@ -449,7 +445,11 @@ function AlertDetailModal({
             sms_inbox_id: alert.id,
             notes: reviewNote || null,
           });
-          if (incErr) { setError(`Could not record income: ${incErr.message}`); setLoading(false); return; }
+          if (incErr || !receiptNo) {
+            setError(`Could not record income: ${incErr?.message || "the database did not return a receipt number"}`);
+            setLoading(false);
+            return;
+          }
 
           const { error: alertErr } = await supabase.from("sms_inbox").update({
             match_status: "matched",

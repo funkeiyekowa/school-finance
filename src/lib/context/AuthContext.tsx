@@ -117,8 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .select("*")
         .eq("user_id", userId)
         .eq("active", true)
-        .order("is_default", { ascending: false })
-        .limit(1)
+        .eq("is_default", true)
         .maybeSingle(),
     ]);
 
@@ -182,7 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (orgData) setOrg(orgData as Organization);
     setEnabledModules((subs ?? []).map((s: { module_key: string }) => s.module_key));
 
-    return activeOrgId;
+    return mem as OrgMembership;
   }, [supabase]);
 
   const loadProfile = useCallback(async (userId: string) => {
@@ -191,7 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Kick off profile, org, and permissions in parallel — none of them
     // depend on each other for the initial read, so waiting sequentially
     // was pure latency. Total wall-clock drops from ~5 round-trips to 1.
-    const [profileRes, _org, permsRes] = await Promise.all([
+    const [profileRes, activeMembership, permsRes] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", userId).single(),
       loadOrganization(userId),
       supabase.rpc("my_effective_permissions"),
@@ -210,21 +209,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (!permErr && perms && typeof perms === "object") {
       setPermissions(perms as Record<string, boolean>);
-    } else {
-      // Fallback for installs where the RPC is not present yet.
+    } else if (activeMembership) {
+      // Fallback for installs where the RPC is not present yet. Resolve the
+      // role inside the active organization rather than using a global role.
       const { data: roleData } = await supabase
         .from("roles")
         .select("permissions")
-        .eq("name", prof.role)
+        .eq("organization_id", activeMembership.organization_id)
+        .eq("name", activeMembership.role)
         .limit(1)
         .maybeSingle();
       if (roleData?.permissions && typeof roleData.permissions === "object") {
         setPermissions(roleData.permissions as Record<string, boolean>);
-      } else if (prof.role === "admin" || prof.role === "developer") {
+      } else if (["owner", "admin", "super_admin"].includes(activeMembership.role)) {
         setPermissions(FULL_PERMISSIONS);
       } else {
         setPermissions({});
       }
+    } else {
+      setPermissions({});
     }
   }, [supabase, loadOrganization]);
 
@@ -351,14 +354,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isSuperAdmin = membership?.role === "super_admin" || isDeveloper;
   const isOrgAdmin =
     isSuperAdmin || ["owner", "admin"].includes(membership?.role ?? "");
-  // Legacy profile-role admin check, kept so pre-migration installs work.
-  const isAdmin =
-    isOrgAdmin ||
-    ((profile?.role === "admin" || profile?.role === "developer") && (profile?.active ?? false));
+  const isAdmin = isOrgAdmin;
   const canEdit =
     isAdmin ||
-    ["editor", "staff", "bursar", "accountant"].includes(membership?.role ?? "") ||
-    (["admin", "editor", "staff", "developer"].includes(profile?.role ?? "") && (profile?.active ?? false));
+    ["editor", "staff", "bursar", "accountant", "teacher"].includes(membership?.role ?? "");
 
   function hasFeature(key: string): boolean {
     if (isAdmin) return true;

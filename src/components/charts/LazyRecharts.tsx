@@ -24,7 +24,6 @@ function Skeleton() {
   return <div className="w-full h-full rounded-lg bg-gray-100 animate-pulse" style={{ minHeight: 200 }} />;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const wrap = <T extends ComponentType<any>>(name: string): T => {
   return dynamic(
     () => import("recharts").then((mod) => (mod as unknown as Record<string, T>)[name]),
@@ -32,7 +31,6 @@ const wrap = <T extends ComponentType<any>>(name: string): T => {
   ) as unknown as T;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const wrapNoLoader = <T extends ComponentType<any>>(name: string): T => {
   return dynamic(
     () => import("recharts").then((mod) => (mod as unknown as Record<string, T>)[name]),

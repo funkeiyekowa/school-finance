@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
-import { fmtMoney, fmtDate, today, generateCode, exportCSV } from "@/lib/utils";
+import { fmtMoney, fmtDate, today, exportCSV } from "@/lib/utils";
+import { insertExpenseWithVoucher } from "@/lib/finance/numberedEntries";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -223,10 +224,7 @@ function AddExpenseModal({ vendors, onClose }: { vendors: Vendor[]; onClose: () 
     if (!form.amount || isNaN(parseFloat(form.amount))) { setError("Enter a valid amount."); return; }
     setLoading(true);
     setError("");
-    const { data: existing } = await supabase.from("expense_entries").select("voucher_no");
-    const voucherNo = generateCode("VCH-", (existing ?? []).map(e => e.voucher_no));
-    const { error: insertError } = await supabase.from("expense_entries").insert({
-      voucher_no: voucherNo,
+    const { voucherNo, error: insertError } = await insertExpenseWithVoucher(supabase, {
       date: form.date,
       vendor_id: selectedVendorId || null,
       vendor_name: selectedVendor?.name || null,
@@ -238,7 +236,11 @@ function AddExpenseModal({ vendors, onClose }: { vendors: Vendor[]; onClose: () 
       reconciled: false,
       notes: form.notes || null,
     });
-    if (insertError) { setError(insertError.message); setLoading(false); return; }
+    if (insertError || !voucherNo) {
+      setError(insertError?.message || "The database did not return a voucher number.");
+      setLoading(false);
+      return;
+    }
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,
       action: "Record Expense", details: `${voucherNo} — ${selectedVendor?.name || "No vendor"} — ${fmtMoney(parseFloat(form.amount))}`,

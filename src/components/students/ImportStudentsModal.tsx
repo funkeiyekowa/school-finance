@@ -1,4 +1,3 @@
-"use client";
 
 import { useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -64,7 +63,7 @@ function excelDateToISO(value: unknown): string {
   return str; // leave as-is, DB will reject if truly invalid
 }
 
-export function ImportStudentsModal({ onClose }: { onClose: () => void }) {
+export function ImportStudentsModal({ onCloseAction }: { onCloseAction: () => void }) {
   const supabase = createClient();
   const { profile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -235,7 +234,7 @@ export function ImportStudentsModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal open onClose={onClose} title="Import Students" size="xl">
+    <Modal open onClose={onCloseAction} title="Import Students" size="xl">
       {step === "upload" && (
         <div className="space-y-4">
           <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-lg p-3">
@@ -341,7 +340,7 @@ export function ImportStudentsModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button variant="secondary" onClick={onCloseAction}>Cancel</Button>
             <Button variant="gold" disabled={validRows.length === 0} onClick={runImport}>
               Import {validRows.length} Student{validRows.length !== 1 ? "s" : ""}
             </Button>
@@ -373,7 +372,7 @@ export function ImportStudentsModal({ onClose }: { onClose: () => void }) {
             </div>
           )}
           <div className="flex justify-end">
-            <Button variant="gold" onClick={onClose}>Done</Button>
+            <Button variant="gold" onClick={onCloseAction}>Done</Button>
           </div>
         </div>
       )}

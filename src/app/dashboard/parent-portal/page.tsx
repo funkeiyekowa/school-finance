@@ -90,9 +90,18 @@ export default function ParentPortalPage() {
   useEffect(() => { load(); }, [load]);
 
   const selectedChild = children.find(c => c.id === selectedChildId);
-  const childPayments = selectedChildId ? payments[selectedChildId] || [] : [];
-  const childAttendance = selectedChildId ? attendance[selectedChildId] || [] : [];
-  const childReportCards = selectedChildId ? reportCards[selectedChildId] || [] : [];
+  const childPayments = useMemo(
+    () => selectedChildId ? payments[selectedChildId] || [] : [],
+    [payments, selectedChildId],
+  );
+  const childAttendance = useMemo(
+    () => selectedChildId ? attendance[selectedChildId] || [] : [],
+    [attendance, selectedChildId],
+  );
+  const childReportCards = useMemo(
+    () => selectedChildId ? reportCards[selectedChildId] || [] : [],
+    [reportCards, selectedChildId],
+  );
 
   const stats = useMemo(() => {
     const totalPaid = childPayments.reduce((s, p) => s + Number(p.amount), 0);

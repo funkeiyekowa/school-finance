@@ -18,25 +18,27 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 interface Props {
-  params: { path?: string[] };
+  params: Promise<{ path?: string[] }>;
 }
 
-function currentHost(): string {
-  const h = headers();
+async function currentHost(): Promise<string> {
+  const h = await headers();
   // x-forwarded-host is set by the proxy in front of the app; fall back to host.
   return h.get("x-forwarded-host") ?? h.get("host") ?? "";
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const resolution = await resolveByHost(currentHost());
-  return buildMetadata(resolution, params.path);
+  const { path } = await params;
+  const resolution = await resolveByHost(await currentHost());
+  return buildMetadata(resolution, path);
 }
 
 export default async function TenantSiteByHost({ params }: Props) {
-  const resolution = await resolveByHost(currentHost());
+  const { path } = await params;
+  const resolution = await resolveByHost(await currentHost());
   return renderSite({
     resolution,
-    segments: params.path,
+    segments: path,
     basePath: "",
   });
 }

@@ -8,11 +8,12 @@ import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 interface Props {
-  params: { slug: string; path?: string[] };
+  params: Promise<{ slug: string; path?: string[] }>;
 }
 
-export default function SchoolScopedDashboardPassthrough({ params }: Props) {
-  const tail = (params.path ?? []).join("/");
+export default async function SchoolScopedDashboardPassthrough({ params }: Props) {
+  const { path } = await params;
+  const tail = (path ?? []).join("/");
   const dest = tail ? `/dashboard/${tail}` : "/dashboard";
   redirect(dest);
 }

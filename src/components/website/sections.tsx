@@ -13,6 +13,8 @@ import type {
   PublicSection, PublicSite, NewsItem, EventItem, PublicForm, JsonObject,
 } from "@/lib/website/types";
 import { SiteForm } from "@/components/website/SiteForm";
+import { emphasisHtml, safeExternalUrl } from "@/lib/website/security";
+import { isValidColor } from "@/lib/website/theme-validator";
 
 /* ------------------------------------------------------------------ */
 /* Catalogue — drives the "Add section" picker in Website Studio      */
@@ -418,7 +420,8 @@ export function RenderSection(props: {
   const s = props.section.style ?? {};
 
   const tone = typeof s.tone === "string" ? s.tone : "";
-  const bg = typeof s.background === "string" ? s.background : "";
+  const rawBg = typeof s.background === "string" ? s.background : "";
+  const bg = isValidColor(rawBg) ? rawBg : "";
   const padding = typeof s.padding === "string" ? s.padding : "";
   const align = typeof s.align === "string" ? s.align : "";
   const divider = typeof s.divider === "string" ? s.divider : "";
@@ -527,12 +530,7 @@ function RenderSectionBody({
               <h1
                 className="reveal"
                 style={{ ["--reveal-delay" as string]: ".06s" }}
-                dangerouslySetInnerHTML={{
-                  __html: str(c, "heading").replace(
-                    /\*(.*?)\*/g,
-                    "<em>$1</em>"
-                  ),
-                }}
+                dangerouslySetInnerHTML={{ __html: emphasisHtml(str(c, "heading")) }}
               />
               {str(c, "subheading") && (
                 <p className="hero-sub reveal" style={{ ["--reveal-delay" as string]: ".14s" }}>
@@ -1055,7 +1053,7 @@ function RenderSectionBody({
     /* VIDEO                                                         */
     /* ============================================================ */
     case "video": {
-      const embed = str(c, "embed_url");
+      const embed = safeExternalUrl(str(c, "embed_url"));
       return (
         <section className="section alt reveal">
           <div className="wrap">
@@ -1261,6 +1259,7 @@ function RenderSectionBody({
       const formKey = str(c, "form_key", "contact");
       const form = ctx.forms.find(f => f.key === formKey) ?? ctx.forms[0];
       const contact = ctx.site.contact ?? {};
+      const mapUrl = safeExternalUrl(str(c, "map_embed_url"));
       return (
         <section className="section reveal" id="contact">
           <div className="wrap">
@@ -1315,10 +1314,10 @@ function RenderSectionBody({
                     </div>
                   </div>
                 )}
-                {bool(c, "show_map") && str(c, "map_embed_url") && (
+                {bool(c, "show_map") && mapUrl && (
                   <div className="video-wrap" style={{ marginTop: 24 }}>
                     <iframe
-                      src={str(c, "map_embed_url")}
+                      src={mapUrl}
                       title="Map"
                       loading="lazy"
                     />

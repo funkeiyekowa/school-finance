@@ -21,27 +21,34 @@ export interface ValidationResult {
 const MAX_JSON_BYTES = 10_240; // 10 KB
 
 const KNOWN_COLOR_KEYS = new Set([
-  "primary", "primaryDark", "secondary", "accent",
+  "primary", "primaryDark", "primaryDeeper", "secondary",
+  "accent", "accentDeep", "accentSoft",
   "background", "surface", "surfaceAlt",
-  "text", "textMuted", "border",
+  "text", "textMuted", "textFaint", "ink", "inkDeep", "border",
   "headerBg", "headerText", "footerBg", "footerText",
   "success", "warning", "error",
 ]);
 
 const KNOWN_FONT_KEYS = new Set(["heading", "body", "accent"]);
-const KNOWN_SCALE_KEYS = new Set(["h1", "h2", "h3", "body"]);
-const KNOWN_RADIUS_KEYS = new Set(["sm", "md", "lg", "pill"]);
-const KNOWN_SPACING_KEYS = new Set(["section", "gap"]);
-const KNOWN_BUTTON_KEYS = new Set(["radius", "weight", "transform"]);
-const KNOWN_SHADOW_KEYS = new Set(["card"]);
+const KNOWN_SCALE_KEYS = new Set(["h1", "h2", "h3", "body", "eyebrow"]);
+const KNOWN_RADIUS_KEYS = new Set(["sm", "md", "lg", "xl", "pill"]);
+const KNOWN_SPACING_KEYS = new Set(["section", "gap", "container"]);
+const KNOWN_BUTTON_KEYS = new Set(["radius", "weight", "transform", "borderWidth"]);
+const KNOWN_SHADOW_KEYS = new Set(["soft", "lift", "premium", "card"]);
 
 const KNOWN_TOP_LEVEL_KEYS = new Set([
   "colors", "fonts", "scale", "radius", "spacing",
-  "button", "shadow", "headerStyle", "heroStyle",
+  "button", "shadow", "headerStyle", "heroStyle", "motif", "divider",
+  "cardStyle", "grain", "animations", "marquee",
 ]);
 
 const HEADER_STYLES = new Set(["light", "dark", "minimal"]);
-const HERO_STYLES = new Set(["centered", "image-right", "full-bleed", "gradient"]);
+const HERO_STYLES = new Set([
+  "badge-ring", "image-right", "centered", "gradient", "full-bleed", "split-diagonal",
+]);
+const MOTIFS = new Set(["none", "weave", "dots", "grid", "rules", "rings"]);
+const DIVIDERS = new Set(["none", "curve", "angle", "weave", "rule"]);
+const CARD_STYLES = new Set(["soft", "flat", "bordered", "elevated", "glass"]);
 const BUTTON_TRANSFORMS = new Set(["none", "uppercase", "lowercase", "capitalize"]);
 
 const DANGEROUS_PATTERNS = [
@@ -63,18 +70,19 @@ const HEX_COLOR = /^#[0-9a-fA-F]{3,8}$/;
 const RGB_COLOR = /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+))?\s*\)$/;
 const HSL_COLOR = /^hsla?\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(,\s*(0|1|0?\.\d+))?\s*\)$/;
 
-function isValidColor(value: string): boolean {
+export function isValidColor(value: string): boolean {
   if (value.length > 30) return false;
   if (isDangerous(value)) return false;
   return HEX_COLOR.test(value) || RGB_COLOR.test(value) || HSL_COLOR.test(value);
 }
 
-const CSS_UNIT = /^\d+\.?\d*(rem|em|px)$/;
+const CSS_UNIT = /^(?:\d*\.?\d+(?:rem|em|px|vw|vh|%)|0)$/;
 
 function isValidCssUnit(value: string): boolean {
-  if (value.length > 10) return false;
-  if (isDangerous(value)) return false;
-  return CSS_UNIT.test(value) || value === "9999px" || value === "0";
+  if (value.length > 80 || isDangerous(value)) return false;
+  if (CSS_UNIT.test(value)) return true;
+  const clamp = /^clamp\(([^,]+),([^,]+),([^,]+)\)$/.exec(value);
+  return !!clamp && clamp.slice(1).every(part => CSS_UNIT.test(part.trim()));
 }
 
 const SAFE_FONT_NAME = /^[a-zA-Z0-9 ]+$/;
@@ -86,10 +94,11 @@ function isValidFontName(value: string): boolean {
 }
 
 function isValidShadow(value: string): boolean {
-  if (value.length > 200) return false;
-  if (isDangerous(value)) return false;
+  if (value.length > 300 || isDangerous(value)) return false;
   if (value === "none") return true;
-  return true;
+  // Shadows need numbers, units, colors and commas only. Excluding CSS control
+  // characters prevents a token from escaping its custom-property declaration.
+  return /^[#(),.%\-\s\da-zA-Z]+$/.test(value) && !/[;{}@\\]/.test(value);
 }
 
 function isValidWeight(value: string): boolean {
@@ -134,7 +143,12 @@ export function validateThemeTokens(input: unknown): ValidationResult {
   const errors: string[] = [];
 
   // Size check on serialized input
-  const serialized = JSON.stringify(input);
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(input);
+  } catch {
+    return { valid: false, errors: ["Theme must be serializable JSON"] };
+  }
   if (serialized.length > MAX_JSON_BYTES) {
     return { valid: false, errors: [`Theme exceeds maximum size of ${MAX_JSON_BYTES} bytes`] };
   }
@@ -213,7 +227,7 @@ export function validateThemeTokens(input: unknown): ValidationResult {
   tokens.button = validateObject(
     raw.button, KNOWN_BUTTON_KEYS,
     (k, v) => {
-      if (k === "radius") return isValidCssUnit(v) ? null : `invalid radius "${v}"`;
+      if (k === "radius" || k === "borderWidth") return isValidCssUnit(v) ? null : `invalid CSS unit "${v}"`;
       if (k === "weight") return isValidWeight(v) ? null : `invalid weight "${v}" (must be 100-900)`;
       if (k === "transform") return BUTTON_TRANSFORMS.has(v) ? null : `invalid transform "${v}"`;
       return null;
@@ -244,6 +258,27 @@ export function validateThemeTokens(input: unknown): ValidationResult {
     } else {
       tokens.heroStyle = raw.heroStyle;
     }
+  }
+
+  for (const [key, options] of [
+    ["motif", MOTIFS],
+    ["divider", DIVIDERS],
+    ["cardStyle", CARD_STYLES],
+  ] as const) {
+    const value = raw[key];
+    if (value === undefined) continue;
+    if (typeof value !== "string" || !options.has(value)) {
+      errors.push(`${key}: invalid value`);
+    } else {
+      tokens[key] = value;
+    }
+  }
+
+  for (const key of ["grain", "animations", "marquee"] as const) {
+    const value = raw[key];
+    if (value === undefined) continue;
+    if (typeof value !== "boolean") errors.push(`${key}: must be a boolean`);
+    else tokens[key] = value;
   }
 
   if (errors.length > 0) {

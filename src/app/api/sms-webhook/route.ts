@@ -72,6 +72,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: check.message ?? "Unauthorized" }, { status: check.status });
   }
 
+  const organizationId = check.settings?.organization_id;
+  if (typeof organizationId !== "string") {
+    return NextResponse.json({ error: "School settings are missing an organization." }, { status: 500 });
+  }
+
   const normalised = normaliseGatewayPayload(body);
 
   if (!normalised.messageText) {
@@ -91,6 +96,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await processAlert(supabase, {
+      organizationId,
       channel: "sms",
       sender: normalised.sender,
       messageText: normalised.messageText,

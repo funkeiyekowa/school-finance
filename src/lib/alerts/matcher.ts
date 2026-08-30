@@ -322,7 +322,8 @@ function scoreCandidate(
 export async function matchStudent(
   supabase: SupabaseClient,
   parsedCode: string | null,
-  parsedName: string | null
+  parsedName: string | null,
+  organizationId?: string,
 ): Promise<MatchResult> {
   const noMatch: MatchResult = {
     status: "NO_MATCH",
@@ -341,10 +342,12 @@ export async function matchStudent(
 
   // Load all active students — for a school this is typically < 500 rows.
   // Doing it in one query avoids N+1 and lets us evaluate ALL candidates.
-  const { data: allStudents } = await supabase
+  let studentsQuery = supabase
     .from("students")
     .select("id, student_code, full_name, first_name, last_name, status")
     .eq("status", "active");
+  if (organizationId) studentsQuery = studentsQuery.eq("organization_id", organizationId);
+  const { data: allStudents } = await studentsQuery;
 
   if (!allStudents || allStudents.length === 0) {
     return { ...noMatch, reason: "No active students in the database." };
@@ -668,7 +671,8 @@ export async function matchStudent(
 
 export async function matchVendor(
   supabase: SupabaseClient,
-  parsedPayeeName: string | null
+  parsedPayeeName: string | null,
+  organizationId?: string,
 ): Promise<VendorMatchResult> {
   const noMatch: VendorMatchResult = {
     status: "NO_MATCH",
@@ -684,9 +688,11 @@ export async function matchVendor(
 
   if (!parsedPayeeName) return noMatch;
 
-  const { data: allVendors } = await supabase
+  let vendorsQuery = supabase
     .from("vendors")
     .select("id, vendor_code, name");
+  if (organizationId) vendorsQuery = vendorsQuery.eq("organization_id", organizationId);
+  const { data: allVendors } = await vendorsQuery;
 
   if (!allVendors || allVendors.length === 0) {
     return { ...noMatch, reason: "No vendors in the database." };
