@@ -38,6 +38,7 @@ import {
 import { DevicePreview } from "@/components/website/DevicePreview";
 import { BrandKit } from "@/components/website/BrandKit";
 import { ThemeStudio } from "@/components/website/ThemeStudio";
+import { AiAssistButton } from "@/components/ai/AiAssistButton";
 import type { CustomTheme } from "@/lib/website/types";
 
 /* ------------------------------ types ------------------------------ */
@@ -842,12 +843,26 @@ function OverviewTab({
             value={form.site_name}
             onChange={e => setForm(f => ({ ...f, site_name: e.target.value }))}
           />
-          <Input
-            label="Tagline"
-            value={form.tagline}
-            onChange={e => setForm(f => ({ ...f, tagline: e.target.value }))}
-            placeholder="Educating with excellence since 1998"
-          />
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium text-gray-700">Tagline</label>
+              <AiAssistButton
+                compact
+                kinds={["website_tagline", "polish", "shorten"]}
+                currentValue={form.tagline}
+                extra={{ school_name: form.site_name || "The school" }}
+                onApply={(text) => setForm(f => ({ ...f, tagline: text }))}
+                source="website_tagline"
+                label="AI"
+              />
+            </div>
+            <input
+              value={form.tagline}
+              onChange={e => setForm(f => ({ ...f, tagline: e.target.value }))}
+              placeholder="Educating with excellence since 1998"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]"
+            />
+          </div>
           <div className="flex items-center gap-3">
             <Button
               size="sm" variant="gold" loading={saving}
@@ -2093,12 +2108,39 @@ function NewsTab({
             <Input label="Category" value={form.category}
               onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
               placeholder="Achievements" />
-            <JsonField label="Summary" value={form.excerpt} textarea
-              onChange={v => setForm(f => ({ ...f, excerpt: v }))}
-              help="Shown in listings and previews." />
-            <JsonField label="Article" value={form.body} textarea
-              onChange={v => setForm(f => ({ ...f, body: v }))}
-              help="Separate paragraphs with a blank line." />
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-sm font-medium text-gray-700">Summary</label>
+                <AiAssistButton
+                  compact
+                  kinds={["polish", "shorten", "expand"]}
+                  currentValue={form.excerpt}
+                  onApply={(text) => setForm(f => ({ ...f, excerpt: text }))}
+                  source="website_news_excerpt"
+                  label="AI"
+                />
+              </div>
+              <JsonField label="" value={form.excerpt} textarea
+                onChange={v => setForm(f => ({ ...f, excerpt: v }))}
+                help="Shown in listings and previews." />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-sm font-medium text-gray-700">Article</label>
+                <AiAssistButton
+                  compact
+                  kinds={["website_paragraph", "polish", "expand", "rewrite_encouraging"]}
+                  currentValue={form.body}
+                  extra={{ school_name: site.site_name || "The school", audience: "school community" }}
+                  onApply={(text) => setForm(f => ({ ...f, body: text }))}
+                  source="website_news_body"
+                  label="AI"
+                />
+              </div>
+              <JsonField label="" value={form.body} textarea
+                onChange={v => setForm(f => ({ ...f, body: v }))}
+                help="Separate paragraphs with a blank line." />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Cover image</label>
               <ImagePicker id="news-cover" value={form.cover_image_url} media={media}
@@ -2519,8 +2561,20 @@ function SeoTab({
           help="Used when a page has no title of its own."
         />
         <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-gray-700">Meta description</label>
+            <AiAssistButton
+              compact
+              kinds={["seo_description", "polish", "shorten"]}
+              currentValue={seo.description ?? ""}
+              extra={{ school_name: site.site_name || "The school" }}
+              onApply={(text) => setSeo(s => ({ ...s, description: text }))}
+              source="website_seo_description"
+              label="AI"
+            />
+          </div>
           <JsonField
-            label="Meta description"
+            label=""
             value={seo.description ?? ""}
             onChange={v => setSeo(s => ({ ...s, description: v }))}
             textarea

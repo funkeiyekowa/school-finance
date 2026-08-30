@@ -20,6 +20,8 @@ interface Props {
   schoolName: string;
   logoUrl: string | null;
   found: boolean;
+  /** organizations.status, when the brand RPC resolved. */
+  status?: string | null;
 }
 
 interface LoginContext {
@@ -57,7 +59,13 @@ function raceWithTimeoutRpc(
   ]) as Promise<{ data: unknown; error: { message: string } | null }>;
 }
 
-export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Props) {
+export default function SchoolLoginForm({ slug, schoolName, logoUrl, found, status }: Props) {
+  // Org lifecycle: 'active' and 'trial' are the only states that should
+  // accept new sign-ins. 'suspended' and 'cancelled' orgs return found=true
+  // from the brand RPC but must not admit users — surface a clear banner
+  // instead of a generic auth failure downstream.
+  const orgSuspended = found && status !== undefined && status !== null
+    && status !== "active" && status !== "trial";
   const supabase = createClient();
   const router = useRouter();
   const [persona, setPersona] = useState<"student" | "parent">("student");
@@ -73,6 +81,10 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
 
     if (!found) {
       setError("School not found. Check the address in your browser.");
+      return;
+    }
+    if (orgSuspended) {
+      setError(`This school's account is currently ${status}. Please contact the school administrator.`);
       return;
     }
     if (!identifier.trim() || !password) {
@@ -326,6 +338,12 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
               </button>
             </div>
 
+            {orgSuspended && (
+              <div role="alert" className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <span className="font-semibold">{schoolName}</span> is currently <span className="font-semibold">{status}</span> on the platform. Sign-in is disabled until an administrator reactivates the account.
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label htmlFor="identifier" className="block text-xs font-semibold text-gray-600 mb-1.5">
@@ -386,7 +404,7 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found }: Pr
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || orgSuspended}
                 className="w-full py-2.5 rounded-lg bg-gradient-to-r from-[#C9A227] to-[#8a6d1a] text-white font-semibold text-sm hover:shadow-lg hover:shadow-[#C9A227]/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9A227] focus-visible:ring-offset-2 transition-all disabled:opacity-60 flex items-center justify-center gap-2 group"
               >
                 {loading ? (

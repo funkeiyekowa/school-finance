@@ -34,6 +34,7 @@ export default async function SchoolStaffPortalPage({ params }: Props) {
       schoolName={brand.name}
       logoUrl={brand.logo_url}
       found={brand.found}
+      status={brand.status ?? null}
     />
   );
 }

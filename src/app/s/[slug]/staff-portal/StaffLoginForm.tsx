@@ -24,6 +24,8 @@ interface Props {
   schoolName: string;
   logoUrl: string | null;
   found: boolean;
+  /** organizations.status, when the brand RPC resolved. */
+  status?: string | null;
 }
 
 type Persona = "teacher" | "admin";
@@ -52,7 +54,10 @@ function raceWithTimeoutStaff(pr: unknown, ms: number): Promise<{ data: unknown 
   ]) as Promise<{ data: unknown } | null>;
 }
 
-export default function StaffLoginForm({ slug, schoolName, logoUrl, found }: Props) {
+export default function StaffLoginForm({ slug, schoolName, logoUrl, found, status }: Props) {
+  // Org lifecycle gate — matches the parent/student login form.
+  const orgSuspended = found && status !== undefined && status !== null
+    && status !== "active" && status !== "trial";
   const supabase = createClient();
   const router = useRouter();
   const [persona, setPersona] = useState<Persona>("teacher");
@@ -68,6 +73,10 @@ export default function StaffLoginForm({ slug, schoolName, logoUrl, found }: Pro
 
     if (!found) {
       setError("School not found. Check the address in your browser.");
+      return;
+    }
+    if (orgSuspended) {
+      setError(`This school's account is currently ${status}. Please contact the platform administrator.`);
       return;
     }
     if (!email.trim() || !password) {
@@ -265,6 +274,12 @@ export default function StaffLoginForm({ slug, schoolName, logoUrl, found }: Pro
               </button>
             </div>
 
+            {orgSuspended && (
+              <div role="alert" className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300/60 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                <span className="font-semibold text-amber-100">{schoolName}</span> is currently <span className="font-semibold text-amber-100">{status}</span> on the platform. Staff sign-in is disabled until it is reactivated.
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label htmlFor="email" className="block text-xs font-semibold text-white/70 mb-1.5">Work Email</label>
@@ -319,7 +334,7 @@ export default function StaffLoginForm({ slug, schoolName, logoUrl, found }: Pro
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || orgSuspended}
                 className="w-full py-2.5 rounded-lg bg-gradient-to-r from-[#D4AF37] to-[#7a5f14] text-[#0a1929] font-semibold text-sm hover:shadow-lg hover:shadow-[#D4AF37]/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D4AF37] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f2438] transition-all disabled:opacity-60 flex items-center justify-center gap-2 group"
               >
                 {loading ? (

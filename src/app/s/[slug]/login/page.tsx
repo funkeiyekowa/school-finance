@@ -26,6 +26,7 @@ export default async function SchoolScopedLoginPage({ params }: Props) {
       schoolName={brand.name}
       logoUrl={brand.logo_url}
       found={brand.found}
+      status={brand.status ?? null}
     />
   );
 }
