@@ -30,8 +30,17 @@ export interface AiProviderConfig {
   label: string;
   /** Full chat-completions endpoint URL. */
   baseUrl: string;
-  /** Env var holding this provider's platform-wide (shared) API key. */
-  apiKeyEnv: string;
+  /**
+   * Env var name(s) that may hold this provider's platform-wide (shared)
+   * API key, checked in order (case-insensitive — Vercel dashboards often
+   * get the casing of a var name slightly wrong, e.g. "openrouter" instead
+   * of "OPENROUTER"). Some deployments prefix these with a tenant/school
+   * name (e.g. GRANTSCHOOL_GROK_API_KEY for Groq) instead of the plain
+   * name the provider actually documents — list every name in use here so
+   * a single-tenant deployment's existing Vercel vars work without forcing
+   * a rename. The first candidate with a non-empty value wins.
+   */
+  apiKeyEnvCandidates: string[];
   /** Env var that can override the default model for this provider. */
   modelEnv: string;
   defaultModel: string;
@@ -48,7 +57,7 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderConfig> = {
     id: "openai",
     label: "OpenAI",
     baseUrl: "https://api.openai.com/v1/chat/completions",
-    apiKeyEnv: "OPENAI_API_KEY",
+    apiKeyEnvCandidates: ["OPENAI_API_KEY", "GRANTSCHOOL_OPENAI_API_KEY"],
     modelEnv: "OPENAI_MODEL",
     defaultModel: "gpt-4o-mini",
   },
@@ -56,7 +65,7 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderConfig> = {
     id: "groq",
     label: "Groq",
     baseUrl: "https://api.groq.com/openai/v1/chat/completions",
-    apiKeyEnv: "GROQ_API_KEY",
+    apiKeyEnvCandidates: ["GROQ_API_KEY", "GRANTSCHOOL_GROQ_API_KEY", "GRANTSCHOOL_GROK_API_KEY", "GROK_API_KEY"],
     modelEnv: "GROQ_MODEL",
     defaultModel: "llama-3.3-70b-versatile",
   },
@@ -65,7 +74,7 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderConfig> = {
     label: "Google Gemini",
     // Google's OpenAI-compatibility layer.
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-    apiKeyEnv: "GEMINI_API_KEY",
+    apiKeyEnvCandidates: ["GEMINI_API_KEY", "GRANTSCHOOL_GEMINI_API_KEY"],
     modelEnv: "GEMINI_MODEL",
     defaultModel: "gemini-2.5-flash",
   },
@@ -73,7 +82,7 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderConfig> = {
     id: "openrouter",
     label: "OpenRouter",
     baseUrl: "https://openrouter.ai/api/v1/chat/completions",
-    apiKeyEnv: "OPENROUTER_API_KEY",
+    apiKeyEnvCandidates: ["OPENROUTER_API_KEY", "GRANTSCHOOL_OPENROUTER_API_KEY", "GRANTSCHOOL_openrouter_API_KEY"],
     modelEnv: "OPENROUTER_MODEL",
     defaultModel: "meta-llama/llama-3.3-70b-instruct:free",
     // OpenRouter asks (not strictly requires) for these for their leaderboard/attribution.
@@ -86,6 +95,26 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderConfig> = {
 };
 
 export const AI_PROVIDER_IDS = Object.keys(AI_PROVIDERS) as AiProviderId[];
+
+/**
+ * Reads the first non-empty env var among `names`, matching case-
+ * insensitively against the real process.env keys. This tolerates Vercel
+ * env vars that were typed with unexpected casing (we've seen e.g.
+ * "GRANTSCHOOL_openrouter_API_KEY" with a lowercase provider name) without
+ * requiring anyone to go rename them in the dashboard.
+ */
+function readEnvCandidates(names: string[]): string | undefined {
+  const lowerToActualKey = new Map<string, string>();
+  for (const key of Object.keys(process.env)) {
+    lowerToActualKey.set(key.toLowerCase(), key);
+  }
+  for (const name of names) {
+    const actualKey = lowerToActualKey.get(name.toLowerCase());
+    const value = actualKey ? process.env[actualKey] : undefined;
+    if (value) return value;
+  }
+  return undefined;
+}
 
 export interface ResolvedProvider {
   config: AiProviderConfig;
@@ -116,7 +145,7 @@ export function pickProvider(
   for (const id of order) {
     const config = AI_PROVIDERS[id];
     const isPreferred = id === requested;
-    const apiKey = (isPreferred && orgOverrideKey) || process.env[config.apiKeyEnv];
+    const apiKey = (isPreferred && orgOverrideKey) || readEnvCandidates(config.apiKeyEnvCandidates);
     if (apiKey) {
       const model =
         (isPreferred && preferredModel) ||
@@ -138,5 +167,5 @@ export function resolveActiveProvider(): ResolvedProvider | null {
 
 /** Which providers currently have a platform-wide key configured in Vercel. */
 export function listConfiguredProviders(): AiProviderId[] {
-  return AI_PROVIDER_IDS.filter((id) => !!process.env[AI_PROVIDERS[id].apiKeyEnv]);
+  return AI_PROVIDER_IDS.filter((id) => !!readEnvCandidates(AI_PROVIDERS[id].apiKeyEnvCandidates));
 }
