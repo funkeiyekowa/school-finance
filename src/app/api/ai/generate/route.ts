@@ -12,12 +12,13 @@
  *     stay stable.
  *
  * Provider: any OpenAI-compatible chat-completions API — OpenAI,
- * Groq, Google Gemini, or OpenRouter — selected at runtime by the
- * AI_PROVIDER env var (see @/lib/ai/providers). You can configure
- * several providers' keys at once and flip the active one with just
- * that env var + a redeploy, no code change required. Falls back to
- * a helpful error when no provider has a key configured so a school
- * can still install the app without wiring AI on day 1.
+ * Groq, Google Gemini, or OpenRouter. The active one is chosen, in
+ * priority order, by: (1) platform_settings.active_ai_provider — set
+ * from Dashboard → Platform → AI Provider, no redeploy needed; (2)
+ * the AI_PROVIDER env var; (3) the first provider below with a key
+ * configured. Falls back to a helpful error when no provider has a
+ * key configured so a school can still install the app without
+ * wiring AI on day 1.
  */
 
 import { NextResponse } from "next/server";
@@ -25,7 +26,7 @@ import { requireStaffSession } from "@/lib/api/requireStaff";
 import { rateLimit, callerKey } from "@/lib/api/rateLimit";
 import { logError, requestContext } from "@/lib/errors/logError";
 import { AI_PRESETS, type AiTaskKind } from "@/lib/ai/prompts";
-import { resolveActiveProvider } from "@/lib/ai/providers";
+import { pickProvider } from "@/lib/ai/providers";
 import { createClient } from "@/lib/supabase/server";
 
 const AI_RATE_MAX = 30;
@@ -70,7 +71,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Prompt input is empty." }, { status: 400 });
   }
 
-  const provider = resolveActiveProvider();
+  // Resolve org + user for logging, and check the dashboard's DB
+  // toggle for the active provider. The staff session guard already
+  // verified auth, so this only errors under Supabase outages.
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = user
+    ? await supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle()
+    : { data: null };
+  const orgId = (profile as { organization_id?: string | null } | null)?.organization_id ?? null;
+
+  // A super admin's choice in Dashboard → Platform → AI Provider
+  // (stored in platform_settings.active_ai_provider) takes priority
+  // over the AI_PROVIDER env var if it names a provider that has a
+  // key configured; otherwise pickProvider() falls back to the env
+  // var, then to the first configured provider. Never let a missing
+  // RPC (e.g. migration not yet applied) block AI generation.
+  let dbPreferred: string | null = null;
+  try {
+    const { data: rpcData } = await supabase.rpc("get_active_ai_provider");
+    dbPreferred = (rpcData as string | null) ?? null;
+  } catch {
+    // RPC not present yet (migration not applied) — fall through to env var.
+  }
+
+  const provider = pickProvider(dbPreferred || process.env.AI_PROVIDER);
   if (!provider) {
     return NextResponse.json(
       {
@@ -85,15 +110,6 @@ export async function POST(request: Request) {
   const preset = AI_PRESETS[kind];
   const userTurn = preset.compose(input, extra);
   const maxTokens = preset.maxTokens ?? 400;
-
-  // Resolve org + user for logging. The staff session guard already
-  // verified auth, so this only errors under Supabase outages.
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const { data: profile } = user
-    ? await supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle()
-    : { data: null };
-  const orgId = (profile as { organization_id?: string | null } | null)?.organization_id ?? null;
 
   const started = Date.now();
   let output = "";

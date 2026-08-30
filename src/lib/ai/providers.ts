@@ -83,6 +83,8 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderConfig> = {
   },
 };
 
+export const AI_PROVIDER_IDS = Object.keys(AI_PROVIDERS) as AiProviderId[];
+
 export interface ResolvedProvider {
   config: AiProviderConfig;
   apiKey: string;
@@ -90,17 +92,19 @@ export interface ResolvedProvider {
 }
 
 /**
- * Picks the active provider. Honors AI_PROVIDER if it names a
- * provider that actually has a key configured; otherwise falls back
- * to the first configured provider in registry order. Returns null
- * if no provider has a key set anywhere.
+ * Picks a provider given a preferred id (which may come from the
+ * platform_settings.active_ai_provider DB toggle, or from the
+ * AI_PROVIDER env var, or be empty/invalid). If the preferred id
+ * names a provider with a key configured, that one wins. Otherwise
+ * falls back to the first configured provider in registry order.
+ * Returns null if no provider has a key set anywhere.
  */
-export function resolveActiveProvider(): ResolvedProvider | null {
-  const requested = (process.env.AI_PROVIDER || "").trim().toLowerCase() as AiProviderId;
+export function pickProvider(preferredId?: string | null): ResolvedProvider | null {
+  const requested = (preferredId || "").trim().toLowerCase() as AiProviderId;
   const order: AiProviderId[] =
     requested && AI_PROVIDERS[requested]
-      ? [requested, ...(Object.keys(AI_PROVIDERS) as AiProviderId[]).filter((id) => id !== requested)]
-      : (Object.keys(AI_PROVIDERS) as AiProviderId[]);
+      ? [requested, ...AI_PROVIDER_IDS.filter((id) => id !== requested)]
+      : AI_PROVIDER_IDS;
 
   for (const id of order) {
     const config = AI_PROVIDERS[id];
@@ -113,7 +117,15 @@ export function resolveActiveProvider(): ResolvedProvider | null {
   return null;
 }
 
+/**
+ * Env-var-only resolution (AI_PROVIDER toggle + fallback). Kept for
+ * callers that don't have a DB-driven preference to check first.
+ */
+export function resolveActiveProvider(): ResolvedProvider | null {
+  return pickProvider(process.env.AI_PROVIDER);
+}
+
 /** Which providers currently have a key configured — useful for diagnostics/UI. */
 export function listConfiguredProviders(): AiProviderId[] {
-  return (Object.keys(AI_PROVIDERS) as AiProviderId[]).filter((id) => !!process.env[AI_PROVIDERS[id].apiKeyEnv]);
+  return AI_PROVIDER_IDS.filter((id) => !!process.env[AI_PROVIDERS[id].apiKeyEnv]);
 }
