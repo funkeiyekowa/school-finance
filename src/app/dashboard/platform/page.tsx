@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { OrgMembersPanel } from "@/components/platform/OrgMembersPanel";
+import { SeedDataPanel } from "@/components/platform/SeedDataPanel";
 import {
   Plus, Building2, Package, Users, ShieldCheck, LogIn, AlertTriangle,
   CheckCircle2, Globe, ExternalLink, Copy,
@@ -502,6 +503,10 @@ export default function PlatformAdminPage() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {tab === "school" && focusOrg && (
+        <SeedDataPanel orgId={focusOrg.id} />
       )}
 
       {tab === "members" && (
