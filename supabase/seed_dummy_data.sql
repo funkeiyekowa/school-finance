@@ -28,6 +28,15 @@ CREATE INDEX IF NOT EXISTS idx_staff_members_test   ON staff_members(organizatio
 CREATE INDEX IF NOT EXISTS idx_income_entries_test  ON income_entries(organization_id, is_test_data);
 CREATE INDEX IF NOT EXISTS idx_expense_entries_test ON expense_entries(organization_id, is_test_data);
 
+-- Drop existing functions first: CREATE OR REPLACE cannot change a function's
+-- return type or parameter signature, and a prior partial/broken deploy of
+-- this script may have left a different signature in place. Dropping first
+-- makes this script safe to re-run from scratch every time.
+DROP FUNCTION IF EXISTS seed_dummy_data(uuid);
+DROP FUNCTION IF EXISTS delete_dummy_data(uuid, boolean);
+DROP FUNCTION IF EXISTS get_dummy_data_stats(uuid);
+
+
 
 -- ============================================================================
 -- 1. SEED DUMMY DATA
