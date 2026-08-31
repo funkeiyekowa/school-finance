@@ -1,24 +1,35 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { Pagination } from "@/components/ui/Pagination";
+import { usePaginatedData } from "@/lib/hooks/usePaginatedData";
 import { Plus, Save, Users, Search, Trash2 } from "lucide-react";
 
 interface DeptRow { id: string; name: string; }
 interface StaffRow { id: string; staff_code: string; full_name: string; email: string | null; phone: string | null; job_title: string | null; staff_type: string; department_id: string | null; status: string; date_joined: string | null; }
 
+interface StaffRowWithTotal extends StaffRow {
+  total_count?: number;
+}
+
+interface StaffStats {
+  total: number;
+  teaching: number;
+  non_teaching: number;
+  inactive: number;
+}
+
 export default function StaffPage() {
   const { canEdit, profile, orgId } = useAuth();
-  const supabase = createClient();
-  const [loading, setLoading] = useState(true);
-  const [staff, setStaff] = useState<StaffRow[]>([]);
+  const supabase = useMemo(() => createClient(), []);
   const [departments, setDepartments] = useState<DeptRow[]>([]);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -27,18 +38,71 @@ export default function StaffPage() {
   const [form, setForm] = useState({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active" });
   const [credNotice, setCredNotice] = useState<{ email: string; name: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [stats, setStats] = useState<StaffStats>({
+    total: 0,
+    teaching: 0,
+    non_teaching: 0,
+    inactive: 0,
+  });
 
-  const load = useCallback(async () => {
-    const [stRes, dpRes] = await Promise.all([
-      supabase.from("staff_members").select("*").order("full_name"),
-      supabase.from("departments").select("id, name").eq("active", true).order("name"),
-    ]);
-    setStaff(stRes.data as StaffRow[] ?? []);
-    setDepartments(dpRes.data as DeptRow[] ?? []);
-    setLoading(false);
+  // Server-side pagination via RPC
+  const {
+    data: staff,
+    loading,
+    pagination,
+    refetch,
+    nextPage,
+    prevPage,
+    reset: resetPagination,
+  } = usePaginatedData<StaffRowWithTotal>(
+    {
+      p_search: search,
+    },
+    {
+      rpcName: "staff_paginated",
+      supabase,
+      limit: 50,
+    }
+  );
+
+  // Load departments
+  const loadDepartments = useCallback(async () => {
+    const { data } = await supabase
+      .from("departments")
+      .select("id, name")
+      .eq("active", true)
+      .order("name");
+    setDepartments((data as DeptRow[]) ?? []);
   }, [supabase]);
 
-  useEffect(() => { load(); }, [load]);
+  // Load stats
+  const loadStats = useCallback(async () => {
+    try {
+      const { data } = await supabase.rpc("staff_stats");
+      if (data && data[0]) {
+        const s = data[0];
+        setStats({
+          total: s.total || 0,
+          teaching: s.teaching || 0,
+          non_teaching: s.non_teaching || 0,
+          inactive: s.inactive || 0,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load stats:", error);
+    }
+  }, [supabase]);
+
+  // Load departments and stats on mount
+  useEffect(() => {
+    loadDepartments();
+    loadStats();
+  }, [loadDepartments, loadStats]);
+
+  // Reset pagination when search changes
+  useEffect(() => {
+    resetPagination();
+  }, [search, resetPagination]);
 
   async function openForm(s?: StaffRow) {
     if (s) {
@@ -46,7 +110,7 @@ export default function StaffPage() {
       setForm({ staff_code: s.staff_code, full_name: s.full_name, email: s.email || "", phone: s.phone || "", job_title: s.job_title || "", staff_type: s.staff_type, department_id: s.department_id || "", date_joined: s.date_joined || "", status: s.status });
     } else {
       setEditing(null);
-      // Auto-generate the next staff code (item 3)
+      // Auto-generate the next staff code
       let nextCode = "";
       try {
         if (orgId) {
@@ -66,20 +130,21 @@ export default function StaffPage() {
     const { data, error } = await supabase.rpc("admin_delete_staff", { p_staff_id: s.id });
     if (error) { alert("Delete failed: " + error.message); return; }
     if (data !== "ok") { alert("Delete: " + data); return; }
-    load();
+    await refetch();
+    await loadStats();
   }
 
   async function saveStaff() {
     setSaveError(null);
-    // Item 4: email mandatory (staff needs a login).
+    // Email mandatory (staff needs a login).
     const email = form.email.trim().toLowerCase();
-    const code  = form.staff_code.trim();
+    const code = form.staff_code.trim();
     if (!email) return setSaveError("Email is required — it is the staff member's login.");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setSaveError("Enter a valid email address.");
-    if (!code)  return setSaveError("Staff code is required.");
+    if (!code) return setSaveError("Staff code is required.");
     if (!form.full_name.trim()) return setSaveError("Full name is required.");
 
-    // Item 6: uniqueness check on staff_code and email within this org.
+    // Uniqueness check on staff_code and email within this org.
     const conflictQ = supabase
       .from("staff_members")
       .select("id, staff_code, email")
@@ -118,13 +183,9 @@ export default function StaffPage() {
     setSaving(false);
     setShowForm(false);
     setEditing(null);
-    load();
+    await refetch();
+    await loadStats();
   }
-
-  const filtered = staff.filter(s => {
-    const q = search.toLowerCase();
-    return !q || s.full_name.toLowerCase().includes(q) || s.staff_code.toLowerCase().includes(q) || (s.email || "").toLowerCase().includes(q) || (s.job_title || "").toLowerCase().includes(q);
-  });
 
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
 
@@ -161,19 +222,19 @@ export default function StaffPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl border p-4 text-center">
-          <div className="text-xl font-bold text-[#0F2A47]">{staff.length}</div>
+          <div className="text-xl font-bold text-[#0F2A47]">{stats.total}</div>
           <div className="text-xs text-gray-500">Total Staff</div>
         </div>
         <div className="bg-white rounded-xl border p-4 text-center">
-          <div className="text-xl font-bold text-green-700">{staff.filter(s => s.staff_type === "teaching").length}</div>
+          <div className="text-xl font-bold text-green-700">{stats.teaching}</div>
           <div className="text-xs text-gray-500">Teaching</div>
         </div>
         <div className="bg-white rounded-xl border p-4 text-center">
-          <div className="text-xl font-bold text-blue-700">{staff.filter(s => s.staff_type === "non_teaching").length}</div>
+          <div className="text-xl font-bold text-blue-700">{stats.non_teaching}</div>
           <div className="text-xs text-gray-500">Non-Teaching</div>
         </div>
         <div className="bg-white rounded-xl border p-4 text-center">
-          <div className="text-xl font-bold text-gray-500">{staff.filter(s => s.status !== "active").length}</div>
+          <div className="text-xl font-bold text-gray-500">{stats.inactive}</div>
           <div className="text-xs text-gray-500">Inactive</div>
         </div>
       </div>
@@ -200,9 +261,9 @@ export default function StaffPage() {
               <th className="px-4 py-3" />
             </tr></thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {staff.length === 0 ? (
                 <tr><td colSpan={8}><EmptyState message="No staff found." icon={<Users size={32} />} /></td></tr>
-              ) : filtered.map(s => (
+              ) : staff.map(s => (
                 <tr key={s.id} className="border-b hover:bg-gray-50">
                   <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{s.staff_code}</td>
                   <td className="px-4 py-2.5 font-medium">{s.full_name}</td>
@@ -230,6 +291,18 @@ export default function StaffPage() {
             </tbody>
           </table>
         </div>
+        {/* Pagination Footer */}
+        <Pagination
+          currentPage={pagination.currentPage}
+          pageCount={pagination.pageCount}
+          hasNext={pagination.hasNext}
+          hasPrev={pagination.hasPrev}
+          total={pagination.total}
+          showing={staff.length}
+          limit={pagination.limit}
+          onNextPage={nextPage}
+          onPrevPage={prevPage}
+        />
       </Card>
 
       {/* Add/Edit Modal */}

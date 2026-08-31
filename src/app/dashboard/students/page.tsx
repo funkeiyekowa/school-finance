@@ -15,9 +15,10 @@
  * - Student photo placeholder with initials
  * - Bulk operations (developer)
  * - Responsive + accessible
+ * - Server-side pagination (50 rows per page)
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react";
+import React, { useState, useCallback, useRef, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
@@ -29,7 +30,9 @@ import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { ImportStudentsModal } from "@/components/students/ImportStudentsModal";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { Pagination } from "@/components/ui/Pagination";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
+import { usePaginatedData } from "@/lib/hooks/usePaginatedData";
 import { useToast } from "@/lib/hooks/useToast";
 import { cn, today } from "@/lib/utils";
 import {
@@ -52,8 +55,7 @@ function StudentsPageInner() {
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
   const searchParams = useSearchParams();
-  const [students, setStudents] = useState<Student[]>([]);
-  const [loading, setLoading] = useState(true);
+  
   const [search, setSearch] = useState("");
   const [filterGrade, setFilterGrade] = useState(() => searchParams.get("grade") || "");
   const [filterGender, setFilterGender] = useState("");
@@ -68,58 +70,95 @@ function StudentsPageInner() {
   const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("students")
-      .select("*")
-      .order("last_name")
-      .order("first_name");
-    setStudents((data ?? []) as Student[]);
-    setLoading(false);
+  // Server-side pagination via RPC
+  interface StudentWithTotal extends Student {
+  total_count?: number;
+}
+
+const {
+    data: students,
+    loading,
+    pagination,
+    refetch,
+    nextPage,
+    prevPage,
+    reset: resetPagination,
+  } = usePaginatedData<StudentWithTotal>(
+    {
+      p_search: search,
+      p_grade: filterGrade,
+      p_gender: filterGender,
+      p_status: filterStatus,
+      p_sort_by: "last_name",
+    },
+    {
+      rpcName: "students_paginated",
+      supabase,
+      limit: 50,
+    }
+  );
+
+  // Load stats separately
+  const [stats, setStats] = useState({
+    total: 0,
+    active: 0,
+    inactive: 0,
+    male: 0,
+    female: 0,
+    classCount: 0,
+  });
+
+  const [filterOptions, setFilterOptions] = useState<{
+    grades: string[];
+    genders: string[];
+  }>({
+    grades: [],
+    genders: [],
+  });
+
+  // Load stats and filter options on mount
+  const loadStatsAndOptions = useCallback(async () => {
+    try {
+      const [statsResult, optionsResult] = await Promise.all([
+        supabase.rpc("student_stats"),
+        supabase.rpc("student_filter_options"),
+      ]);
+
+      if (statsResult.data) {
+        const s = statsResult.data[0];
+        setStats({
+          total: s.total || 0,
+          active: s.active || 0,
+          inactive: s.inactive || 0,
+          male: s.male || 0,
+          female: s.female || 0,
+          classCount: s.class_count || 0,
+        });
+      }
+
+      if (optionsResult.data) {
+        const o = optionsResult.data[0];
+        setFilterOptions({
+          grades: o.grades || [],
+          genders: o.genders || [],
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load stats and filter options:", error);
+    }
   }, [supabase]);
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    if (editingCell && inputRef.current) inputRef.current.focus();
-  }, [editingCell]);
+  // Load stats and filter options on component mount
+  React.useEffect(() => {
+    loadStatsAndOptions();
+  }, [loadStatsAndOptions]);
 
-  // Unique values for filter dropdowns
-  const grades = useMemo(() =>
-    Array.from(new Set(students.map(s => s.grade).filter(Boolean))).sort() as string[],
-    [students]
-  );
-  const genders = useMemo(() =>
-    Array.from(new Set(students.map(s => s.gender).filter(Boolean))).sort() as string[],
-    [students]
-  );
+  // Reset pagination when search or filters change
+  React.useEffect(() => {
+    resetPagination();
+  }, [search, filterGrade, filterGender, filterStatus, resetPagination]);
 
-  const filtered = useMemo(() => students.filter(s => {
-    const q = search.toLowerCase();
-    if (q && !(
-      s.full_name.toLowerCase().includes(q) ||
-      s.student_code.toLowerCase().includes(q) ||
-      (s.grade ?? "").toLowerCase().includes(q) ||
-      (s.guardian_name ?? "").toLowerCase().includes(q) ||
-      (s.guardian_phone ?? "").toLowerCase().includes(q)
-    )) return false;
-    if (filterGrade && s.grade !== filterGrade) return false;
-    if (filterGender && s.gender !== filterGender) return false;
-    if (filterStatus && s.status !== filterStatus) return false;
-    return true;
-  }), [students, search, filterGrade, filterGender, filterStatus]);
-
-  // Stats
-  const stats = useMemo(() => ({
-    total: students.length,
-    active: students.filter(s => s.status === "active").length,
-    inactive: students.filter(s => s.status !== "active").length,
-    male: students.filter(s => s.gender === "Male").length,
-    female: students.filter(s => s.gender === "Female").length,
-    classCount: grades.length,
-  }), [students, grades]);
-
-  const { selectedIds, toggle: toggleBulk, selectAll: bulkSelectAll, clearSelection: bulkClear } = useBulkSelect(filtered.map(s => s.id));
+  const { selectedIds, toggle: toggleBulk, selectAll: bulkSelectAll, clearSelection: bulkClear } = useBulkSelect(students.map(s => s.id));
 
   // --- Edit logic ---
   function startEdit(id: string, key: string, val: string) {
@@ -139,9 +178,9 @@ function StudentsPageInner() {
     // If editing a name field, recalculate full_name
     if (["last_name", "first_name", "middle_name"].includes(key)) {
       const student = students.find(s => s.id === id);
-      const last = key === "last_name" ? editValue : ((student as Record<string, unknown>)?.last_name as string ?? "");
-      const first = key === "first_name" ? editValue : ((student as Record<string, unknown>)?.first_name as string ?? "");
-      const middle = key === "middle_name" ? editValue : ((student as Record<string, unknown>)?.middle_name as string ?? "");
+      const last = key === "last_name" ? editValue : ((student as unknown as Record<string, unknown>)?.last_name as string ?? "");
+      const first = key === "first_name" ? editValue : ((student as unknown as Record<string, unknown>)?.first_name as string ?? "");
+      const middle = key === "middle_name" ? editValue : ((student as unknown as Record<string, unknown>)?.middle_name as string ?? "");
       updates.full_name = [last, first, middle].filter(Boolean).join(" ");
     }
 
@@ -149,7 +188,9 @@ function StudentsPageInner() {
     if (error) {
       notify(`Save failed: ${error.message}`, "error");
     } else {
-      setStudents(prev => prev.map(s => s.id === id ? { ...s, ...updates } as Student : s));
+      // Update local state
+      const updatedStudents = students.map(s => s.id === id ? { ...s, ...updates } as Student : s);
+      await refetch();
       await supabase.from("activity_log").insert({
         user_email: profile?.email, user_name: profile?.full_name,
         action: "Edit Student", details: `Updated ${key} for ${id}`,
@@ -169,7 +210,6 @@ function StudentsPageInner() {
       setSavingId(null);
       return;
     }
-    setStudents(prev => prev.filter(s => s.id !== deleteTarget.id));
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,
       action: "Delete Student", details: `${deleteTarget.student_code} — ${deleteTarget.full_name}`,
@@ -177,11 +217,13 @@ function StudentsPageInner() {
     notify(`Deleted ${deleteTarget.full_name}`);
     setSavingId(null);
     setDeleteTarget(null);
+    // Refetch to update table
+    await refetch();
+    // Reload stats
+    await loadStatsAndOptions();
   }
 
   async function bulkDeleteSelected(ids: string[]) {
-    // Single round-trip via .in() — the old for-await loop was one HTTP
-    // request per selected id, which took multiple seconds on medium sets.
     if (ids.length === 0) return;
     const { error } = await supabase.from("students").delete().in("id", ids);
     if (error) { notify(`Bulk delete failed: ${error.message}`, "error"); return; }
@@ -192,13 +234,18 @@ function StudentsPageInner() {
       details: `${ids.length} students`,
     });
     notify(`Deleted ${ids.length} students`);
-    load();
+    bulkClear();
+    await refetch();
+    await loadStatsAndOptions();
   }
+
   async function bulkDeleteAll() {
     const { error } = await supabase.from("students").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
     notify("All students deleted");
-    load();
+    bulkClear();
+    await refetch();
+    await loadStatsAndOptions();
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -272,12 +319,12 @@ function StudentsPageInner() {
           <select value={filterGrade} onChange={e => setFilterGrade(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" aria-label="Filter by grade">
             <option value="">All grades</option>
-            {grades.map(g => <option key={g} value={g}>{g}</option>)}
+            {filterOptions.grades.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
           <select value={filterGender} onChange={e => setFilterGender(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" aria-label="Filter by gender">
             <option value="">All genders</option>
-            {genders.map(g => <option key={g} value={g}>{g}</option>)}
+            {filterOptions.genders.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
           <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" aria-label="Filter by status">
@@ -299,7 +346,7 @@ function StudentsPageInner() {
 
       {loading ? <LoadingSpinner /> : (
         <>
-          <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="students"
+          <BulkDeleteBar selectedIds={selectedIds} totalCount={students.length} itemLabel="students"
             onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
             onSelectAll={bulkSelectAll} onClearSelection={bulkClear} isDeveloper={isDeveloper} />
 
@@ -322,25 +369,25 @@ function StudentsPageInner() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0 ? (
+                  {students.length === 0 ? (
                     <tr><td colSpan={isDeveloper ? 12 : 11}>
                       <EmptyState message="No students match your search." icon={<GraduationCap size={32} />} />
                     </td></tr>
-                  ) : filtered.map(s => {
+                  ) : students.map(s => {
                     const busy = savingId === s.id;
                     return (
                       <tr key={s.id} className={cn("border-b border-gray-50 hover:bg-gray-50 group", busy && "opacity-50")}>
                         <RowCheckbox id={s.id} selectedIds={selectedIds} onToggle={toggleBulk} isDeveloper={isDeveloper} />
                         <td className="px-4 py-3 font-mono text-xs text-gray-500 font-semibold">{s.student_code}</td>
-                        <EditCell id={s.id} field="last_name" value={(s as Record<string, unknown>).last_name as string ?? ""}
+                        <EditCell id={s.id} field="last_name" value={(s as unknown as Record<string, unknown>).last_name as string ?? ""}
                           editing={editingCell} editValue={editValue} setEditValue={setEditValue}
                           canEdit={canEdit} onStart={startEdit} onSave={saveEdit} onCancel={cancelEdit}
                           onKeyDown={handleKeyDown} inputRef={inputRef} bold />
-                        <EditCell id={s.id} field="first_name" value={(s as Record<string, unknown>).first_name as string ?? ""}
+                        <EditCell id={s.id} field="first_name" value={(s as unknown as Record<string, unknown>).first_name as string ?? ""}
                           editing={editingCell} editValue={editValue} setEditValue={setEditValue}
                           canEdit={canEdit} onStart={startEdit} onSave={saveEdit} onCancel={cancelEdit}
                           onKeyDown={handleKeyDown} inputRef={inputRef} />
-                        <EditCell id={s.id} field="middle_name" value={(s as Record<string, unknown>).middle_name as string ?? ""}
+                        <EditCell id={s.id} field="middle_name" value={(s as unknown as Record<string, unknown>).middle_name as string ?? ""}
                           editing={editingCell} editValue={editValue} setEditValue={setEditValue}
                           canEdit={canEdit} onStart={startEdit} onSave={saveEdit} onCancel={cancelEdit}
                           onKeyDown={handleKeyDown} inputRef={inputRef} muted />
@@ -362,7 +409,7 @@ function StudentsPageInner() {
                             <select value={s.status} onChange={async e => {
                               setSavingId(s.id);
                               await supabase.from("students").update({ status: e.target.value, updated_at: new Date().toISOString() }).eq("id", s.id);
-                              setStudents(prev => prev.map(st => st.id === s.id ? { ...st, status: e.target.value } : st));
+                              await refetch();
                               setSavingId(null);
                             }} className={cn("text-xs font-semibold px-2 py-1 rounded-lg border-0 cursor-pointer", s.status === "active" ? "bg-green-100 text-green-700" : s.status === "graduated" ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-500")}>
                               <option value="active">Active</option>
@@ -392,16 +439,24 @@ function StudentsPageInner() {
                 </tbody>
               </table>
             </div>
-            <div className="px-4 py-3 border-t border-gray-100 text-xs text-gray-500 flex items-center justify-between">
-              <span>Showing {filtered.length} of {students.length} students</span>
-              <span className="text-[10px] text-gray-400">Click any cell to edit · Tab to navigate</span>
-            </div>
+            {/* Pagination Footer */}
+            <Pagination
+              currentPage={pagination.currentPage}
+              pageCount={pagination.pageCount}
+              hasNext={pagination.hasNext}
+              hasPrev={pagination.hasPrev}
+              total={pagination.total}
+              showing={students.length}
+              limit={pagination.limit}
+              onNextPage={nextPage}
+              onPrevPage={prevPage}
+            />
           </Card>
         </>
       )}
 
-      {showAdd && <AddStudentModal onClose={() => { setShowAdd(false); load(); }} />}
-      {showImport && <ImportStudentsModal onCloseAction={() => { setShowImport(false); load(); }} />}
+      {showAdd && <AddStudentModal onClose={() => { setShowAdd(false); refetch(); loadStatsAndOptions(); }} />}
+      {showImport && <ImportStudentsModal onCloseAction={() => { setShowImport(false); refetch(); loadStatsAndOptions(); }} />}
       {deleteTarget && (
         <Modal open onClose={() => setDeleteTarget(null)} title="Delete Student" size="sm">
           <div className="space-y-4">
@@ -493,7 +548,7 @@ function AddStudentModal({ onClose }: { onClose: () => void }) {
 
   const fullName = [form.last_name, form.first_name, form.middle_name].filter(Boolean).join(" ");
 
-  useEffect(() => {
+  React.useEffect(() => {
     supabase.from("students").select("student_code").then(({ data }) => {
       const codes = new Set((data ?? []).map(s => s.student_code));
       let code: string;
