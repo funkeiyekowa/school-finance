@@ -369,9 +369,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    *
    * Permissive only when there is genuinely no tenant context (a
    * pre-migration single-school install). Once an org is loaded, an
-   * empty subscription list means no paid modules, not "allow all".
+   * empty subscription list means no paid modules, not "allow all" —
+   * except for a platform super admin / developer, who must be able
+   * to see and operate every module on every school (including ones
+   * created after this check was written) regardless of that school's
+   * own subscriptions, since they administer the whole platform.
    */
   function hasModule(moduleKey: string): boolean {
+    if (isSuperAdmin) return true;
     if (!orgId) return true;
     return enabledModules.includes(moduleKey);
   }

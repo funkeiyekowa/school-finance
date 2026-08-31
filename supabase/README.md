@@ -107,6 +107,8 @@ whatever you haven't run yet, in this order.
 63. `custom_ai_providers.sql` — explicitly "after saas_foundation.sql ... and ai_provider_settings_v2.sql" (both already above).
 64. `fix_website_not_found_reason.sql` — explicitly "after website_module.sql" (#25, already above).
 65. `auto_provision_website.sql` — explicitly "after saas_foundation.sql (#22) and website_module.sql (#25)", both already above. Makes every NEW school get a real, published starter website automatically, and backfills the same for every EXISTING school that doesn't have one yet.
+66. `enable_all_modules_for_schools.sql` — run after saas_foundation.sql (#22), student_finance_module.sql (#27) and website_module.sql (#25), all already above. Makes seed_org_defaults() subscribe every new school to every platform_modules row (not just is_core = true ones — previously only 3 of ~25 modules), matching how the Grant Schools pilot tenant was bootstrapped, and backfills every existing school the same way.
+67. `admin_create_org_member.sql` — run after saas_foundation.sql (#22) and auto_provision_users.sql (#32, both already above), and after fix_teacher_login_and_password_change.sql (#47, adds profiles.must_change_password, which this sets). Adds admin_create_org_member(), which lets a school/platform admin create a brand-new person's account directly from the Members panel (there is no public signup page), instead of only being able to assign an already-existing account via add_org_member().
 
 > Note: `upgrades_2026_08.sql` (#62) is listed after `fix_org_slug_edit.sql`
 > (#61) by first-commit date, but `fix_org_slug_edit.sql`'s own header says

@@ -101,10 +101,18 @@ export function OrgMembersPanel({
 
   const [showAdd, setShowAdd] = useState(false);
   const [addEmail, setAddEmail] = useState("");
+  const [addFullName, setAddFullName] = useState("");
   const [addRole, setAddRole] = useState("staff");
   const [addDefault, setAddDefault] = useState(true);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  // Set when add_org_member reports no_such_user, so the modal can
+  // offer "create a new account" instead of just telling the admin
+  // to turn the person away until they sign up (there is no signup
+  // page for org members in this app).
+  const [noSuchUser, setNoSuchUser] = useState(false);
+  const [creatingNew, setCreatingNew] = useState(false);
+  const [createdCred, setCreatedCred] = useState<{ email: string; password: string } | null>(null);
 
   const [directory, setDirectory] = useState<AssignableUser[]>([]);
   const [dirSearch, setDirSearch] = useState("");
@@ -151,6 +159,7 @@ export function OrgMembersPanel({
   async function handleAdd() {
     setAdding(true);
     setAddError(null);
+    setNoSuchUser(false);
     const { data, error: err } = await supabase.rpc("add_org_member", {
       p_org: orgId,
       p_email: addEmail.trim(),
@@ -163,14 +172,54 @@ export function OrgMembersPanel({
       setAddError(err.message);
       return;
     }
-    const result = data as { ok: boolean; message?: string } | null;
+    const result = data as { ok: boolean; error?: string; message?: string } | null;
     if (result && result.ok === false) {
       setAddError(result.message ?? "Could not add that member.");
+      if (result.error === "no_such_user") setNoSuchUser(true);
       return;
     }
 
     setShowAdd(false);
     setAddEmail("");
+    setAddFullName("");
+    setAddRole("staff");
+    flash(`${addEmail.trim()} added to ${orgName}.`);
+    await load();
+    onChanged?.();
+  }
+
+  // Creates a brand-new account (no prior signup needed) via
+  // admin_create_org_member, for when add_org_member reports the
+  // email has no existing account. Mirrors the staff page's
+  // credential-notice pattern: shows the generated password once so
+  // the admin can hand it to the new person.
+  async function handleCreateNew() {
+    setCreatingNew(true);
+    setAddError(null);
+    const { data, error: err } = await supabase.rpc("admin_create_org_member", {
+      p_org: orgId,
+      p_email: addEmail.trim(),
+      p_full_name: addFullName.trim(),
+      p_role: addRole,
+      p_make_default: addDefault,
+    });
+    setCreatingNew(false);
+
+    if (err) {
+      setAddError(err.message);
+      return;
+    }
+    const result = data as { ok: boolean; email?: string; password?: string; message?: string } | null;
+    if (result && result.ok === false) {
+      setAddError(result.message ?? "Could not create that account.");
+      return;
+    }
+
+    setShowAdd(false);
+    setNoSuchUser(false);
+    setCreatedCred({ email: result?.email ?? addEmail.trim(), password: result?.password ?? "ChangeMe123!" });
+    setAddEmail("");
+    setAddFullName("");
     setAddRole("staff");
     flash(`${addEmail.trim()} added to ${orgName}.`);
     await load();
@@ -324,7 +373,7 @@ export function OrgMembersPanel({
             {members.length} assigned · {members.filter(m => m.active).length} active
           </p>
         </div>
-        <Button size="sm" variant="gold" onClick={() => { setShowAdd(true); setAddError(null); }}>
+        <Button size="sm" variant="gold" onClick={() => { setShowAdd(true); setAddError(null); setNoSuchUser(false); setAddFullName(""); }}>
           <UserPlus size={14} /> Add Member
         </Button>
       </div>
@@ -563,19 +612,33 @@ export function OrgMembersPanel({
       )}
 
       {showAdd && (
-        <Modal open onClose={() => setShowAdd(false)} title={`Add a member to ${orgName}`} size="lg">
+        <Modal
+          open
+          onClose={() => { setShowAdd(false); setNoSuchUser(false); setAddError(null); }}
+          title={`Add a member to ${orgName}`}
+          size="lg"
+        >
           <div className="space-y-4">
             <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800">
-              The person needs an account already. If they have not signed up, send them to
-              the login page to register first, then assign them here.
+              Enter their email to assign an existing account, or fill in a full name and
+              create a brand-new account for them directly — no prior signup needed.
             </div>
 
             <Input
               label="Email address"
               type="email"
               value={addEmail}
-              onChange={(e) => setAddEmail(e.target.value)}
+              onChange={(e) => { setAddEmail(e.target.value); setNoSuchUser(false); }}
               placeholder="bursar@schoolb.com"
+              autoComplete="off"
+            />
+
+            <Input
+              label="Full name (only needed when creating a new account)"
+              type="text"
+              value={addFullName}
+              onChange={(e) => setAddFullName(e.target.value)}
+              placeholder="Jane Doe"
               autoComplete="off"
             />
 
@@ -652,11 +715,55 @@ export function OrgMembersPanel({
               </div>
             )}
 
+            {noSuchUser && (
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                No account exists for that email yet. Enter their full name above, then
+                use &ldquo;Create New Account&rdquo; to provision one directly — they will
+                get a temporary password and be asked to change it on first login.
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-1">
-              <Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
-              <Button variant="gold" loading={adding} disabled={!addEmail.trim()} onClick={handleAdd}>
-                Add Member
+              <Button variant="secondary" onClick={() => { setShowAdd(false); setNoSuchUser(false); }}>Cancel</Button>
+              {noSuchUser ? (
+                <Button
+                  variant="gold"
+                  loading={creatingNew}
+                  disabled={!addEmail.trim() || !addFullName.trim()}
+                  onClick={handleCreateNew}
+                >
+                  Create New Account
+                </Button>
+              ) : (
+                <Button variant="gold" loading={adding} disabled={!addEmail.trim()} onClick={handleAdd}>
+                  Add Member
+                </Button>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {createdCred && (
+        <Modal open onClose={() => setCreatedCred(null)} title="Account created" size="md">
+          <div className="space-y-3">
+            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-900">
+              A new account was created and added to {orgName}. Share these temporary
+              credentials with them — they will be asked to change the password on first
+              login.
+            </div>
+            <div className="text-xs space-y-1 bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <div><span className="text-gray-500">Email:</span> <strong>{createdCred.email}</strong></div>
+              <div><span className="text-gray-500">Password:</span> <strong>{createdCred.password}</strong></div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => navigator.clipboard?.writeText(`${createdCred.email} / ${createdCred.password}`)}
+              >
+                Copy
               </Button>
+              <Button variant="gold" onClick={() => setCreatedCred(null)}>Done</Button>
             </div>
           </div>
         </Modal>
