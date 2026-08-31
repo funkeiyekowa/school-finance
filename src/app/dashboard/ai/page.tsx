@@ -186,18 +186,21 @@ export default function AiPage() {
                   <input
                     value={studentName}
                     onChange={(e) => setStudentName(e.target.value)}
+                    aria-label="Student name"
                     placeholder="Student name"
                     className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                   />
                   <input
                     value={averageScore}
                     onChange={(e) => setAverageScore(e.target.value)}
+                    aria-label="Average score"
                     placeholder="Average (e.g. 72%)"
                     className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                   />
                   <input
                     value={position}
                     onChange={(e) => setPosition(e.target.value)}
+                    aria-label="Class position"
                     placeholder="Position (e.g. 3 of 25)"
                     className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                   />
@@ -209,12 +212,14 @@ export default function AiPage() {
                   <input
                     value={schoolName}
                     onChange={(e) => setSchoolName(e.target.value)}
+                    aria-label="School name"
                     placeholder="School name"
                     className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                   />
                   <input
                     value={audience}
                     onChange={(e) => setAudience(e.target.value)}
+                    aria-label="Audience"
                     placeholder="Audience (parents, staff…)"
                     className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                   />
@@ -224,6 +229,7 @@ export default function AiPage() {
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                aria-label="Prompt input"
                 placeholder={
                   needsStudent
                     ? "Optional teacher notes to include in the comment…"

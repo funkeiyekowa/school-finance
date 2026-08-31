@@ -775,9 +775,10 @@ function CustomProviderModelBlock({
 
   return (
     <div className="pt-3 border-t border-gray-100">
-      <div className="text-xs font-semibold text-gray-700 mb-2">Model ({providerLabel})</div>
+      <label htmlFor="custom-provider-model-input" className="block text-xs font-semibold text-gray-700 mb-2">Model ({providerLabel})</label>
       <div className="flex items-center gap-2">
         <input
+          id="custom-provider-model-input"
           className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono"
           value={draft}
           disabled={saving}
