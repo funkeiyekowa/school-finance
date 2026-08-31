@@ -22,6 +22,20 @@ interface SeedDataPanelProps {
   focusOrgId: string | null;
 }
 
+// Supabase/Postgrest errors are plain objects ({ message, details, hint, code }),
+// NOT instances of the JS Error class — `err instanceof Error` is false for them,
+// which was silently swallowing the real database error and showing a generic
+// fallback string instead. This pulls the message out of any error shape.
+function extractErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object") {
+    const e = err as { message?: string; details?: string; hint?: string; code?: string };
+    const parts = [e.message, e.details, e.hint].filter(Boolean);
+    if (parts.length > 0) return parts.join(" — ") + (e.code ? ` (${e.code})` : "");
+  }
+  return fallback;
+}
+
 export function SeedDataPanel({ focusOrgId }: SeedDataPanelProps) {
   const supabase = createClient();
   const { profile } = useAuth();
@@ -51,7 +65,7 @@ export function SeedDataPanel({ focusOrgId }: SeedDataPanelProps) {
       if (err) throw err;
       setStats(data as SeedDataStats);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load stats");
+      setError(extractErrorMessage(err, "Failed to load stats"));
       setStats(null);
     } finally {
       setLoading(false);
@@ -72,7 +86,7 @@ export function SeedDataPanel({ focusOrgId }: SeedDataPanelProps) {
       // Refresh stats
       await loadStats();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to seed data");
+      setError(extractErrorMessage(err, "Failed to seed data"));
     } finally {
       setSeeding(false);
     }
@@ -98,7 +112,7 @@ export function SeedDataPanel({ focusOrgId }: SeedDataPanelProps) {
       // Refresh stats
       await loadStats();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete data");
+      setError(extractErrorMessage(err, "Failed to delete data"));
     } finally {
       setSeeding(false);
     }
