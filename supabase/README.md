@@ -106,6 +106,7 @@ whatever you haven't run yet, in this order.
 62. `upgrades_2026_08.sql`
 63. `custom_ai_providers.sql` — explicitly "after saas_foundation.sql ... and ai_provider_settings_v2.sql" (both already above).
 64. `fix_website_not_found_reason.sql` — explicitly "after website_module.sql" (#25, already above).
+65. `auto_provision_website.sql` — explicitly "after saas_foundation.sql (#22) and website_module.sql (#25)", both already above. Makes every NEW school get a real, published starter website automatically, and backfills the same for every EXISTING school that doesn't have one yet.
 
 > Note: `upgrades_2026_08.sql` (#62) is listed after `fix_org_slug_edit.sql`
 > (#61) by first-commit date, but `fix_org_slug_edit.sql`'s own header says
