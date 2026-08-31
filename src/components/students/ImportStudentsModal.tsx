@@ -52,7 +52,7 @@ export function ImportStudentsModal({ onCloseAction }: ImportStudentsModalProps)
 
       // Prepare data for bulk insert - INCLUDE org_id
       const studentsToInsert = rows.map((row) => ({
-        org_id: profile?.org_id || null, // ✅ CRITICAL: org_id from profile
+        org_id: profile?.organization_id || null, // ✅ CRITICAL: org_id from profile
         student_code: (row.student_code || row.id || "").toUpperCase(),
         first_name: row.first_name || row.firstname || "",
         last_name: row.last_name || row.lastname || "",

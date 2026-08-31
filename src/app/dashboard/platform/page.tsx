@@ -506,7 +506,7 @@ export default function PlatformAdminPage() {
       )}
 
       {tab === "school" && focusOrg && (
-        <SeedDataPanel orgId={focusOrg.id} />
+        <SeedDataPanel focusOrgId={focusOrg.id} />
       )}
 
       {tab === "members" && (
