@@ -8,6 +8,12 @@
  * hit "Generate", edit the result, copy it. Every request goes
  * through /api/ai/generate which enforces staff-only access, per-IP
  * rate limits, and structured logging to ai_generation_log.
+ *
+ * The Result panel renders the model's markdown-ish output (bold,
+ * italics, headers, lists, links, quotes) as styled HTML by default
+ * (see @/lib/ai/richText) — a toggle switches to a plain textarea for
+ * manual edits, and Copy writes both a plain-text AND a rich-HTML
+ * clipboard entry so pasting into Word/Gmail/Docs keeps the formatting.
  */
 
 import { useState } from "react";
@@ -16,8 +22,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { generateWithAi } from "@/lib/ai/client";
 import { AI_PRESETS, type AiTaskKind, presetOptions } from "@/lib/ai/prompts";
+import { renderAiOutputHtml } from "@/lib/ai/richText";
 import { useToast } from "@/lib/hooks/useToast";
-import { Sparkles, Copy, Loader2, Clock } from "lucide-react";
+import { Sparkles, Copy, Loader2, Clock, Eye, Pencil, Check } from "lucide-react";
 
 const CATEGORIES: Array<{ heading: string; kinds: AiTaskKind[]; blurb: string }> = [
   {
@@ -53,6 +60,8 @@ export default function AiPage() {
   const [audience, setAudience] = useState("");
   const [busy, setBusy] = useState(false);
   const [output, setOutput] = useState("");
+  const [viewMode, setViewMode] = useState<"preview" | "edit">("preview");
+  const [justCopied, setJustCopied] = useState(false);
   const [tokens, setTokens] = useState<{ prompt: number; response: number } | null>(null);
   const [elapsedMs, setElapsedMs] = useState<number | null>(null);
 
@@ -82,6 +91,7 @@ export default function AiPage() {
         source: "ai_module",
       });
       setOutput(result.output);
+      setViewMode("preview");
       setTokens(result.tokens);
       setElapsedMs(result.elapsed_ms);
     } catch (err) {
@@ -94,10 +104,29 @@ export default function AiPage() {
   async function copyOutput() {
     if (!output) return;
     try {
-      await navigator.clipboard.writeText(output);
-      notify("Copied to clipboard.");
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        const html = renderAiOutputHtml(output);
+        const item = new ClipboardItem({
+          "text/plain": new Blob([output], { type: "text/plain" }),
+          "text/html": new Blob([html], { type: "text/html" }),
+        });
+        await navigator.clipboard.write([item]);
+        notify("Copied — formatting is kept when you paste into Word, Gmail, or Docs.");
+      } else {
+        await navigator.clipboard.writeText(output);
+        notify("Copied to clipboard.");
+      }
+      setJustCopied(true);
+      setTimeout(() => setJustCopied(false), 1800);
     } catch {
-      notify("Copy blocked by browser. Select and press Ctrl+C.", "error");
+      try {
+        await navigator.clipboard.writeText(output);
+        notify("Copied as plain text.");
+        setJustCopied(true);
+        setTimeout(() => setJustCopied(false), 1800);
+      } catch {
+        notify("Copy blocked by browser. Select and press Ctrl+C.", "error");
+      }
     }
   }
 
@@ -214,17 +243,42 @@ export default function AiPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className={output && !busy ? "ring-1 ring-[#C9A227]/30" : ""}>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Result</CardTitle>
-                {output && (
-                  <button
-                    onClick={copyOutput}
-                    className="inline-flex items-center gap-1 text-xs text-[#0F2A47] hover:text-[#C9A227]"
-                  >
-                    <Copy size={12} /> Copy
-                  </button>
+                {output && !busy && (
+                  <div className="flex items-center gap-1">
+                    <div className="flex items-center rounded-lg border border-gray-200 p-0.5 mr-1">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("preview")}
+                        title="Formatted preview"
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                          viewMode === "preview" ? "bg-[#0F2A47] text-white" : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        <Eye size={12} /> Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("edit")}
+                        title="Edit as plain text"
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                          viewMode === "edit" ? "bg-[#0F2A47] text-white" : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        <Pencil size={12} /> Edit
+                      </button>
+                    </div>
+                    <button
+                      onClick={copyOutput}
+                      className="inline-flex items-center gap-1 text-xs text-[#0F2A47] hover:text-[#C9A227] px-2 py-1"
+                    >
+                      {justCopied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                      {justCopied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
                 )}
               </div>
             </CardHeader>
@@ -238,12 +292,18 @@ export default function AiPage() {
               {!busy && !output && (
                 <p className="text-sm text-gray-400 italic py-4">Your generated text appears here.</p>
               )}
-              {!busy && output && (
+              {!busy && output && viewMode === "preview" && (
+                <div
+                  className="rounded-lg border border-gray-200 bg-white px-4 py-3 min-h-[10rem] text-sm"
+                  dangerouslySetInnerHTML={{ __html: renderAiOutputHtml(output) }}
+                />
+              )}
+              {!busy && output && viewMode === "edit" && (
                 <textarea
                   value={output}
                   onChange={(e) => setOutput(e.target.value)}
                   rows={8}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[#C9A227]"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-[#C9A227]"
                 />
               )}
               {!busy && output && tokens && (
