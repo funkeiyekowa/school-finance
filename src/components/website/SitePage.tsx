@@ -543,7 +543,9 @@ function ContactBlock({ payload, currentPath }: { payload: PagePayload; currentP
 /** Shown when a host resolves but the site is not live. */
 export function SiteUnavailable({ reason }: { reason?: string }) {
   const message =
-    reason === "unpublished"
+    reason === "no_website"
+      ? "This school hasn't set up its public website yet."
+      : reason === "unpublished"
       ? "This website has not been published yet."
       : reason?.startsWith("org_")
       ? "This school's account is not currently active."

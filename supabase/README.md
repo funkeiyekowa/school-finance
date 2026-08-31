@@ -105,6 +105,7 @@ whatever you haven't run yet, in this order.
     this list top-to-bottom that's already the case.)
 62. `upgrades_2026_08.sql`
 63. `custom_ai_providers.sql` — explicitly "after saas_foundation.sql ... and ai_provider_settings_v2.sql" (both already above).
+64. `fix_website_not_found_reason.sql` — explicitly "after website_module.sql" (#25, already above).
 
 > Note: `upgrades_2026_08.sql` (#62) is listed after `fix_org_slug_edit.sql`
 > (#61) by first-commit date, but `fix_org_slug_edit.sql`'s own header says
