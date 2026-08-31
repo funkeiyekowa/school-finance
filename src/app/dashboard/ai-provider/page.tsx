@@ -9,7 +9,9 @@
  * default set at Dashboard → Platform → AI Provider. A school can:
  *
  *   - inherit the platform default (no choice made here)
- *   - pin to a specific provider + (for OpenRouter) a specific free model
+ *   - pin to a specific provider + (for OpenRouter/Groq/Gemini) a
+ *     specific live-fetched model, or (for a platform-registered
+ *     custom provider) a free-text model id
  *   - optionally paste the school's own API key for that provider, so
  *     its usage draws from that school's own account/quota instead of
  *     the platform's shared key — stored encrypted server-side, never
@@ -18,8 +20,9 @@
  *
  * Backed by /api/ai/org-settings (GET for current state + usage,
  * POST to change provider/model/key) and /api/ai/providers (which
- * providers have a platform key + OpenRouter's live free-model list
- * and platform-key quota).
+ * providers — built-in AND any platform-registered custom provider —
+ * have a platform key + OpenRouter's live free-model list and
+ * platform-key quota).
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -36,6 +39,10 @@ interface ProviderStatus {
   id: string;
   label: string;
   configured: boolean;
+  /** true for a platform-registered custom provider (Manage custom providers, platform admin only). */
+  custom?: boolean;
+  /** the row's pre-filled default model, for custom providers only. */
+  defaultModel?: string;
 }
 
 interface FreeModelOption {
@@ -235,6 +242,8 @@ export default function SchoolAiProviderPage() {
   }
 
   const isOpenRouter = selectedProvider === "openrouter";
+  const activeProviderRow = providers.find((p) => p.id === selectedProvider);
+  const isCustomProvider = Boolean(selectedProvider && activeProviderRow?.custom);
   const totalRequests30d = usage.reduce((sum, d) => sum + d.requests, 0);
   const totalErrors30d = usage.reduce((sum, d) => sum + d.errors, 0);
 
@@ -280,6 +289,7 @@ export default function SchoolAiProviderPage() {
                     : "No platform key — you can still use this if you add your own key below."
                 }
                 configured={p.configured}
+                custom={p.custom}
               />
             ))}
           </div>
@@ -350,6 +360,16 @@ export default function SchoolAiProviderPage() {
             </div>
           )}
 
+          {isCustomProvider && (
+            <CustomProviderModelBlock
+              providerLabel={activeProviderRow?.label ?? selectedProvider}
+              defaultModel={activeProviderRow?.defaultModel}
+              value={selectedModel}
+              saving={saving}
+              onSave={(model) => saveChoice(selectedProvider, model)}
+            />
+          )}
+
           <div className="pt-2 border-t border-gray-100">
             <button
               type="button"
@@ -416,7 +436,7 @@ export default function SchoolAiProviderPage() {
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 flex items-start gap-2">
               <Info size={16} className="mt-0.5 shrink-0" />
               <div>
-                By default this school shares the platform&apos;s {PROVIDER_LABELS[selectedProvider]} key.
+                By default this school shares the platform&apos;s {PROVIDER_LABELS[selectedProvider] || activeProviderRow?.label || selectedProvider} key.
                 Adding your own key here means every AI request from this school
                 uses YOUR account&apos;s quota instead — useful if the shared key&apos;s
                 rate limit is a problem, or you want to track spend separately.
@@ -445,7 +465,7 @@ export default function SchoolAiProviderPage() {
                     type={showKeyInput ? "text" : "password"}
                     value={keyInput}
                     onChange={(e) => setKeyInput(e.target.value)}
-                    placeholder={`Your ${PROVIDER_LABELS[selectedProvider]} API key`}
+                    placeholder={`Your ${PROVIDER_LABELS[selectedProvider] || activeProviderRow?.label || selectedProvider} API key`}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-9 text-sm font-mono"
                   />
                   <button
@@ -520,7 +540,7 @@ export default function SchoolAiProviderPage() {
 }
 
 function ProviderOption({
-  active, disabled, onSelect, label, description, configured,
+  active, disabled, onSelect, label, description, configured, custom,
 }: {
   active: boolean;
   disabled: boolean;
@@ -528,6 +548,7 @@ function ProviderOption({
   label: string;
   description: string;
   configured: boolean;
+  custom?: boolean;
 }) {
   return (
     <button
@@ -550,10 +571,61 @@ function ProviderOption({
       <div className="flex-1">
         <div className="text-sm font-semibold text-gray-800 flex items-center gap-2">
           {label}
+          {custom && <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 border border-gray-300 rounded px-1">Custom</span>}
           {active && <span className="text-[10px] font-bold uppercase tracking-wide text-[#C9A227]">Active</span>}
         </div>
         <div className="text-xs text-gray-500 mt-0.5">{description}</div>
       </div>
     </button>
+  );
+}
+
+/**
+ * Free-text model input for a platform-registered custom provider.
+ * Built-in providers (Groq/Gemini/OpenRouter) get a live-fetched
+ * <select> above; a custom provider has no catalog endpoint we know
+ * how to call generically, so this lets the admin type the exact
+ * model id the provider expects, pre-filled with the row's
+ * default_model. Local draft state avoids saving on every keystroke.
+ */
+function CustomProviderModelBlock({
+  providerLabel, defaultModel, value, saving, onSave,
+}: {
+  providerLabel: string;
+  defaultModel?: string;
+  value: string;
+  saving: boolean;
+  onSave: (model: string) => void;
+}) {
+  const [draft, setDraft] = useState(value || defaultModel || "");
+
+  useEffect(() => {
+    setDraft(value || defaultModel || "");
+  }, [value, defaultModel]);
+
+  return (
+    <div className="pt-3 border-t border-gray-100">
+      <div className="text-xs font-semibold text-gray-700 mb-2">Model ({providerLabel})</div>
+      <div className="flex items-center gap-2">
+        <input
+          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono"
+          value={draft}
+          disabled={saving}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={defaultModel || "model id"}
+        />
+        <button
+          type="button"
+          onClick={() => onSave(draft.trim())}
+          disabled={saving || !draft.trim()}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Save
+        </button>
+      </div>
+      <p className="text-xs text-gray-400 mt-1">
+        Custom provider — type the exact model id it expects{defaultModel ? `; default is "${defaultModel}"` : ""}.
+      </p>
+    </div>
   );
 }

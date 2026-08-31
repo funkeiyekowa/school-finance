@@ -4,9 +4,9 @@
  * /dashboard/platform/ai-provider — Super Admin only.
  *
  * Sets the PLATFORM-WIDE default AI backend (OpenAI, Groq, Gemini,
- * OpenRouter + model) that every school inherits unless it picks its
- * own under Dashboard → AI Provider (see /dashboard/ai-provider,
- * school-scoped, any org admin).
+ * OpenRouter, or any registered custom provider + model) that every
+ * school inherits unless it picks its own under Dashboard → AI Provider
+ * (see /dashboard/ai-provider, school-scoped, any org admin).
  *
  * Persisted to platform_settings.active_ai_provider / active_ai_model
  * (see supabase/ai_provider_settings.sql + ai_provider_settings_v2.sql).
@@ -18,6 +18,14 @@
  * key env var is set on the server, plus OpenRouter's live catalog
  * of $0-priced models and (if a platform OpenRouter key exists) that
  * key's live quota — never the key itself.
+ *
+ * The "Manage custom providers" panel below lets a super admin register
+ * any additional OpenAI-chat-compatible provider (a slug, label, base
+ * URL, the NAME of the Vercel env var holding its key, and a default
+ * model) with no code change or redeploy needed — see
+ * supabase/custom_ai_providers.sql and src/lib/ai/customProviders.ts.
+ * Reads/writes go straight to public.platform_ai_custom_providers;
+ * RLS on that table already restricts writes to is_platform_admin().
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -25,12 +33,20 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Sparkles, ShieldAlert, CheckCircle2, KeyRound, Lock, Gauge, AlertTriangle, PlayCircle, Loader2, XCircle } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import {
+  Sparkles, ShieldAlert, CheckCircle2, KeyRound, Lock, Gauge, AlertTriangle,
+  PlayCircle, Loader2, XCircle, Settings2, Plus, Pencil, Trash2, X,
+} from "lucide-react";
 
 interface ProviderStatus {
   id: string;
   label: string;
   configured: boolean;
+  /** true for a platform-registered custom provider. */
+  custom?: boolean;
+  /** the row's pre-filled default model, for custom providers only. */
+  defaultModel?: string;
 }
 
 interface FreeModelOption {
@@ -48,6 +64,25 @@ interface OpenRouterKeyStatus {
   rateLimit?: { requests: number; interval: string } | null;
   error?: string;
 }
+
+interface CustomProviderRow {
+  id: string;
+  provider_key: string;
+  label: string;
+  base_url: string;
+  api_key_env_name: string;
+  default_model: string;
+  enabled: boolean;
+}
+
+const BLANK_CUSTOM_FORM = {
+  provider_key: "",
+  label: "",
+  base_url: "",
+  api_key_env_name: "",
+  default_model: "",
+  enabled: true,
+};
 
 export default function AiProviderSettingsPage() {
   const { isSuperAdmin } = useAuth();
@@ -68,6 +103,15 @@ export default function AiProviderSettingsPage() {
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string; model?: string; elapsed_ms?: number } | null>(null);
+
+  // --- Manage custom providers ---
+  const [customRows, setCustomRows] = useState<CustomProviderRow[]>([]);
+  const [customLoaded, setCustomLoaded] = useState(false);
+  const [customError, setCustomError] = useState<string | null>(null);
+  const [customSaving, setCustomSaving] = useState(false);
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [editingCustomId, setEditingCustomId] = useState<string | null>(null);
+  const [customForm, setCustomForm] = useState(BLANK_CUSTOM_FORM);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,9 +148,29 @@ export default function AiProviderSettingsPage() {
     setLoading(false);
   }, [supabase]);
 
+  const loadCustom = useCallback(async () => {
+    setCustomError(null);
+    const { data, error: err } = await supabase
+      .from("platform_ai_custom_providers")
+      .select("id, provider_key, label, base_url, api_key_env_name, default_model, enabled")
+      .order("created_at", { ascending: true });
+
+    if (err) {
+      if (/does not exist/i.test(err.message)) {
+        setCustomError("Custom providers table is missing. Run supabase/custom_ai_providers.sql in the Supabase SQL editor first.");
+      } else {
+        setCustomError(err.message);
+      }
+    } else {
+      setCustomRows((data as CustomProviderRow[]) ?? []);
+    }
+    setCustomLoaded(true);
+  }, [supabase]);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadCustom();
+  }, [load, loadCustom]);
 
   async function save(nextProvider: string, nextModel: string) {
     setSaving(true);
@@ -148,6 +212,82 @@ export default function AiProviderSettingsPage() {
     setTesting(false);
   }
 
+  function openNewCustomForm() {
+    setEditingCustomId(null);
+    setCustomForm(BLANK_CUSTOM_FORM);
+    setCustomError(null);
+    setShowCustomForm(true);
+  }
+
+  function openEditCustomForm(row: CustomProviderRow) {
+    setEditingCustomId(row.id);
+    setCustomForm({
+      provider_key: row.provider_key,
+      label: row.label,
+      base_url: row.base_url,
+      api_key_env_name: row.api_key_env_name,
+      default_model: row.default_model,
+      enabled: row.enabled,
+    });
+    setCustomError(null);
+    setShowCustomForm(true);
+  }
+
+  async function saveCustom() {
+    setCustomError(null);
+
+    const payload = {
+      provider_key: customForm.provider_key.trim().toLowerCase(),
+      label: customForm.label.trim(),
+      base_url: customForm.base_url.trim(),
+      api_key_env_name: customForm.api_key_env_name.trim(),
+      default_model: customForm.default_model.trim(),
+      enabled: customForm.enabled,
+    };
+    if (!payload.provider_key || !payload.label || !payload.base_url || !payload.api_key_env_name || !payload.default_model) {
+      setCustomError("All fields are required.");
+      return;
+    }
+
+    setCustomSaving(true);
+    const { error: err } = editingCustomId
+      ? await supabase.from("platform_ai_custom_providers").update(payload).eq("id", editingCustomId)
+      : await supabase.from("platform_ai_custom_providers").insert(payload);
+    setCustomSaving(false);
+
+    if (err) {
+      if (err.code === "23505" || /duplicate key|already exists/i.test(err.message)) {
+        setCustomError(`A provider with key "${payload.provider_key}" already exists.`);
+      } else if (/custom_ai_providers_key_format_check/i.test(err.message)) {
+        setCustomError(
+          'Provider key must be lowercase letters, numbers or underscore, start with a letter, and can\'t be ' +
+            '"openai", "groq", "gemini", or "openrouter".',
+        );
+      } else {
+        setCustomError(err.message);
+      }
+      return;
+    }
+
+    setShowCustomForm(false);
+    await loadCustom();
+    await load(); // refresh the picker list + configured badges too
+  }
+
+  async function deleteCustom(row: CustomProviderRow) {
+    if (!window.confirm(`Remove custom provider "${row.label}"? Any school currently pinned to it will fall back to Auto.`)) return;
+    setCustomSaving(true);
+    setCustomError(null);
+    const { error: err } = await supabase.from("platform_ai_custom_providers").delete().eq("id", row.id);
+    setCustomSaving(false);
+    if (err) {
+      setCustomError(err.message);
+      return;
+    }
+    await loadCustom();
+    await load();
+  }
+
   if (loading) return <LoadingSpinner />;
 
   if (!isSuperAdmin) {
@@ -170,6 +310,8 @@ export default function AiProviderSettingsPage() {
 
   const configuredCount = providers.filter((p) => p.configured).length;
   const isOpenRouter = selected === "openrouter";
+  const activeProviderRow = providers.find((p) => p.id === selected);
+  const isCustomProvider = Boolean(selected && activeProviderRow?.custom);
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -190,7 +332,8 @@ export default function AiProviderSettingsPage() {
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
               No provider has an API key configured on this deployment yet. Add one
               in Vercel → Settings → Environment Variables (e.g. GROQ_API_KEY),
-              redeploy, then come back here to select it.
+              redeploy, then come back here to select it — or register a custom
+              provider below if it already has a Vercel env var set.
             </div>
           )}
 
@@ -201,7 +344,7 @@ export default function AiProviderSettingsPage() {
               disabled={saving}
               onSelect={() => save("", "")}
               label="Auto"
-              description="Uses the AI_PROVIDER environment variable, or the first provider below with a key configured."
+              description="Uses the AI_PROVIDER environment variable, or the first provider below (built-in or custom) with a key configured."
               configured
             />
           </label>
@@ -221,6 +364,7 @@ export default function AiProviderSettingsPage() {
                     : "No API key configured — add one in Vercel to enable this option."
                 }
                 configured={p.configured}
+                custom={p.custom}
               />
             ))}
           </div>
@@ -290,6 +434,16 @@ export default function AiProviderSettingsPage() {
                 Fetched live from Google using the configured platform key.
               </p>
             </div>
+          )}
+
+          {isCustomProvider && (
+            <CustomProviderModelBlock
+              providerLabel={activeProviderRow?.label ?? selected}
+              defaultModel={activeProviderRow?.defaultModel}
+              value={selectedModel}
+              saving={saving}
+              onSave={(model) => save(selected, model)}
+            />
           )}
 
           {isOpenRouter && keyStatus && (
@@ -375,12 +529,188 @@ export default function AiProviderSettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <Settings2 size={18} className="text-[#C9A227]" />
+              Manage custom providers
+            </span>
+            {!showCustomForm && (
+              <button
+                type="button"
+                onClick={openNewCustomForm}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:border-gray-400"
+              >
+                <Plus size={14} /> Add provider
+              </button>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-gray-500">
+            Register any additional OpenAI-chat-compatible provider (any endpoint that
+            accepts an OpenAI-shaped <code>/chat/completions</code> request). You added
+            an API key to Vercel first — name it here, and it shows up above in the
+            provider picker, no code change or redeploy needed.
+          </p>
+
+          {!customLoaded ? (
+            <LoadingSpinner />
+          ) : customRows.length === 0 && !showCustomForm ? (
+            <div className="rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500">
+              No custom providers registered yet.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {customRows.map((row) => (
+                <div key={row.id} className="rounded-lg border border-gray-200 p-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                      {row.label}
+                      <span className="text-[10px] font-mono text-gray-400">{row.provider_key}</span>
+                      {!row.enabled && (
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 border border-gray-300 rounded px-1">Disabled</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5 truncate">{row.base_url}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">
+                      Key from <span className="font-mono">{row.api_key_env_name}</span> · default model <span className="font-mono">{row.default_model}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openEditCustomForm(row)}
+                      disabled={customSaving}
+                      className="rounded-lg border border-gray-300 p-1.5 text-gray-600 hover:border-gray-400 disabled:opacity-50"
+                      aria-label={`Edit ${row.label}`}
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteCustom(row)}
+                      disabled={customSaving}
+                      className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:border-red-300 disabled:opacity-50"
+                      aria-label={`Delete ${row.label}`}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {showCustomForm && (
+            <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold text-gray-800">
+                  {editingCustomId ? "Edit custom provider" : "Add custom provider"}
+                </div>
+                <button type="button" onClick={() => setShowCustomForm(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="block">
+                  <div className="text-xs font-semibold text-gray-700 mb-1">Provider key (slug)</div>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono"
+                    value={customForm.provider_key}
+                    disabled={Boolean(editingCustomId)}
+                    onChange={(e) => setCustomForm((f) => ({ ...f, provider_key: e.target.value }))}
+                    placeholder="zai"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1">Lowercase, e.g. &quot;zai&quot;. Can&apos;t be changed after creation.</p>
+                </label>
+                <label className="block">
+                  <div className="text-xs font-semibold text-gray-700 mb-1">Label</div>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    value={customForm.label}
+                    onChange={(e) => setCustomForm((f) => ({ ...f, label: e.target.value }))}
+                    placeholder="Z.ai (GLM)"
+                  />
+                </label>
+              </div>
+
+              <label className="block">
+                <div className="text-xs font-semibold text-gray-700 mb-1">Chat-completions base URL</div>
+                <input
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono"
+                  value={customForm.base_url}
+                  onChange={(e) => setCustomForm((f) => ({ ...f, base_url: e.target.value }))}
+                  placeholder="https://api.z.ai/api/paas/v4/chat/completions"
+                />
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="block">
+                  <div className="text-xs font-semibold text-gray-700 mb-1">Vercel env var holding the key</div>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono"
+                    value={customForm.api_key_env_name}
+                    onChange={(e) => setCustomForm((f) => ({ ...f, api_key_env_name: e.target.value }))}
+                    placeholder="GRANTSCHOOL_Z_API_KEY"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    The exact NAME of the env var in Vercel — never the key value itself.
+                  </p>
+                </label>
+                <label className="block">
+                  <div className="text-xs font-semibold text-gray-700 mb-1">Default model</div>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono"
+                    value={customForm.default_model}
+                    onChange={(e) => setCustomForm((f) => ({ ...f, default_model: e.target.value }))}
+                    placeholder="glm-4.6"
+                  />
+                </label>
+              </div>
+
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={customForm.enabled}
+                  onChange={(e) => setCustomForm((f) => ({ ...f, enabled: e.target.checked }))}
+                />
+                Enabled (visible in the provider picker above)
+              </label>
+
+              {customError && (
+                <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {customError}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <Button onClick={saveCustom} disabled={customSaving} loading={customSaving}>
+                  {editingCustomId ? "Save changes" : "Add provider"}
+                </Button>
+                <Button variant="secondary" onClick={() => setShowCustomForm(false)} disabled={customSaving}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {customError && !showCustomForm && (
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {customError}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
 function ProviderOption({
-  active, disabled, onSelect, label, description, configured,
+  active, disabled, onSelect, label, description, configured, custom,
 }: {
   active: boolean;
   disabled: boolean;
@@ -388,6 +718,7 @@ function ProviderOption({
   label: string;
   description: string;
   configured: boolean;
+  custom?: boolean;
 }) {
   return (
     <button
@@ -410,10 +741,62 @@ function ProviderOption({
       <div className="flex-1">
         <div className="text-sm font-semibold text-gray-800 flex items-center gap-2">
           {label}
+          {custom && <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 border border-gray-300 rounded px-1">Custom</span>}
           {active && <span className="text-[10px] font-bold uppercase tracking-wide text-[#C9A227]">Active</span>}
         </div>
         <div className="text-xs text-gray-500 mt-0.5">{description}</div>
       </div>
     </button>
+  );
+}
+
+/**
+ * Free-text model input for a platform-registered custom provider.
+ * Built-in providers get a live-fetched <select> above; a custom
+ * provider has no catalog endpoint we know how to call generically,
+ * so this lets the admin type the exact model id, pre-filled with the
+ * row's default_model. Local draft state avoids saving on every
+ * keystroke.
+ */
+function CustomProviderModelBlock({
+  providerLabel, defaultModel, value, saving, onSave,
+}: {
+  providerLabel: string;
+  defaultModel?: string;
+  value: string;
+  saving: boolean;
+  onSave: (model: string) => void;
+}) {
+  const [draft, setDraft] = useState(value || defaultModel || "");
+
+  useEffect(() => {
+    setDraft(value || defaultModel || "");
+  }, [value, defaultModel]);
+
+  return (
+    <div className="pt-3 border-t border-gray-100">
+      <div className="text-xs font-semibold text-gray-700 mb-2">Model ({providerLabel})</div>
+      <div className="flex items-center gap-2">
+        <input
+          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono"
+          value={draft}
+          disabled={saving}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={defaultModel || "model id"}
+        />
+        <button
+          type="button"
+          onClick={() => onSave(draft.trim())}
+          disabled={saving || !draft.trim()}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Save
+        </button>
+      </div>
+      <p className="text-xs text-gray-400 mt-1">
+        Custom provider — type the exact model id it expects{defaultModel ? `; default is "${defaultModel}"` : ""}. Edit
+        the row below in &quot;Manage custom providers&quot; to change the default for everyone.
+      </p>
+    </div>
   );
 }

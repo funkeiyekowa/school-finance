@@ -9,6 +9,13 @@
  *     once and let EACH SCHOOL pick its own active provider + model,
  *     optionally overriding with its own API key, instead of one
  *     platform-wide toggle.
+ *   • A platform admin can ALSO register additional OpenAI-compatible
+ *     providers at runtime (e.g. Z.ai/GLM) from Dashboard → Platform →
+ *     AI Provider → "Manage custom providers" — see
+ *     src/lib/ai/customProviders.ts and supabase/custom_ai_providers.sql.
+ *     Those are converted to the same AiProviderConfig shape below and
+ *     merged into pickProvider()'s search order, so adding a 5th (or
+ *     50th) provider never requires a code change or redeploy again.
  *
  * Resolution order (see resolveForOrg in src/lib/ai/resolve.ts):
  *   1. org_ai_settings row for the caller's org (provider + model +
@@ -16,8 +23,8 @@
  *   2. platform_settings.active_ai_provider (platform-wide default,
  *      set from Dashboard → Platform → AI Provider by a super admin).
  *   3. AI_PROVIDER env var.
- *   4. First provider below — in registry order — that has a
- *      platform key configured in Vercel.
+ *   4. First provider — built-in (in registry order) or custom (in
+ *      creation order) — that has a platform key configured in Vercel.
  *
  * If nothing resolves, the app tells the caller AI isn't configured
  * rather than silently failing.
@@ -26,7 +33,12 @@
 export type AiProviderId = "openai" | "groq" | "gemini" | "openrouter";
 
 export interface AiProviderConfig {
-  id: AiProviderId;
+  /**
+   * String, not AiProviderId: a custom provider (see
+   * src/lib/ai/customProviders.ts) supplies an arbitrary lowercase slug
+   * here (e.g. "zai"), not one of the 4 built-in literal ids.
+   */
+  id: string;
   label: string;
   /** Full chat-completions endpoint URL. */
   baseUrl: string;
@@ -135,25 +147,34 @@ export interface ResolvedProvider {
 
 /**
  * Picks a provider given a preferred id and an optional org-supplied
- * key override. If the preferred id names a provider, that provider
- * is tried first — using the org key if given, else the platform's
- * shared env-var key — before falling back through the rest of the
- * registry using only platform keys. Returns null if nothing resolves.
+ * key override, searching the 4 built-in providers plus any
+ * platform-registered custom providers (see customProviders, defaults
+ * to none so existing callers that don't pass any keep working exactly
+ * as before). If the preferred id names a known provider (built-in or
+ * custom), that provider is tried first — using the org key if given,
+ * else the platform's shared env-var key — before falling back through
+ * the rest in registry/creation order. Returns null if nothing resolves.
  */
 export function pickProvider(
   preferredId?: string | null,
   preferredModel?: string | null,
   orgOverrideKey?: string | null,
+  customProviders: AiProviderConfig[] = [],
 ): ResolvedProvider | null {
-  const requested = (preferredId || "").trim().toLowerCase() as AiProviderId;
-  const order: AiProviderId[] =
-    requested && AI_PROVIDERS[requested]
-      ? [requested, ...AI_PROVIDER_IDS.filter((id) => id !== requested)]
-      : AI_PROVIDER_IDS;
+  const requested = (preferredId || "").trim().toLowerCase();
+  const allConfigs: AiProviderConfig[] = [
+    ...AI_PROVIDER_IDS.map((id) => AI_PROVIDERS[id]),
+    ...customProviders,
+  ];
+  const order: AiProviderConfig[] = requested
+    ? [
+        ...allConfigs.filter((c) => c.id.toLowerCase() === requested),
+        ...allConfigs.filter((c) => c.id.toLowerCase() !== requested),
+      ]
+    : allConfigs;
 
-  for (const id of order) {
-    const config = AI_PROVIDERS[id];
-    const isPreferred = id === requested;
+  for (const config of order) {
+    const isPreferred = config.id.toLowerCase() === requested;
     const apiKey = (isPreferred && orgOverrideKey) || readEnvCandidates(config.apiKeyEnvCandidates);
     if (apiKey) {
       const model =
@@ -174,12 +195,12 @@ export function resolveActiveProvider(): ResolvedProvider | null {
   return pickProvider(process.env.AI_PROVIDER);
 }
 
-/** Which providers currently have a platform-wide key configured in Vercel. */
+/** Which BUILT-IN providers currently have a platform-wide key configured in Vercel. */
 export function listConfiguredProviders(): AiProviderId[] {
   return AI_PROVIDER_IDS.filter((id) => !!readEnvCandidates(AI_PROVIDERS[id].apiKeyEnvCandidates));
 }
 
-/** The actual configured platform-wide key for one provider, if any (never logged/returned to clients). */
+/** The actual configured platform-wide key for one built-in provider, if any (never logged/returned to clients). */
 export function getConfiguredKey(id: AiProviderId): string | undefined {
   return readEnvCandidates(AI_PROVIDERS[id].apiKeyEnvCandidates);
 }

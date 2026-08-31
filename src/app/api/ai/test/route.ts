@@ -32,6 +32,7 @@ import { NextResponse } from "next/server";
 import { requireStaffSession } from "@/lib/api/requireStaff";
 import { rateLimit, callerKey } from "@/lib/api/rateLimit";
 import { pickProvider } from "@/lib/ai/providers";
+import { listCustomProviderConfigs } from "@/lib/ai/customProviders";
 import { decryptProviderKey } from "@/lib/ai/keyCrypto";
 import { AI_PRESETS } from "@/lib/ai/prompts";
 import { createClient } from "@/lib/supabase/server";
@@ -100,7 +101,8 @@ export async function POST(request: Request) {
     orgOverrideKey = await fetchOrgOverrideKeyForTest(organizationId, requestedProvider);
   }
 
-  const provider = pickProvider(requestedProvider, requestedModel, orgOverrideKey);
+  const customProviders = await listCustomProviderConfigs(supabase);
+  const provider = pickProvider(requestedProvider, requestedModel, orgOverrideKey, customProviders);
   if (!provider) {
     return NextResponse.json(
       { error: "No API key configured for this provider on this deployment." },

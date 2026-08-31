@@ -3,7 +3,7 @@
  *   1. org_ai_settings (per-school provider/model + optional own key)
  *   2. platform_settings.active_ai_provider (platform-wide default)
  *   3. AI_PROVIDER env var
- *   4. first platform-configured provider
+ *   4. first platform-configured provider — built-in or custom
  *
  * This is the single call site /api/ai/generate should use instead of
  * calling pickProvider() directly, so per-school overrides are honored
@@ -12,6 +12,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { pickProvider, type ResolvedProvider } from "@/lib/ai/providers";
+import { listCustomProviderConfigs } from "@/lib/ai/customProviders";
 import { decryptProviderKey } from "@/lib/ai/keyCrypto";
 import { logError } from "@/lib/errors/logError";
 
@@ -22,8 +23,13 @@ interface ResolveArgs {
 }
 
 export async function resolveProviderForOrg({ supabase, organizationId }: ResolveArgs): Promise<ResolvedProvider | null> {
+  // Platform admin-registered providers (e.g. Z.ai) — RLS lets any
+  // authenticated client read these, so this is safe before we even
+  // know whether the caller belongs to an org.
+  const customProviders = await listCustomProviderConfigs(supabase);
+
   if (!organizationId) {
-    return pickProvider(process.env.AI_PROVIDER);
+    return pickProvider(process.env.AI_PROVIDER, null, null, customProviders);
   }
 
   let preferredProvider: string | null = null;
@@ -49,7 +55,7 @@ export async function resolveProviderForOrg({ supabase, organizationId }: Resolv
     orgOverrideKey = await fetchAndDecryptOrgKey(organizationId, preferredProvider);
   }
 
-  return pickProvider(preferredProvider || process.env.AI_PROVIDER, preferredModel, orgOverrideKey);
+  return pickProvider(preferredProvider || process.env.AI_PROVIDER, preferredModel, orgOverrideKey, customProviders);
 }
 
 /**
