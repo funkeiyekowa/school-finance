@@ -104,7 +104,7 @@ END $$;
 -- Backfill 1: give every existing organization the standard departments
 -- it doesn't already have rows for. Never touches existing rows.
 INSERT INTO departments (name, active, organization_id)
-SELECT o.id, d.name, true
+SELECT d.name, true, o.id
 FROM organizations o
 CROSS JOIN (VALUES
   ('Science'),
