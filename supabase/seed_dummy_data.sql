@@ -1,205 +1,198 @@
--- =====================================================================
--- SEED DUMMY DATA FOR TESTING
--- =====================================================================
--- Generates realistic test data (students, staff, classes, transactions, etc.)
--- All dummy data is marked with is_test_data = true for easy cleanup
--- Run order: after all schema and core functions are in place
--- =====================================================================
+-- ============================================================================
+-- TEST DATA GENERATOR FOR SCHOOL FINANCE
+-- ============================================================================
+-- Matches the REAL schema in schema.sql + multi_tenant_migration.sql:
+--   students          -> organization_id (NOT NULL), first_name/last_name/middle_name
+--   staff_members     -> organization_id, full_name (no separate first/last)
+--   income_entries    -> organization_id, receipt_no (unique NOT NULL), amount numeric
+--   expense_entries   -> organization_id, voucher_no (unique NOT NULL), amount numeric
+--
+-- Three RPC functions:
+-- 1. seed_dummy_data(p_org uuid)                          - generate test data
+-- 2. delete_dummy_data(p_org uuid, p_delete_all boolean)   - delete test-only or all
+-- 3. get_dummy_data_stats(p_org uuid)                      - counts/sums as JSON
+--
+-- All test records are marked is_test_data = true for selective deletion.
+-- ============================================================================
 
+-- ============================================================================
+-- 0. Add is_test_data flag to the tables that need it (safe to re-run)
+-- ============================================================================
+ALTER TABLE students        ADD COLUMN IF NOT EXISTS is_test_data boolean NOT NULL DEFAULT false;
+ALTER TABLE staff_members   ADD COLUMN IF NOT EXISTS is_test_data boolean NOT NULL DEFAULT false;
+ALTER TABLE income_entries  ADD COLUMN IF NOT EXISTS is_test_data boolean NOT NULL DEFAULT false;
+ALTER TABLE expense_entries ADD COLUMN IF NOT EXISTS is_test_data boolean NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS idx_students_test        ON students(organization_id, is_test_data);
+CREATE INDEX IF NOT EXISTS idx_staff_members_test   ON staff_members(organization_id, is_test_data);
+CREATE INDEX IF NOT EXISTS idx_income_entries_test  ON income_entries(organization_id, is_test_data);
+CREATE INDEX IF NOT EXISTS idx_expense_entries_test ON expense_entries(organization_id, is_test_data);
+
+
+-- ============================================================================
+-- 1. SEED DUMMY DATA
+-- ============================================================================
 CREATE OR REPLACE FUNCTION seed_dummy_data(p_org uuid)
-RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
-  v_student_count integer := 0;
-  v_staff_count integer := 0;
-  v_i integer;
-  v_last_names text[] := ARRAY['Okafor', 'Johnson', 'Adeyemi', 'Ibrahim', 'Oluwaseun', 'Chukwu', 'Mensah', 'Osei', 'Nwosu', 'Bello'];
-  v_first_names text[] := ARRAY['Ada', 'Kofi', 'Zainab', 'Chioma', 'Yusuf', 'Ama', 'Adekunle', 'Fatima', 'Kwame', 'Ndidi'];
-  v_grades text[] := ARRAY['JSS1', 'JSS2', 'JSS3', 'SSS1', 'SSS2', 'SSS3'];
-  v_genders text[] := ARRAY['Male', 'Female'];
-  v_income_cats text[] := ARRAY['tuition', 'grants', 'donations', 'other'];
-  v_expense_cats text[] := ARRAY['salaries', 'utilities', 'maintenance', 'supplies', 'transportation'];
-  v_departments uuid[];
-  v_student_id uuid;
-  v_staff_id uuid;
-  v_dept_id uuid;
-BEGIN
-  -- Get departments
-  SELECT ARRAY_AGG(id) INTO v_departments FROM departments WHERE organization_id = p_org AND active = true LIMIT 5;
-  IF v_departments IS NULL OR array_length(v_departments, 1) IS NULL THEN
-    RETURN jsonb_build_object(
-      'ok', false,
-      'error', 'No active departments found. Create departments first.'
-    );
-  END IF;
+  v_i int;
+  v_run text := to_char(clock_timestamp(), 'HH24MISSMS'); -- uniquifier for this seed run
 
-  -- Create 50 dummy students
+  v_income_cats  text[] := ARRAY['Tuition', 'Grants', 'Donations', 'Other'];
+  v_expense_cats text[] := ARRAY['Salaries', 'Utilities', 'Maintenance', 'Supplies', 'Transportation'];
+
+  v_first_names text[] := ARRAY['Ada','Chioma','Zainab','Amara','Blessing','Judith','Gloria','Patricia','Chukwu','Ife','Tunde','Kadir','Hassan','Adebayo','Emeka'];
+  v_last_names  text[] := ARRAY['Okafor','Abubakar','Musa','Oluwaseun','Ibrahim','Nwosu','Adeyinka','Eze','Kolapo','Suleiman','Dike','Olumide','Chigbu','Yusuf','Ekanem'];
+  v_grades      text[] := ARRAY['JSS1','JSS2','JSS3','SSS1','SSS2','SSS3'];
+  v_genders     text[] := ARRAY['Male','Female'];
+
+  v_staff_first text[] := ARRAY['Folake','Segun','Victoria','James','Amara','Kofi','Aisha','Samuel','Zoe','David'];
+  v_staff_last  text[] := ARRAY['Adeniji','Okonkwo','Oluwade','Mbamalu','Chukwuma','Mensah','Hassan','Obi','Adebowale','Ekanem'];
+  v_staff_types text[] := ARRAY['teaching','teaching','teaching','teaching','teaching','non_teaching','non_teaching','admin','admin','admin'];
+BEGIN
+  -- =====================================================================
+  -- 50 Students
+  -- =====================================================================
   FOR v_i IN 1..50 LOOP
     INSERT INTO students (
-      organization_id, student_code, full_name, first_name, last_name,
-      grade, gender, status, is_test_data
+      organization_id, student_code, first_name, last_name, full_name, grade,
+      gender, status, date_of_birth, admission_date, academic_year,
+      guardian_name, guardian_phone, is_test_data, created_at, updated_at
     ) VALUES (
       p_org,
-      'TST' || LPAD(v_i::text, 4, '0'),
-      v_first_names[((v_i - 1) % array_length(v_first_names, 1)) + 1] || ' ' ||
-      v_last_names[((v_i - 1) % array_length(v_last_names, 1)) + 1],
+      'TSTU' || v_run || LPAD(v_i::text, 3, '0'),
       v_first_names[((v_i - 1) % array_length(v_first_names, 1)) + 1],
       v_last_names[((v_i - 1) % array_length(v_last_names, 1)) + 1],
+      v_last_names[((v_i - 1) % array_length(v_last_names, 1)) + 1] || ' ' || v_first_names[((v_i - 1) % array_length(v_first_names, 1)) + 1],
       v_grades[((v_i - 1) % array_length(v_grades, 1)) + 1],
-      v_genders[((v_i - 1) % 2) + 1],
-      CASE WHEN v_i % 10 = 0 THEN 'inactive' ELSE 'active' END,
-      true
+      v_genders[((v_i - 1) % array_length(v_genders, 1)) + 1],
+      CASE WHEN random() < 0.8 THEN 'active' ELSE 'inactive' END,
+      CURRENT_DATE - (random() * 5475)::int - 365,
+      CURRENT_DATE - (random() * 730)::int,
+      '2025/2026',
+      'Guardian ' || v_i,
+      '+234800' || LPAD((random() * 10000000)::int::text, 7, '0'),
+      true,
+      now(), now()
     );
-    v_student_count := v_student_count + 1;
   END LOOP;
 
-  -- Create 30 dummy staff members
+  -- =====================================================================
+  -- 30 Staff Members
+  -- =====================================================================
   FOR v_i IN 1..30 LOOP
-    v_dept_id := v_departments[((v_i - 1) % array_length(v_departments, 1)) + 1];
     INSERT INTO staff_members (
-      organization_id, staff_code, full_name, email, phone, job_title,
-      staff_type, department_id, status, is_test_data
+      organization_id, staff_code, full_name, email, phone, staff_type,
+      status, date_joined, is_test_data, created_at, updated_at
     ) VALUES (
       p_org,
-      'STF' || LPAD(v_i::text, 4, '0'),
-      v_first_names[((v_i - 1) % array_length(v_first_names, 1)) + 1] || ' ' ||
-      v_last_names[((v_i - 1) % array_length(v_last_names, 1)) + 1],
-      'staff' || v_i || '@testschool.local',
-      '0801' || LPAD((v_i * 1234567 % 10000000)::text, 7, '0'),
-      CASE WHEN v_i % 3 = 0 THEN 'Vice Principal' WHEN v_i % 3 = 1 THEN 'Mathematics Teacher' ELSE 'English Teacher' END,
-      CASE WHEN v_i % 2 = 0 THEN 'teaching' ELSE 'non_teaching' END,
-      v_dept_id,
-      CASE WHEN v_i % 5 = 0 THEN 'on_leave' ELSE 'active' END,
-      true
+      'TSTF' || v_run || LPAD(v_i::text, 3, '0'),
+      v_staff_first[((v_i - 1) % array_length(v_staff_first, 1)) + 1] || ' ' || v_staff_last[((v_i - 1) % array_length(v_staff_last, 1)) + 1],
+      'test.staff' || v_run || v_i || '@school.test',
+      '+234803' || LPAD((random() * 10000000)::int::text, 7, '0'),
+      v_staff_types[((v_i - 1) % array_length(v_staff_types, 1)) + 1],
+      'active',
+      CURRENT_DATE - (random() * 730)::int,
+      true,
+      now(), now()
     );
-    v_staff_count := v_staff_count + 1;
   END LOOP;
 
-  -- Create dummy financial records (income)
-  INSERT INTO income (
-    organization_id, amount, description, category, reference_number,
-    transaction_date, notes, is_test_data
-  ) SELECT
-    p_org,
-    (RANDOM() * 500000 + 50000)::decimal,
-    'Test Income ' || v_i,
-    v_income_cats[((v_i - 1) % array_length(v_income_cats, 1)) + 1],
-    'INC' || LPAD(v_i::text, 6, '0'),
-    NOW() - (RANDOM() * 90)::integer * INTERVAL '1 day',
-    'Dummy test data',
-    true
-  FROM generate_series(1, 20) AS v_i;
+  -- =====================================================================
+  -- 20 Income Entries
+  -- =====================================================================
+  FOR v_i IN 1..20 LOOP
+    INSERT INTO income_entries (
+      receipt_no, date, category, description, amount, payment_method,
+      organization_id, is_test_data, created_at, updated_at
+    ) VALUES (
+      'TINC' || v_run || LPAD(v_i::text, 3, '0'),
+      CURRENT_DATE - (random() * 90)::int,
+      v_income_cats[((v_i - 1) % array_length(v_income_cats, 1)) + 1],
+      'Test income entry ' || v_i,
+      round((random() * 450000 + 50000)::numeric, 2),
+      'Cash',
+      p_org,
+      true,
+      now(), now()
+    );
+  END LOOP;
 
-  -- Create dummy financial records (expenses)
-  INSERT INTO expenses (
-    organization_id, amount, description, category, reference_number,
-    transaction_date, notes, is_test_data
-  ) SELECT
-    p_org,
-    (RANDOM() * 300000 + 30000)::decimal,
-    'Test Expense ' || v_i,
-    v_expense_cats[((v_i - 1) % array_length(v_expense_cats, 1)) + 1],
-    'EXP' || LPAD(v_i::text, 6, '0'),
-    NOW() - (RANDOM() * 90)::integer * INTERVAL '1 day',
-    'Dummy test data',
-    true
-  FROM generate_series(1, 20) AS v_i;
-
-  RETURN jsonb_build_object(
-    'ok', true,
-    'message', 'Dummy data created successfully',
-    'students_created', v_student_count,
-    'staff_created', v_staff_count,
-    'income_records', 20,
-    'expense_records', 20
-  );
-END $$;
-
-REVOKE ALL ON FUNCTION seed_dummy_data(uuid) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION seed_dummy_data(uuid) TO authenticated;
+  -- =====================================================================
+  -- 20 Expense Entries
+  -- =====================================================================
+  FOR v_i IN 1..20 LOOP
+    INSERT INTO expense_entries (
+      voucher_no, date, category, description, amount, payment_method,
+      organization_id, is_test_data, created_at, updated_at
+    ) VALUES (
+      'TEXP' || v_run || LPAD(v_i::text, 3, '0'),
+      CURRENT_DATE - (random() * 90)::int,
+      v_expense_cats[((v_i - 1) % array_length(v_expense_cats, 1)) + 1],
+      'Test expense entry ' || v_i,
+      round((random() * 180000 + 20000)::numeric, 2),
+      'Cash',
+      p_org,
+      true,
+      now(), now()
+    );
+  END LOOP;
+END;
+$$;
 
 
--- =====================================================================
--- DELETE DUMMY DATA
--- =====================================================================
-
+-- ============================================================================
+-- 2. DELETE DUMMY DATA
+-- ============================================================================
 CREATE OR REPLACE FUNCTION delete_dummy_data(p_org uuid, p_delete_all boolean DEFAULT false)
-RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
-DECLARE
-  v_students_deleted integer;
-  v_staff_deleted integer;
-  v_income_deleted integer;
-  v_expenses_deleted integer;
 BEGIN
   IF p_delete_all THEN
-    -- Delete all data for this org
-    DELETE FROM students WHERE organization_id = p_org;
-    GET DIAGNOSTICS v_students_deleted = ROW_COUNT;
-
-    DELETE FROM staff_members WHERE organization_id = p_org;
-    GET DIAGNOSTICS v_staff_deleted = ROW_COUNT;
-
-    DELETE FROM income WHERE organization_id = p_org;
-    GET DIAGNOSTICS v_income_deleted = ROW_COUNT;
-
-    DELETE FROM expenses WHERE organization_id = p_org;
-    GET DIAGNOSTICS v_expenses_deleted = ROW_COUNT;
+    DELETE FROM income_entries  WHERE organization_id = p_org;
+    DELETE FROM expense_entries WHERE organization_id = p_org;
+    DELETE FROM students        WHERE organization_id = p_org;
+    DELETE FROM staff_members   WHERE organization_id = p_org;
   ELSE
-    -- Delete only test data
-    DELETE FROM students WHERE organization_id = p_org AND is_test_data = true;
-    GET DIAGNOSTICS v_students_deleted = ROW_COUNT;
-
-    DELETE FROM staff_members WHERE organization_id = p_org AND is_test_data = true;
-    GET DIAGNOSTICS v_staff_deleted = ROW_COUNT;
-
-    DELETE FROM income WHERE organization_id = p_org AND is_test_data = true;
-    GET DIAGNOSTICS v_income_deleted = ROW_COUNT;
-
-    DELETE FROM expenses WHERE organization_id = p_org AND is_test_data = true;
-    GET DIAGNOSTICS v_expenses_deleted = ROW_COUNT;
+    DELETE FROM income_entries  WHERE organization_id = p_org AND is_test_data = true;
+    DELETE FROM expense_entries WHERE organization_id = p_org AND is_test_data = true;
+    DELETE FROM students        WHERE organization_id = p_org AND is_test_data = true;
+    DELETE FROM staff_members   WHERE organization_id = p_org AND is_test_data = true;
   END IF;
-
-  RETURN jsonb_build_object(
-    'ok', true,
-    'message', CASE WHEN p_delete_all THEN 'All data deleted' ELSE 'Dummy data deleted' END,
-    'students_deleted', v_students_deleted,
-    'staff_deleted', v_staff_deleted,
-    'income_deleted', v_income_deleted,
-    'expenses_deleted', v_expenses_deleted
-  );
-END $$;
-
-REVOKE ALL ON FUNCTION delete_dummy_data(uuid, boolean) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION delete_dummy_data(uuid, boolean) TO authenticated;
+END;
+$$;
 
 
--- =====================================================================
--- GET DUMMY DATA STATS
--- =====================================================================
-
+-- ============================================================================
+-- 3. GET DUMMY DATA STATS
+-- ============================================================================
 CREATE OR REPLACE FUNCTION get_dummy_data_stats(p_org uuid)
-RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
-  v_result jsonb;
+  v_result json;
 BEGIN
-  SELECT jsonb_build_object(
-    'total_students', (SELECT COUNT(*) FROM students WHERE organization_id = p_org),
-    'test_students', (SELECT COUNT(*) FROM students WHERE organization_id = p_org AND is_test_data = true),
-    'total_staff', (SELECT COUNT(*) FROM staff_members WHERE organization_id = p_org),
-    'test_staff', (SELECT COUNT(*) FROM staff_members WHERE organization_id = p_org AND is_test_data = true),
-    'total_income', (SELECT COALESCE(SUM(amount), 0) FROM income WHERE organization_id = p_org),
-    'test_income', (SELECT COALESCE(SUM(amount), 0) FROM income WHERE organization_id = p_org AND is_test_data = true),
-    'total_expenses', (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE organization_id = p_org),
-    'test_expenses', (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE organization_id = p_org AND is_test_data = true)
+  SELECT json_build_object(
+    'total_students',  (SELECT COUNT(*) FROM students WHERE organization_id = p_org),
+    'test_students',   (SELECT COUNT(*) FROM students WHERE organization_id = p_org AND is_test_data = true),
+    'total_staff',     (SELECT COUNT(*) FROM staff_members WHERE organization_id = p_org),
+    'test_staff',      (SELECT COUNT(*) FROM staff_members WHERE organization_id = p_org AND is_test_data = true),
+    'total_income',    (SELECT COALESCE(SUM(amount), 0) FROM income_entries WHERE organization_id = p_org),
+    'test_income',     (SELECT COALESCE(SUM(amount), 0) FROM income_entries WHERE organization_id = p_org AND is_test_data = true),
+    'total_expenses',  (SELECT COALESCE(SUM(amount), 0) FROM expense_entries WHERE organization_id = p_org),
+    'test_expenses',   (SELECT COALESCE(SUM(amount), 0) FROM expense_entries WHERE organization_id = p_org AND is_test_data = true)
   ) INTO v_result;
 
   RETURN v_result;
-END $$;
-
-REVOKE ALL ON FUNCTION get_dummy_data_stats(uuid) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION get_dummy_data_stats(uuid) TO authenticated;
+END;
+$$;

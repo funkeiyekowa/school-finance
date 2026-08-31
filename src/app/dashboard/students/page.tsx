@@ -511,7 +511,7 @@ function AddStudentModal({ onClose }: { onClose: () => void }) {
     if (!form.first_name.trim()) { setError("First name is required."); return; }
     setLoading(true); setError("");
     const { error: err } = await supabase.from("students").insert({
-      org_id: profile?.organization_id || null,
+      organization_id: profile?.organization_id || null,
       student_code: form.student_code, full_name: fullName,
       last_name: form.last_name, first_name: form.first_name,
       middle_name: form.middle_name || null, grade: form.grade || null,
