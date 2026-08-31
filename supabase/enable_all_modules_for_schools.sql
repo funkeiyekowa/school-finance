@@ -1,5 +1,5 @@
 -- =====================================================================
--- ENABLE ALL PLATFORM MODULES FOR EVERY SCHOOL
+-- ENABLE ALL PLATFORM MODULES FOR EVERY SCHOOL + SEED DEPARTMENTS
 -- =====================================================================
 -- Run order: after saas_foundation.sql (#22), student_finance_module.sql
 -- (#27), and website_module.sql (#25) — all already earlier in
@@ -23,15 +23,18 @@
 -- behaviour for every school, present and future, rather than a
 -- one-off applied to a single pilot tenant:
 --
---   1. seed_org_defaults() now subscribes a school to every module in
---      platform_modules, not just the is_core = true ones. (New
---      schools call this via provision_organization(); this makes
---      "every new school created" get full module access immediately,
---      matching Grant Schools.)
---   2. Backfill: every EXISTING organization gets an active
---      subscription row for every module it doesn't already have one
---      for. Existing subscriptions (including any a school was
---      deliberately downgraded/suspended on) are left untouched.
+--   1. seed_org_defaults() now:
+--      - Seeds the standard school departments (Science, Arts, etc.)
+--      - Subscribes a school to every module in platform_modules, not
+--        just the is_core = true ones.
+--      (New schools call this via provision_organization(); this makes
+--      every new school created get full department and module access
+--      immediately, matching Grant Schools.)
+--   2. Backfill: every EXISTING organization gets:
+--      - Any standard departments it doesn't already have rows for
+--      - An active subscription row for every module it doesn't already
+--        have one for. Existing subscriptions (including any a school
+--        was deliberately downgraded/suspended on) are left untouched.
 --
 -- This does not change is_core itself — is_core still controls which
 -- modules survive if something ever explicitly revokes a module's
@@ -39,7 +42,8 @@
 -- to is_core-only). It only changes what a school starts with.
 --
 -- SAFE TO RE-RUN: uses ON CONFLICT DO NOTHING / DO UPDATE with an
--- idempotent WHERE guard.
+-- idempotent WHERE guard. Departments backfill is idempotent via the
+-- uniqueness of (organization_id, name) in departments table.
 -- =====================================================================
 
 CREATE OR REPLACE FUNCTION seed_org_defaults(p_org uuid)
@@ -70,6 +74,25 @@ BEGIN
   SELECT COALESCE(v_name, 'My School'), p_org
   WHERE NOT EXISTS (SELECT 1 FROM school_settings WHERE organization_id = p_org);
 
+  -- Standard school departments: every school starts with these
+  -- organizational units. Prevents the form fallback to string values.
+  INSERT INTO departments (name, active, organization_id)
+  SELECT d.name, true, p_org
+  FROM (VALUES
+    ('Science'),
+    ('Arts'),
+    ('Commercial'),
+    ('Primary'),
+    ('Junior Secondary'),
+    ('Senior Secondary'),
+    ('Administration'),
+    ('Support Staff')
+  ) AS d(name)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM departments dp
+    WHERE dp.organization_id = p_org AND dp.name = d.name
+  );
+
   -- Module entitlements: every school starts with every module active,
   -- matching how the Grant Schools pilot tenant was bootstrapped
   -- (previously this only granted is_core = true modules).
@@ -78,7 +101,27 @@ BEGIN
   ON CONFLICT (organization_id, module_key) DO NOTHING;
 END $$;
 
--- Backfill: give every existing organization every module it doesn't
+-- Backfill 1: give every existing organization the standard departments
+-- it doesn't already have rows for. Never touches existing rows.
+INSERT INTO departments (name, active, organization_id)
+SELECT o.id, d.name, true
+FROM organizations o
+CROSS JOIN (VALUES
+  ('Science'),
+  ('Arts'),
+  ('Commercial'),
+  ('Primary'),
+  ('Junior Secondary'),
+  ('Senior Secondary'),
+  ('Administration'),
+  ('Support Staff')
+) AS d(name)
+WHERE NOT EXISTS (
+  SELECT 1 FROM departments dp
+  WHERE dp.organization_id = o.id AND dp.name = d.name
+);
+
+-- Backfill 2: give every existing organization every module it doesn't
 -- already have a subscription row for. Never touches an existing row
 -- (so a school someone deliberately unsubscribed from a module stays
 -- unsubscribed) — it only fills in genuinely missing rows.
