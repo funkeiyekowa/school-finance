@@ -18,6 +18,8 @@ DECLARE
   v_first_names text[] := ARRAY['Ada', 'Kofi', 'Zainab', 'Chioma', 'Yusuf', 'Ama', 'Adekunle', 'Fatima', 'Kwame', 'Ndidi'];
   v_grades text[] := ARRAY['JSS1', 'JSS2', 'JSS3', 'SSS1', 'SSS2', 'SSS3'];
   v_genders text[] := ARRAY['Male', 'Female'];
+  v_income_cats text[] := ARRAY['tuition', 'grants', 'donations', 'other'];
+  v_expense_cats text[] := ARRAY['salaries', 'utilities', 'maintenance', 'supplies', 'transportation'];
   v_departments uuid[];
   v_student_id uuid;
   v_staff_id uuid;
@@ -82,7 +84,7 @@ BEGIN
     p_org,
     (RANDOM() * 500000 + 50000)::decimal,
     'Test Income ' || v_i,
-    ARRAY['tuition', 'grants', 'donations', 'other'][((v_i - 1) % 4) + 1],
+    v_income_cats[((v_i - 1) % array_length(v_income_cats, 1)) + 1],
     'INC' || LPAD(v_i::text, 6, '0'),
     NOW() - (RANDOM() * 90)::integer * INTERVAL '1 day',
     'Dummy test data',
@@ -97,7 +99,7 @@ BEGIN
     p_org,
     (RANDOM() * 300000 + 30000)::decimal,
     'Test Expense ' || v_i,
-    ARRAY['salaries', 'utilities', 'maintenance', 'supplies', 'transportation'][((v_i - 1) % 5) + 1],
+    v_expense_cats[((v_i - 1) % array_length(v_expense_cats, 1)) + 1],
     'EXP' || LPAD(v_i::text, 6, '0'),
     NOW() - (RANDOM() * 90)::integer * INTERVAL '1 day',
     'Dummy test data',

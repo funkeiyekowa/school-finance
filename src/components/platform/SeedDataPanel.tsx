@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { Card } from "@/components/ui/Card";
-import { AlertTriangle, Database, Trash2, Plus } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { AlertCircle, CheckCircle2, Trash2, Database } from "lucide-react";
 
-interface DummyDataStats {
+interface SeedDataStats {
   total_students: number;
   test_students: number;
   total_staff: number;
@@ -20,195 +19,177 @@ interface DummyDataStats {
 }
 
 interface SeedDataPanelProps {
-  orgId: string;
+  focusOrgId: string | null;
 }
 
-export function SeedDataPanel({ orgId }: SeedDataPanelProps) {
+export function SeedDataPanel({ focusOrgId }: SeedDataPanelProps) {
   const supabase = createClient();
-  const [stats, setStats] = useState<DummyDataStats | null>(null);
+  const { profile } = useAuth();
+  const [stats, setStats] = useState<SeedDataStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteMode, setDeleteMode] = useState<"dummy" | "all">("dummy");
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [deleteMode, setDeleteMode] = useState<"test_only" | "all">("test_only");
 
-  // Load stats
-  const loadStats = useCallback(async () => {
+  // Load stats on mount or when focusOrgId changes
+  useEffect(() => {
+    if (!focusOrgId) return;
+    loadStats();
+  }, [focusOrgId]);
+
+  async function loadStats() {
+    if (!focusOrgId) return;
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      const { data, error } = await supabase.rpc("get_dummy_data_stats", { p_org: orgId });
-      if (error) throw error;
-      setStats(data as DummyDataStats);
+      const { data, error: err } = await supabase.rpc(
+        "get_dummy_data_stats",
+        { p_org: focusOrgId }
+      );
+      if (err) throw err;
+      setStats(data as SeedDataStats);
     } catch (err) {
-      console.error("Failed to load stats:", err);
+      setError(err instanceof Error ? err.message : "Failed to load stats");
+      setStats(null);
     } finally {
       setLoading(false);
     }
-  }, [supabase, orgId]);
+  }
 
-  useEffect(() => {
-    loadStats();
-  }, [loadStats]);
-
-  const handleSeedData = async () => {
+  async function seedData() {
+    if (!focusOrgId) return;
+    setSeeding(true);
+    setError(null);
+    setSuccess(null);
     try {
-      setSeeding(true);
-      setMessage(null);
-      const { data, error } = await supabase.rpc("seed_dummy_data", { p_org: orgId });
-      if (error) throw error;
-      if (data?.ok) {
-        setMessage({
-          type: "success",
-          text: `✓ Created ${data.students_created} students, ${data.staff_created} staff, and ${data.income_records + data.expense_records} financial records`,
-        });
-        await loadStats();
-      } else {
-        setMessage({ type: "error", text: data?.error || "Failed to seed data" });
-      }
-    } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "Failed to seed data",
+      const { error: err } = await supabase.rpc("seed_dummy_data", {
+        p_org: focusOrgId,
       });
+      if (err) throw err;
+      setSuccess("Test data seeded successfully!");
+      // Refresh stats
+      await loadStats();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to seed data");
     } finally {
       setSeeding(false);
     }
-  };
+  }
 
-  const handleDeleteData = async () => {
+  async function deleteData() {
+    if (!focusOrgId) return;
+    setSeeding(true);
+    setError(null);
+    setSuccess(null);
     try {
-      setDeleting(true);
-      setMessage(null);
-      const { data, error } = await supabase.rpc("delete_dummy_data", {
-        p_org: orgId,
+      const { error: err } = await supabase.rpc("delete_dummy_data", {
+        p_org: focusOrgId,
         p_delete_all: deleteMode === "all",
       });
-      if (error) throw error;
-      if (data?.ok) {
-        setMessage({
-          type: "success",
-          text: `✓ Deleted ${data.students_deleted} students, ${data.staff_deleted} staff, and ${data.income_deleted + data.expenses_deleted} financial records`,
-        });
-        await loadStats();
-        setShowDeleteModal(false);
-      } else {
-        setMessage({ type: "error", text: data?.error || "Failed to delete data" });
-      }
+      if (err) throw err;
+      setSuccess(
+        deleteMode === "test_only"
+          ? "Test data deleted."
+          : "All data deleted."
+      );
+      setShowDeleteModal(false);
+      // Refresh stats
+      await loadStats();
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "Failed to delete data",
-      });
+      setError(err instanceof Error ? err.message : "Failed to delete data");
     } finally {
-      setDeleting(false);
+      setSeeding(false);
     }
-  };
+  }
 
-  if (loading) return <div className="text-gray-500 text-sm">Loading stats...</div>;
+  if (!focusOrgId) {
+    return (
+      <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center">
+        <p className="text-sm text-gray-500">Select a school to manage test data</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
-      <Card>
-        <div className="p-4 space-y-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                <Database size={18} className="text-blue-600" />
-                Test Data Generator
-              </h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Populate realistic dummy data for testing and development
-              </p>
-            </div>
-          </div>
-
-          {message && (
-            <div
-              className={cn(
-                "rounded-lg border p-3 text-sm",
-                message.type === "success"
-                  ? "border-green-200 bg-green-50 text-green-700"
-                  : "border-red-200 bg-red-50 text-red-700"
-              )}
-            >
-              {message.text}
-            </div>
-          )}
-
-          {stats && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div className="rounded-lg bg-blue-50 p-3">
-                <div className="text-xs text-gray-600">Students</div>
-                <div className="text-lg font-bold text-blue-700">{stats.total_students}</div>
-                {stats.test_students > 0 && (
-                  <div className="text-[10px] text-blue-600 mt-1">{stats.test_students} test</div>
-                )}
-              </div>
-              <div className="rounded-lg bg-green-50 p-3">
-                <div className="text-xs text-gray-600">Staff</div>
-                <div className="text-lg font-bold text-green-700">{stats.total_staff}</div>
-                {stats.test_staff > 0 && (
-                  <div className="text-[10px] text-green-600 mt-1">{stats.test_staff} test</div>
-                )}
-              </div>
-              <div className="rounded-lg bg-purple-50 p-3">
-                <div className="text-xs text-gray-600">Income</div>
-                <div className="text-lg font-bold text-purple-700">
-                  {(stats.total_income / 1000).toFixed(0)}k
-                </div>
-                {stats.test_income > 0 && (
-                  <div className="text-[10px] text-purple-600 mt-1">
-                    {(stats.test_income / 1000).toFixed(0)}k test
-                  </div>
-                )}
-              </div>
-              <div className="rounded-lg bg-orange-50 p-3">
-                <div className="text-xs text-gray-600">Expenses</div>
-                <div className="text-lg font-bold text-orange-700">
-                  {(stats.total_expenses / 1000).toFixed(0)}k
-                </div>
-                {stats.test_expenses > 0 && (
-                  <div className="text-[10px] text-orange-600 mt-1">
-                    {(stats.test_expenses / 1000).toFixed(0)}k test
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-2 pt-2">
-            <Button
-              variant="gold"
-              size="sm"
-              onClick={handleSeedData}
-              loading={seeding}
-              disabled={seeding || deleting}
-              className="gap-2"
-            >
-              <Plus size={14} />
-              Seed Test Data
-            </Button>
-            {stats && (stats.test_students > 0 || stats.test_staff > 0) && (
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => {
-                  setDeleteMode("dummy");
-                  setShowDeleteModal(true);
-                }}
-                disabled={seeding || deleting}
-                className="gap-2"
-              >
-                <Trash2 size={14} />
-                Delete Data
-              </Button>
-            )}
+      <div className="rounded-lg border border-gray-200 bg-white p-5">
+        <div className="flex items-start gap-3 mb-4">
+          <Database size={18} className="text-[#0F2A47] shrink-0 mt-0.5" />
+          <div>
+            <h3 className="font-semibold text-gray-900">Test Data Generator</h3>
+            <p className="text-xs text-gray-500 mt-1">
+              Populate realistic dummy data for testing and development
+            </p>
           </div>
         </div>
-      </Card>
 
-      {/* Delete Confirmation Modal */}
+        {error && (
+          <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <AlertCircle size={14} className="text-red-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-700">{error}</p>
+          </div>
+        )}
+
+        {success && (
+          <div className="mb-4 flex items-start gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <CheckCircle2 size={14} className="text-green-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-green-700">{success}</p>
+          </div>
+        )}
+
+        {/* Stats Grid */}
+        {stats && !loading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <StatBox
+              label="Students"
+              total={stats.total_students}
+              test={stats.test_students}
+            />
+            <StatBox
+              label="Staff"
+              total={stats.total_staff}
+              test={stats.test_staff}
+            />
+            <StatBox
+              label="Income (₦)"
+              total={stats.total_income}
+              test={stats.test_income}
+              format="currency"
+            />
+            <StatBox
+              label="Expenses (₦)"
+              total={stats.total_expenses}
+              test={stats.test_expenses}
+              format="currency"
+            />
+          </div>
+        ) : null}
+
+        {/* Actions */}
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            size="sm"
+            variant="gold"
+            onClick={seedData}
+            loading={seeding}
+            disabled={loading}
+          >
+            Seed Test Data
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => setShowDeleteModal(true)}
+            disabled={loading || seeding || !stats || (stats.total_students === 0 && stats.total_staff === 0)}
+          >
+            <Trash2 size={12} /> Delete Data
+          </Button>
+        </div>
+      </div>
+
+      {/* Delete Modal */}
       {showDeleteModal && (
         <Modal
           open
@@ -217,68 +198,98 @@ export function SeedDataPanel({ orgId }: SeedDataPanelProps) {
           size="sm"
         >
           <div className="space-y-4">
-            <div className="flex gap-3 bg-red-50 border border-red-200 rounded-lg p-3">
-              <AlertTriangle size={20} className="text-red-600 shrink-0 mt-0.5" />
-              <div className="text-sm text-red-700">
-                This action cannot be undone. Choose what to delete:
-              </div>
-            </div>
-
+            <p className="text-sm text-gray-600">
+              Choose what to delete:
+            </p>
             <div className="space-y-2">
               <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
                 <input
                   type="radio"
-                  name="deleteMode"
-                  value="dummy"
-                  checked={deleteMode === "dummy"}
-                  onChange={e => setDeleteMode(e.target.value as "dummy" | "all")}
+                  checked={deleteMode === "test_only"}
+                  onChange={() => setDeleteMode("test_only")}
+                  className="w-4 h-4"
                 />
                 <div>
-                  <div className="font-medium text-sm">Delete Test Data Only</div>
+                  <div className="text-sm font-medium text-gray-900">
+                    Delete test data only
+                  </div>
                   <div className="text-xs text-gray-500">
-                    Remove only records marked as test data ({stats?.test_students || 0} students,{" "}
-                    {stats?.test_staff || 0} staff)
+                    Keep your real data intact
                   </div>
                 </div>
               </label>
-              <label className="flex items-center gap-3 p-3 border border-red-200 rounded-lg cursor-pointer hover:bg-red-50">
+              <label className="flex items-center gap-3 p-3 border border-red-200 rounded-lg cursor-pointer bg-red-50 hover:bg-red-100">
                 <input
                   type="radio"
-                  name="deleteMode"
-                  value="all"
                   checked={deleteMode === "all"}
-                  onChange={e => setDeleteMode(e.target.value as "dummy" | "all")}
+                  onChange={() => setDeleteMode("all")}
+                  className="w-4 h-4"
                 />
                 <div>
-                  <div className="font-medium text-sm text-red-700">Delete All Data</div>
-                  <div className="text-xs text-gray-500">
-                    Remove ALL students, staff, and financial records ({stats?.total_students || 0}{" "}
-                    students, {stats?.total_staff || 0} staff)
+                  <div className="text-sm font-medium text-red-900">
+                    Delete all data
+                  </div>
+                  <div className="text-xs text-red-700">
+                    ⚠️ This cannot be undone
                   </div>
                 </div>
               </label>
             </div>
-
-            <div className="flex justify-end gap-2 pt-4">
+            <div className="flex justify-end gap-3">
               <Button
                 variant="secondary"
-                size="sm"
                 onClick={() => setShowDeleteModal(false)}
-                disabled={deleting}
+                disabled={seeding}
               >
                 Cancel
               </Button>
               <Button
-                variant="danger"
-                size="sm"
-                onClick={handleDeleteData}
-                loading={deleting}
+                variant={deleteMode === "all" ? "danger" : "secondary"}
+                onClick={deleteData}
+                loading={seeding}
               >
-                Delete {deleteMode === "dummy" ? "Test Data" : "All Data"}
+                Delete
               </Button>
             </div>
           </div>
         </Modal>
+      )}
+    </div>
+  );
+}
+
+function StatBox({
+  label,
+  total,
+  test,
+  format = "number",
+}: {
+  label: string;
+  total: number;
+  test: number;
+  format?: "number" | "currency";
+}) {
+  const formatted = (val: number) => {
+    if (format === "currency") {
+      return val.toLocaleString("en-NG", {
+        style: "currency",
+        currency: "NGN",
+        maximumFractionDigits: 0,
+      });
+    }
+    return val.toLocaleString();
+  };
+
+  return (
+    <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+      <div className="text-xs text-gray-500 mb-1">{label}</div>
+      <div className="text-lg font-bold text-gray-900">
+        {formatted(total)}
+      </div>
+      {test > 0 && (
+        <div className="text-xs text-blue-600 mt-1">
+          {test} test
+        </div>
       )}
     </div>
   );
