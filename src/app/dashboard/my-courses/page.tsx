@@ -30,7 +30,7 @@ interface BadgeRow { id: string; name: string; description: string | null; icon:
 interface ProgressRow { lessons_total: number; lessons_completed: number; quizzes_taken: number; quiz_average_percent: number | null; }
 
 export default function MyCoursesPage() {
-  const { user } = useAuth();
+  const { user, orgId } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
 
@@ -92,7 +92,7 @@ export default function MyCoursesPage() {
 
   async function selfEnroll(courseId: string) {
     if (!studentId) return;
-    const { error } = await supabase.from("lms_enrollments").insert({ course_id: courseId, student_id: studentId });
+    const { error } = await supabase.from("lms_enrollments").insert({ course_id: courseId, student_id: studentId, organization_id: orgId });
     if (error) { notify(extractErrorMessage(error, "Could not enroll."), "error"); return; }
     notify("Enrolled! Head into the course to get started.");
     load();

@@ -66,7 +66,7 @@ export default function CourseDetailPage() {
   const params = useParams<{ courseId: string }>();
   const router = useRouter();
   const courseId = params.courseId;
-  const { canEdit } = useAuth();
+  const { canEdit, orgId } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
 
@@ -223,6 +223,7 @@ export default function CourseDetailPage() {
           status: "draft",
           ai_generated: wasAiUsed,
           ai_source_prompt: wasAiUsed ? lessonForm.ai_topic.trim() : null,
+          organization_id: orgId,
         });
         if (error) throw error;
         notify("Lesson created.");
@@ -261,7 +262,7 @@ export default function CourseDetailPage() {
   async function ensureQuiz(lessonId: string): Promise<QuizRow> {
     const existing = quizzes[lessonId];
     if (existing) return existing;
-    const { data, error } = await supabase.from("lms_quizzes").insert({ lesson_id: lessonId, title: "Lesson Quiz" }).select().single();
+    const { data, error } = await supabase.from("lms_quizzes").insert({ lesson_id: lessonId, title: "Lesson Quiz", organization_id: orgId }).select().single();
     if (error) throw error;
     return data as QuizRow;
   }
@@ -298,9 +299,9 @@ export default function CourseDetailPage() {
         explanation: q.explanation || null,
         marks: 1,
         sort_order: existingCount + idx,
-        organization_id: undefined,
+        organization_id: orgId,
       }));
-      const { error } = await supabase.from("lms_quiz_questions").insert(rows.map(({ organization_id: _drop, ...r }) => r));
+      const { error } = await supabase.from("lms_quiz_questions").insert(rows);
       if (error) throw error;
       await supabase.from("lms_quizzes").update({ ai_generated: true }).eq("id", quiz.id);
       notify(`${parsed.questions.length} questions generated — review before publishing the quiz.`);
@@ -356,6 +357,7 @@ export default function CourseDetailPage() {
         { id: "b", text: "Option B", is_correct: false },
       ],
       sort_order: existingCount,
+      organization_id: orgId,
     }).select().single();
     if (error) { notify(extractErrorMessage(error, "Failed to add question."), "error"); return; }
     await load();
@@ -398,6 +400,7 @@ export default function CourseDetailPage() {
         instructions: assignForm.instructions.trim() || null,
         max_score: parseFloat(assignForm.max_score) || 100,
         due_date: assignForm.due_date || null,
+        organization_id: orgId,
       });
       if (error) throw error;
       notify("Assignment created.");
@@ -484,7 +487,7 @@ export default function CourseDetailPage() {
   );
 
   async function enrollStudent(studentId: string) {
-    const { error } = await supabase.from("lms_enrollments").insert({ course_id: courseId, student_id: studentId });
+    const { error } = await supabase.from("lms_enrollments").insert({ course_id: courseId, student_id: studentId, organization_id: orgId });
     if (error) { notify(extractErrorMessage(error, "Failed to enroll student."), "error"); return; }
     notify("Student enrolled.");
     load();

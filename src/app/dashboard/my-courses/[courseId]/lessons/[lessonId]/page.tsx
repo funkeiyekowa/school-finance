@@ -42,7 +42,7 @@ interface BadgeAward { id: string; name: string; }
 export default function LessonViewerPage() {
   const params = useParams<{ courseId: string; lessonId: string }>();
   const { courseId, lessonId } = params;
-  const { user } = useAuth();
+  const { user, orgId } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
 
@@ -83,7 +83,7 @@ export default function LessonViewerPage() {
     setProgressStatus(currentStatus);
     if (currentStatus === "not_started") {
       await supabase.from("lms_lesson_progress").upsert(
-        { lesson_id: lessonId, student_id: stuId, status: "in_progress", started_at: new Date().toISOString() },
+        { lesson_id: lessonId, student_id: stuId, status: "in_progress", started_at: new Date().toISOString(), organization_id: orgId },
         { onConflict: "lesson_id,student_id" }
       );
       setProgressStatus("in_progress");
@@ -117,14 +117,14 @@ export default function LessonViewerPage() {
     }
 
     setLoading(false);
-  }, [user, supabase, lessonId]);
+  }, [user, supabase, lessonId, orgId]);
 
   useEffect(() => { load(); }, [load]);
 
   async function markComplete() {
     if (!studentId) return;
     const { error } = await supabase.from("lms_lesson_progress").upsert(
-      { lesson_id: lessonId, student_id: studentId, status: "completed", completed_at: new Date().toISOString() },
+      { lesson_id: lessonId, student_id: studentId, status: "completed", completed_at: new Date().toISOString(), organization_id: orgId },
       { onConflict: "lesson_id,student_id" }
     );
     if (error) { notify(extractErrorMessage(error, "Failed to update progress."), "error"); return; }
@@ -197,7 +197,7 @@ export default function LessonViewerPage() {
     if (!studentId || !threadTitle.trim()) { notify("Add a title for your question.", "error"); return; }
     setPostingThread(true);
     try {
-      const { error } = await supabase.from("lms_discussions").insert({ lesson_id: lessonId, student_id: studentId, title: threadTitle.trim(), body: threadBody.trim() || null });
+      const { error } = await supabase.from("lms_discussions").insert({ lesson_id: lessonId, student_id: studentId, title: threadTitle.trim(), body: threadBody.trim() || null, organization_id: orgId });
       if (error) throw error;
       notify("Question posted.");
       setShowNewThread(false);
@@ -216,7 +216,7 @@ export default function LessonViewerPage() {
     if (!text || !studentId) return;
     setPostingReply(discussionId);
     try {
-      const { error } = await supabase.from("lms_discussion_replies").insert({ discussion_id: discussionId, student_id: studentId, body: text });
+      const { error } = await supabase.from("lms_discussion_replies").insert({ discussion_id: discussionId, student_id: studentId, body: text, organization_id: orgId });
       if (error) throw error;
       setReplyDrafts({ ...replyDrafts, [discussionId]: "" });
       load();

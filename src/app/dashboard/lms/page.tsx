@@ -46,7 +46,7 @@ interface Stats {
 }
 
 export default function LmsHomePage() {
-  const { canEdit } = useAuth();
+  const { canEdit, orgId } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
 
@@ -116,6 +116,7 @@ export default function LmsHomePage() {
         cover_color: form.cover_color,
         leaderboard_enabled: form.leaderboard_enabled,
         status: "draft",
+        organization_id: orgId,
       });
       if (error) throw error;
       notify("Course created.");
