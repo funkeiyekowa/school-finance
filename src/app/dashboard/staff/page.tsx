@@ -56,6 +56,7 @@ export default function StaffPage() {
   const {
     data: staff,
     loading,
+    error: staffError,
     pagination,
     refetch,
     nextPage,
@@ -199,6 +200,12 @@ export default function StaffPage() {
       <PageHeader title="Staff Directory" subtitle="Manage teaching and non-teaching staff">
         {canEdit && <Button variant="gold" onClick={() => openForm()}><Plus size={14} /> Add Staff</Button>}
       </PageHeader>
+
+      {staffError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <strong className="font-semibold">Failed to load staff:</strong> {staffError}
+        </div>
+      )}
 
       {credNotice && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex items-start gap-3">
