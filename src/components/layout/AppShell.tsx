@@ -13,6 +13,7 @@ import { signOutToSchoolLogin } from "@/lib/auth/signOutToSchoolLogin";
 import { OrgSwitcher, ActiveOrgBadge } from "@/components/layout/OrgSwitcher";
 import { SchoolBrandBar } from "@/components/layout/SchoolBrandBar";
 import ForcePasswordChange from "@/components/auth/ForcePasswordChange";
+import { CommandPalette, useNavCommandItems } from "@/components/ui/CommandPalette";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2,
@@ -394,9 +395,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // Build command palette items from visible groups (respects roles/modules/features).
+  const cmdGroups = NAV_GROUPS
+    .filter(isGroupVisible)
+    .map((g) => ({ label: g.label, items: g.items.filter(isVisible).map((i) => ({ href: i.href, label: i.label, icon: i.icon })) }))
+    .filter((g) => g.items.length > 0);
+  const commandItems = useNavCommandItems(cmdGroups);
+
   return (
     <>
     <ForcePasswordChange />
+    <CommandPalette items={commandItems} />
     <div className="flex h-screen overflow-hidden bg-[#F7F5F0]">
       {/* Desktop sidebar */}
       <div className="hidden lg:flex shrink-0">

@@ -13,6 +13,8 @@
 
   html {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body {
@@ -22,6 +24,9 @@
   * {
     @apply border-gray-200;
   }
+
+  /* Bold, focus-friendly headings */
+  h1, h2, h3, h4 { letter-spacing: -0.01em; }
 }
 
 @layer utilities {
@@ -33,6 +38,15 @@
   .bg-cream { background-color: #F7F5F0; }
   .border-navy { border-color: #0F2A47; }
   .ring-gold { --tw-ring-color: #C9A227; }
+
+  /* Bold-modern helpers */
+  .glass {
+    background: rgba(255,255,255,0.65);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .card-hover { transition: transform .15s ease, box-shadow .15s ease; }
+  .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -8px rgba(15, 42, 71, 0.15); }
 }
 
 /* Scrollbar */
@@ -40,3 +54,21 @@
 ::-webkit-scrollbar-track { @apply bg-gray-100; }
 ::-webkit-scrollbar-thumb { @apply bg-gray-300 rounded; }
 ::-webkit-scrollbar-thumb:hover { @apply bg-gray-400; }
+
+/* Selection */
+::selection { background: #F4E9C7; color: #0F2A47; }
+
+/* Print — used by payslip, receipt, incident-summary printing */
+@media print {
+  body { background: white !important; }
+  .no-print, [data-noprint] { display: none !important; }
+  .print-block { display: block !important; }
+  .print-page { page-break-after: always; }
+  @page { margin: 12mm; }
+}
+
+/* Subtle keyframe used by SetupHero shimmer */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
