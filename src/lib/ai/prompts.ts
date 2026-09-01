@@ -26,7 +26,10 @@ export type AiTaskKind =
   | "website_paragraph"
   | "seo_description"
   | "free_form"
-  | "connection_test";
+  | "connection_test"
+  | "lms_lesson_generate"
+  | "lms_quiz_generate"
+  | "lms_grading_assist";
 
 export interface AiPreset {
   kind: AiTaskKind;
@@ -162,6 +165,42 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
       return `School: ${name}\nPage brief: ${input}\n\nWrite the meta description.`;
     },
     maxTokens: 80,
+  },
+  lms_lesson_generate: {
+    kind: "lms_lesson_generate",
+    label: "Generate lesson content",
+    description: "Draft full lesson content from a topic, for a given subject and class level.",
+    system: `${CORE_STYLE} You are writing lesson content for a school Learning Management System. Write clear, well-structured lesson content using markdown-style formatting (## headers, **bold** for key terms, numbered/bulleted lists where helpful). Explain the topic step by step at a level appropriate for the stated class/grade. Include a short worked example or illustration where it helps understanding. Do not include a title heading (the title is stored separately) -- start directly with the content. Return only the lesson content.`,
+    compose: (input, extra) => {
+      const subject = extra?.subject ?? "the subject";
+      const grade = extra?.grade ?? "the class";
+      const lessonTitle = extra?.lesson_title ?? input;
+      return `Subject: ${subject}\nClass/Grade: ${grade}\nLesson topic: ${lessonTitle}\n${input && input !== lessonTitle ? `Additional brief: ${input}\n` : ""}\nWrite the lesson content.`;
+    },
+    maxTokens: 1200,
+  },
+  lms_quiz_generate: {
+    kind: "lms_quiz_generate",
+    label: "Generate quiz from lesson",
+    description: "Turn lesson content into a multiple-choice quiz, as strict JSON.",
+    system: `${CORE_STYLE} You generate multiple-choice quiz questions from lesson content for a school LMS. Return ONLY valid JSON (no markdown fences, no commentary, no leading/trailing text) matching exactly this shape: {"questions":[{"question_text":"...","options":[{"id":"a","text":"...","is_correct":true},{"id":"b","text":"...","is_correct":false},{"id":"c","text":"...","is_correct":false},{"id":"d","text":"...","is_correct":false}],"explanation":"..."}]}. Generate the number of questions requested. Exactly one option per question must have is_correct true. Base every question strictly on the given lesson content -- never invent facts not present in it. explanation should briefly state why the correct answer is correct.`,
+    compose: (input, extra) => {
+      const count = extra?.question_count ?? "5";
+      return `Lesson content:\n${input}\n\nGenerate ${count} multiple-choice questions as the specified JSON.`;
+    },
+    maxTokens: 1600,
+  },
+  lms_grading_assist: {
+    kind: "lms_grading_assist",
+    label: "Suggest a grade",
+    description: "Suggests a score and feedback for a student's free-text submission -- a teacher must review and confirm.",
+    system: `${CORE_STYLE} You are a teaching assistant suggesting a grade for a student's assignment submission. You are NOT the final grader -- a human teacher reviews and can change everything you suggest. Return ONLY valid JSON (no markdown fences, no commentary) matching exactly: {"suggested_score":0,"feedback":"..."}. suggested_score is out of the max_score given, as a number. feedback is 2-4 sentences: specific, constructive, and references the assignment instructions and the student's actual response.`,
+    compose: (input, extra) => {
+      const instructions = extra?.instructions ?? "No instructions given.";
+      const maxScore = extra?.max_score ?? "100";
+      return `Assignment instructions:\n${instructions}\n\nMax score: ${maxScore}\n\nStudent's response:\n${input}\n\nSuggest a score and feedback as the specified JSON.`;
+    },
+    maxTokens: 400,
   },
   free_form: {
     kind: "free_form",

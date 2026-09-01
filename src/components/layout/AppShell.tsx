@@ -19,7 +19,7 @@ import {
   ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users,
   Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen,
   Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown,
-  Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus,
+  Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -93,6 +93,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/student-portal", label: "Overview", icon: <LayoutDashboard size={17} />, module: "student_portal" },
       { href: "/dashboard/my-exams", label: "My Exams", icon: <BookOpen size={17} />, module: "student_portal" },
       { href: "/dashboard/my-results", label: "My Results", icon: <FileBarChart size={17} />, module: "student_portal" },
+      { href: "/dashboard/my-courses", label: "My Courses", icon: <GraduationCap size={17} />, module: "lms" },
     ],
   },
   {
@@ -119,6 +120,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/assessments", label: "Assessments", icon: <FileBarChart size={17} />, module: "assessments" },
       { href: "/dashboard/cbt", label: "CBT / Exams", icon: <BookOpen size={17} />, module: "cbt" },
       { href: "/dashboard/report-cards", label: "Report Cards", icon: <FileBarChart size={17} />, module: "academics" },
+      { href: "/dashboard/lms", label: "Learning Management", icon: <Trophy size={17} />, module: "lms" },
       { href: "/dashboard/students/promotion", label: "Promotion", icon: <ArrowLeftRight size={17} />, feature: "students", module: "academics", adminOnly: true },
     ],
   },
