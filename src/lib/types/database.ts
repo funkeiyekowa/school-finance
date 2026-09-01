@@ -170,6 +170,8 @@ export type Database = {
           duplicate_confidence?: number | null;
           /** Structured evidence JSON. */
           duplicate_evidence?: unknown;
+          /** Explicit income/expense classification — do not infer this from parser_version, see fix_alert_type_column.sql. */
+          alert_type?: string | null;
           created_at: string; updated_at: string;
         };
         Insert: {
@@ -193,6 +195,7 @@ export type Database = {
           archive_reason?: string | null;
           duplicate_confidence?: number | null;
           duplicate_evidence?: unknown;
+          alert_type?: string | null;
         };
         Update: Record<string, unknown>;
       };

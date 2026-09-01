@@ -220,9 +220,95 @@ export async function processAlert(
 
   // Pass the duplicate result into the credit/debit processors so they can
   // flag POSSIBLE_DUPLICATE records without auto-posting.
-  return parsed.direction === "debit"
-    ? processDebit(supabase, input, parsed, settings, dupResult)
-    : processCredit(supabase, input, parsed, settings, dupResult);
+  //
+  // IMPORTANT: this must branch on all three AlertDirection values
+  // explicitly. A previous version of this dispatch was `direction ===
+  // "debit" ? processDebit(...) : processCredit(...)`, which silently
+  // treated "unknown" the same as "credit" -- any alert whose direction
+  // couldn't be determined (unfamiliar bank format, garbled forwarding,
+  // stripped HTML) was posted straight into the income pipeline and shown
+  // as "Income" on the Payment Alerts screen. The parser's own contract
+  // (see AlertDirection in parser.ts) explicitly forbids collapsing
+  // "unknown" into "credit" for exactly this reason.
+  if (parsed.direction === "debit") {
+    return processDebit(supabase, input, parsed, settings, dupResult);
+  }
+  if (parsed.direction === "credit") {
+    return processCredit(supabase, input, parsed, settings, dupResult);
+  }
+  return processUnknownDirection(supabase, input, parsed, settings, dupResult);
+}
+
+// ============================================================
+// UNKNOWN DIRECTION -- never guess, never auto-post
+// ============================================================
+// We could not tell whether this was money in or money out. Recording it
+// as either would risk silently corrupting the income/expense ledger, so
+// it's stored unclassified (alert_type: null) with match_status
+// "unmatched" and left for a human to read the raw message and classify
+// manually from the Payment Alerts screen.
+async function processUnknownDirection(
+  supabase: SupabaseClient,
+  input: AlertInput,
+  parsed: ParsedAlert,
+  _settings: Record<string, unknown>,
+  dupResult: DuplicateResult
+): Promise<AlertResult> {
+  const { organizationId, channel, sender, messageText, receivedAt, externalId, messageId } = input;
+  const channelLabel = channel === "email" ? "Email" : "SMS";
+  const amountLabel = parsed.amount?.toLocaleString() ?? "--";
+
+  const matchReason =
+    `Could not determine whether this was a credit or a debit -- review the ` +
+    `original message and classify it manually as Income or Expense. ` +
+    `Amount: NGN ${amountLabel}. Source: ${channelLabel}.`;
+
+  const { data: inserted, error: insertError } = await supabase
+    .from("sms_inbox")
+    .insert({
+      organization_id: organizationId,
+      event_id: externalId,
+      message_id: messageId,
+      device_id: input.deviceId ?? null,
+      sender,
+      sim_number: input.simNumber ?? null,
+      message_text: messageText,
+      received_at: receivedAt,
+      parsed_student_number: parsed.studentNumber,
+      parsed_student_name: parsed.studentName,
+      parsed_amount: parsed.amount,
+      parsed_currency: parsed.currency,
+      parsed_reference: parsed.reference,
+      parser_version: "v4-unknown",
+      processing_status: "received",
+      match_status: "unmatched",
+      match_reason: matchReason,
+      matched_student_id: null,
+      confidence_score: 0,
+      source_channel: channel,
+      email_subject: input.subject ?? null,
+      raw_payload: input.rawPayload,
+      archive_status: dupResult.status === "POSSIBLE_DUPLICATE" ? "POSSIBLE_DUPLICATE" : "ACTIVE",
+      primary_alert_id: dupResult.primaryAlertId,
+      duplicate_confidence: dupResult.status === "POSSIBLE_DUPLICATE" ? dupResult.confidence : null,
+      duplicate_evidence: dupResult.status === "POSSIBLE_DUPLICATE" ? dupResult.evidence : null,
+      alert_type: null,
+    })
+    .select("id")
+    .single();
+
+  if (insertError) return { success: false, error: insertError.message };
+
+  return {
+    success: true,
+    id: inserted?.id,
+    parsed: {
+      channel,
+      amount: parsed.amount,
+      direction: "unknown",
+      match_status: "unmatched",
+    },
+  };
 }
 
 
@@ -305,6 +391,7 @@ async function processDebit(
       primary_alert_id: dupResult.primaryAlertId,
       duplicate_confidence: isPossibleDuplicate ? dupResult.confidence : null,
       duplicate_evidence: isPossibleDuplicate ? dupResult.evidence : null,
+      alert_type: "expense",
     })
     .select("id")
     .single();
@@ -481,6 +568,7 @@ async function processCredit(
       primary_alert_id: dupResult.primaryAlertId,
       duplicate_confidence: dupResult.status === "POSSIBLE_DUPLICATE" ? dupResult.confidence : null,
       duplicate_evidence: dupResult.status === "POSSIBLE_DUPLICATE" ? dupResult.evidence : null,
+      alert_type: "income",
     })
     .select("id")
     .single();

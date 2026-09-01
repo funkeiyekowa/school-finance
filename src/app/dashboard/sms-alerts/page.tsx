@@ -20,6 +20,31 @@ import { insertExpenseWithVoucher, insertIncomeWithReceipt } from "@/lib/finance
 
 type AlertStatus = "all" | "needs_review" | "matched" | "unmatched" | "duplicate" | "rejected" | "archive";
 
+/**
+ * Whether a Payment Alert is income (money in) or expense (money out).
+ *
+ * Prefers the explicit `alert_type` column (see fix_alert_type_column.sql).
+ * Falls back to the legacy `parser_version` markers only for rows written
+ * before that column existed. Do NOT extend this to guess from anything
+ * else -- a previous version of this check compared parser_version to a
+ * stale "v3-expense" string that the backend had moved past to
+ * "v4-expense", so every real expense silently fell through to "income"
+ * both on screen and, worse, when manually approved (it posted the entry
+ * into income_entries instead of expense_entries). Anything that isn't
+ * explicitly one or the other is "unknown" and must stay that way -- never
+ * default it to income or expense.
+ */
+function getAlertKind(alert: {
+  alert_type?: string | null;
+  parser_version?: string | null;
+}): "income" | "expense" | "unknown" {
+  if (alert.alert_type === "income" || alert.alert_type === "expense") return alert.alert_type;
+  if (alert.parser_version === "v3-expense" || alert.parser_version === "v4-expense") return "expense";
+  if (alert.parser_version === "v4-unknown") return "unknown";
+  if (alert.parser_version) return "income";
+  return "unknown";
+}
+
 export default function SmsAlertsPage() {
   const { profile, canEdit, isDeveloper } = useAuth();
   const supabase = createClient();
@@ -252,28 +277,30 @@ export default function SmsAlertsPage() {
                   <tr><td colSpan={isDeveloper ? 10 : 9}><EmptyState message="No SMS alerts found." icon={<MessageSquare size={32} />} /></td></tr>
                 ) : (
                   filtered.map(alert => {
-                    const isExpense = alert.parser_version === "v3-expense";
+                    const kind = getAlertKind(alert);
+                    const isExpense = kind === "expense";
+                    const isUnknown = kind === "unknown";
                     return (
                     <tr key={alert.id}
-                      className={cn("border-b border-gray-50 hover:bg-gray-50 cursor-pointer", alert.match_status === "needs_review" && "bg-amber-50/30")}
+                      className={cn("border-b border-gray-50 hover:bg-gray-50 cursor-pointer", (alert.match_status === "needs_review" || isUnknown) && "bg-amber-50/30")}
                       onClick={() => setSelected(alert)}>
                       <RowCheckbox id={alert.id} selectedIds={selectedIds} onToggle={toggleSelect} isDeveloper={isDeveloper} />
                       <td className="px-4 py-3">
                         <span className={cn(
                           "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold",
-                          isExpense ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
+                          isUnknown ? "bg-gray-200 text-gray-700" : isExpense ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
                         )}>
-                          {isExpense ? "↑ Expense" : "↓ Income"}
+                          {isUnknown ? "⚠ Unclassified" : isExpense ? "↑ Expense" : "↓ Income"}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDateTime(alert.received_at || alert.created_at)}</td>
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-[#0F2A47]">{alert.parsed_student_number || "—"}</td>
                       <td className="px-4 py-3">
                         <div className="font-medium text-gray-900">{alert.parsed_student_name || "—"}</div>
-                        <div className="text-xs text-gray-400">{isExpense ? "Vendor / Payee" : "Student"}</div>
+                        <div className="text-xs text-gray-400">{isUnknown ? "Needs classification" : isExpense ? "Vendor / Payee" : "Student"}</div>
                       </td>
-                      <td className={cn("px-4 py-3 text-right font-bold", isExpense ? "text-red-700" : "text-green-700")}>
-                        {alert.parsed_amount ? (isExpense ? "-" : "+") + fmtMoney(alert.parsed_amount) : "—"}
+                      <td className={cn("px-4 py-3 text-right font-bold", isUnknown ? "text-gray-500" : isExpense ? "text-red-700" : "text-green-700")}>
+                        {alert.parsed_amount ? (isUnknown ? "" : isExpense ? "-" : "+") + fmtMoney(alert.parsed_amount) : "—"}
                       </td>
                       <td className="px-4 py-3"><StatusBadge status={alert.match_status} /></td>
                       <td className="px-4 py-3 text-xs text-gray-500 max-w-[220px]">
@@ -340,8 +367,15 @@ function AlertDetailModal({
   const [error, setError] = useState("");
   const [vendors, setVendors] = useState<{ id: string; name: string; vendor_code: string; category: string | null }[]>([]);
 
-  // Detect type
-  const isExpense = alert.parser_version === "v3-expense";
+  // Detect type. When the alert's direction couldn't be determined
+  // automatically, the reviewer must explicitly pick Income or Expense
+  // below before the approve form does anything with it -- it must never
+  // silently default to either (see getAlertKind's doc comment).
+  const kind = getAlertKind(alert);
+  const [manualKind, setManualKind] = useState<"income" | "expense" | null>(null);
+  const effectiveKind = kind === "unknown" ? manualKind : kind;
+  const isExpense = effectiveKind === "expense";
+  const needsManualClassification = kind === "unknown" && !manualKind;
 
   // For income: student selection
   const [selectedStudentId, setSelectedStudentId] = useState(alert.matched_student_id || "");
@@ -380,6 +414,11 @@ function AlertDetailModal({
     setError("");
     try {
       if (action === "approve") {
+        if (needsManualClassification) {
+          setError("Choose whether this alert is Income or Expense before approving.");
+          setLoading(false);
+          return;
+        }
         if (!editAmount || isNaN(parseFloat(editAmount)) || parseFloat(editAmount) <= 0) {
           setError("Enter a valid positive amount."); setLoading(false); return;
         }
@@ -417,6 +456,7 @@ function AlertDetailModal({
             reviewed_by: profile?.id,
             reviewed_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            alert_type: "expense",
           }).eq("id", alert.id);
           if (alertErr) { setError(`Expense saved, but alert status update failed: ${alertErr.message}`); setLoading(false); return; }
 
@@ -460,6 +500,7 @@ function AlertDetailModal({
             reviewed_by: profile?.id,
             reviewed_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            alert_type: "income",
           }).eq("id", alert.id);
           if (alertErr) { setError(`Payment saved, but alert status update failed: ${alertErr.message}`); setLoading(false); return; }
 
@@ -505,14 +546,14 @@ function AlertDetailModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={isExpense ? "Expense Alert Details" : "Payment Alert Details"} size="xl">
+    <Modal open onClose={onClose} title={kind === "unknown" ? "Payment Alert — Needs Classification" : isExpense ? "Expense Alert Details" : "Payment Alert Details"} size="xl">
       <div className="space-y-4">
         {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
 
         {/* Type badge */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className={cn("inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold", isExpense ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
-            {isExpense ? "↑ Expense (Debit)" : "↓ Income (Credit)"}
+          <div className={cn("inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold", kind === "unknown" ? "bg-gray-200 text-gray-700" : isExpense ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
+            {kind === "unknown" ? "⚠ Unclassified" : isExpense ? "↑ Expense (Debit)" : "↓ Income (Credit)"}
           </div>
           {(alert as unknown as { archive_status?: string }).archive_status && (alert as unknown as { archive_status?: string }).archive_status !== "ACTIVE" && (
             <div className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
@@ -525,6 +566,37 @@ function AlertDetailModal({
             </div>
           )}
         </div>
+
+        {/* Manual classification -- required whenever the parser couldn't tell
+            credit from debit. Read the original message below and choose. */}
+        {kind === "unknown" && (
+          <div className="rounded-xl p-4 border border-amber-200 bg-amber-50 space-y-2">
+            <div className="text-sm font-semibold text-amber-900">
+              This alert&apos;s direction couldn&apos;t be detected automatically.
+            </div>
+            <p className="text-xs text-amber-800">
+              Read the original message below, then classify it before approving.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={manualKind === "income" ? "gold" : "secondary"}
+                onClick={() => setManualKind("income")}
+              >
+                ↓ Income
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={manualKind === "expense" ? "gold" : "secondary"}
+                onClick={() => setManualKind("expense")}
+              >
+                ↑ Expense
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Original alert text — the channel varies, SMS or email */}
         <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
@@ -556,7 +628,22 @@ function AlertDetailModal({
 
         {/* Parsed data — context-aware labels */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {isExpense ? (
+          {needsManualClassification ? (
+            <>
+              <div className="bg-white border border-gray-100 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Name / Payee (unconfirmed)</div>
+                <div className="text-sm font-semibold text-gray-800">{alert.parsed_student_name || "—"}</div>
+              </div>
+              <div className="bg-white border border-gray-100 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Amount</div>
+                <div className="text-sm font-semibold text-gray-700">{alert.parsed_amount ? fmtMoney(alert.parsed_amount) : "—"}</div>
+              </div>
+              <div className="bg-white border border-gray-100 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Reference</div>
+                <div className="text-sm font-semibold text-gray-800">{alert.parsed_reference || "—"}</div>
+              </div>
+            </>
+          ) : isExpense ? (
             <>
               <div className="bg-white border border-gray-100 rounded-lg p-3">
                 <div className="text-xs text-gray-400 mb-1">Vendor / Payee</div>
@@ -609,7 +696,12 @@ function AlertDetailModal({
         )}
 
         {/* APPROVE FORM — different for income vs expense */}
-        {action === "approve" && (
+        {action === "approve" && needsManualClassification && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+            Use the Income / Expense buttons above to classify this alert before continuing.
+          </div>
+        )}
+        {action === "approve" && !needsManualClassification && (
           <div className="space-y-3 bg-[#FBF6E8] border border-[#F4E9C7] rounded-xl p-4">
             <div className="text-sm font-semibold text-[#0F2A47]">
               {isExpense ? "Record Expense To" : "Assign Payment To"}
@@ -656,7 +748,7 @@ function AlertDetailModal({
               {alert.match_status !== "matched" && alert.match_status !== "rejected" && alert.match_status !== "duplicate" && (
                 <>
                   <Button variant="gold" size="sm" onClick={() => setAction("approve")}>
-                    <CheckCircle size={13} /> {isExpense ? "Approve & Record Expense" : "Approve & Apply Payment"}
+                    <CheckCircle size={13} /> {kind === "unknown" ? "Classify & Approve" : isExpense ? "Approve & Record Expense" : "Approve & Apply Payment"}
                   </Button>
                   <Button variant="danger" size="sm" onClick={() => setAction("reject")}>
                     <XCircle size={13} /> Reject
@@ -678,9 +770,14 @@ function AlertDetailModal({
             </>
           ) : (
             <>
-              <Button variant="gold" loading={loading} onClick={runAction}>
+              <Button
+                variant="gold"
+                loading={loading}
+                disabled={action === "approve" && needsManualClassification}
+                onClick={runAction}
+              >
                 {action === "approve"
-                  ? (isExpense ? "Confirm & Record Expense" : "Confirm & Apply Payment")
+                  ? (needsManualClassification ? "Choose Income or Expense above" : isExpense ? "Confirm & Record Expense" : "Confirm & Apply Payment")
                   : action === "reject" ? "Confirm Rejection" : "Confirm Duplicate"}
               </Button>
               <Button variant="secondary" size="sm" onClick={() => { setAction("view"); setError(""); }}>
