@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { SupabaseClient } from "@supabase/supabase-js";
+import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 
 export interface PaginationState {
   offset: number;
@@ -75,7 +76,15 @@ export function usePaginatedData<T extends { total_count?: number }>(
         setTotal((rows[0].total_count as number) || 0);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unknown error");
+      // Supabase/PostgREST errors are plain objects, not Error instances --
+      // `e instanceof Error` was always false for them here, so every real
+      // database error (bad column, RLS denial, type mismatch, etc.) was
+      // being flattened to the string "Unknown error" while data was reset
+      // to [], which renders identically to a genuine empty result. That
+      // made a real failure on staff_paginated indistinguishable from
+      // "this org really has zero staff" -- see extractErrorMessage's own
+      // doc comment for the fuller history of this bug class.
+      setError(extractErrorMessage(e, "Unknown error"));
       setData([]);
     } finally {
       setLoading(false);

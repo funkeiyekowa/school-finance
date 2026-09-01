@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { useAuth } from "@/lib/context/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -26,16 +27,6 @@ interface SeedDataPanelProps {
 // NOT instances of the JS Error class — `err instanceof Error` is false for them,
 // which was silently swallowing the real database error and showing a generic
 // fallback string instead. This pulls the message out of any error shape.
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof Error) return err.message;
-  if (err && typeof err === "object") {
-    const e = err as { message?: string; details?: string; hint?: string; code?: string };
-    const parts = [e.message, e.details, e.hint].filter(Boolean);
-    if (parts.length > 0) return parts.join(" — ") + (e.code ? ` (${e.code})` : "");
-  }
-  return fallback;
-}
-
 export function SeedDataPanel({ focusOrgId }: SeedDataPanelProps) {
   const supabase = createClient();
   const { profile } = useAuth();
