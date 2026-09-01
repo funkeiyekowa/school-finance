@@ -19,7 +19,7 @@ import {
   ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users,
   Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen,
   Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown,
-  Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes,
+  Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -161,6 +161,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/inventory", label: "Inventory", icon: <Package size={17} />, module: "inventory" },
       { href: "/dashboard/procurement", label: "Procurement", icon: <ClipboardList size={17} />, module: "procurement" },
       { href: "/dashboard/assets", label: "Assets", icon: <Boxes size={17} />, module: "assets" },
+      { href: "/dashboard/clinic", label: "Health / Clinic", icon: <Stethoscope size={17} />, module: "clinic" },
       { href: "/dashboard/transport", label: "Transport", icon: <Bus size={17} />, module: "transport" },
       { href: "/dashboard/library", label: "Library", icon: <Library size={17} />, module: "library" },
       { href: "/dashboard/hostel", label: "Hostel / Boarding", icon: <BedDouble size={17} />, module: "hostel" },
