@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { fmtMoney, fmtDateTime, cn } from "@/lib/utils";
@@ -47,7 +47,7 @@ function getAlertKind(alert: {
 
 export default function SmsAlertsPage() {
   const { profile, canEdit, isDeveloper } = useAuth();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
   const [alerts, setAlerts] = useState<SmsInbox[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -358,7 +358,7 @@ export default function SmsAlertsPage() {
 function AlertDetailModal({
   alert, students, fees, onClose, onArchive, onRestore,
 }: { alert: SmsInbox; students: Student[]; fees: FeeSchedule[]; onClose: () => void; onArchive: (id: string, reason: string) => Promise<void>; onRestore: (id: string) => Promise<void> }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const { profile } = useAuth();
   const [action, setAction] = useState<"view" | "approve" | "reject" | "duplicate">("view");
   const [reviewNote, setReviewNote] = useState("");
@@ -792,7 +792,7 @@ function AlertDetailModal({
 }
 
 function TestSMSButton({ onInserted }: { onInserted: () => void }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(false);
 
   const samples = [

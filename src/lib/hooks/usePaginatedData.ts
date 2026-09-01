@@ -46,6 +46,17 @@ export function usePaginatedData<T extends { total_count?: number }>(
     [offset, limit, total]
   );
 
+  // rpcParams is commonly passed as an inline object literal by callers
+  // (e.g. usePaginatedData({ p_search: search }, ...)), which creates a new
+  // object reference on every render. If that object were used directly as a
+  // useCallback dependency, `load` would be recreated every render, which
+  // would retrigger the effect below on every render — an infinite
+  // fetch/render loop. Serializing it to a stable string key breaks that
+  // cycle: the key only changes when the actual param VALUES change.
+  const rpcParamsKey = JSON.stringify(rpcParams);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stableRpcParams = useMemo(() => rpcParams, [rpcParamsKey]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -53,7 +64,7 @@ export function usePaginatedData<T extends { total_count?: number }>(
       const { data: result, error: err } = await supabase.rpc(rpcName, {
         p_offset: offset,
         p_limit: limit,
-        ...rpcParams,
+        ...stableRpcParams,
       });
 
       if (err) throw err;
@@ -69,7 +80,7 @@ export function usePaginatedData<T extends { total_count?: number }>(
     } finally {
       setLoading(false);
     }
-  }, [offset, limit, rpcName, rpcParams, supabase]);
+  }, [offset, limit, rpcName, stableRpcParams, supabase]);
 
   useEffect(() => {
     load();

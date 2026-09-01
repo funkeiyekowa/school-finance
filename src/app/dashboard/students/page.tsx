@@ -480,7 +480,7 @@ function EditCell({ id, field, value, editing, editValue, setEditValue, canEdit,
 }
 
 function AddStudentModal({ onClose }: { onClose: () => void }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

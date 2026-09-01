@@ -46,6 +46,13 @@ export default function StaffPage() {
   });
 
   // Server-side pagination via RPC
+  // Memoize rpcParams so its reference only changes when `search` actually
+  // changes -- otherwise a new object literal every render would cause
+  // usePaginatedData's internal load() to regenerate every render, which
+  // retriggers its effect continuously (this was the cause of the
+  // flickering/reloading bug on this page).
+  const staffRpcParams = useMemo(() => ({ p_search: search }), [search]);
+
   const {
     data: staff,
     loading,
@@ -55,9 +62,7 @@ export default function StaffPage() {
     prevPage,
     reset: resetPagination,
   } = usePaginatedData<StaffRowWithTotal>(
-    {
-      p_search: search,
-    },
+    staffRpcParams,
     {
       rpcName: "staff_paginated",
       supabase,
