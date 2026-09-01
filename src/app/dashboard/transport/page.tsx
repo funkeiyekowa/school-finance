@@ -7,11 +7,13 @@ import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtMoney, cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
+import { SetupHero } from "@/components/ui/SetupHero";
+import { exportRowsAsCsv } from "@/lib/export/csv";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, Save, Bus, Search, Route as RouteIcon, Users } from "lucide-react";
+import { Plus, Save, Bus, Search, Route as RouteIcon, Users, Download } from "lucide-react";
 
 interface VehicleRow {
   id: string;
@@ -282,7 +284,27 @@ export default function TransportPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Transport" subtitle="Fleet, routes, and student ride assignments">
+      <PageHeader
+        title="Transport"
+        subtitle="Fleet, routes, and student ride assignments."
+        eyebrow="Operations"
+        icon={<Bus size={22} />}
+        gradient="gold"
+        breadcrumb={[{ label: "Operations" }, { label: "Transport" }]}
+      >
+        {tab === "vehicles" && vehicles.length > 0 && (
+          <Button variant="secondary" onClick={() => exportRowsAsCsv(`transport-vehicles-${new Date().toISOString().slice(0,10)}.csv`, vehicles, [
+            { key: "vehicle_code", label: "Code" }, { key: "plate_number", label: "Plate" },
+            { key: "make_model", label: "Make/Model" }, { key: "capacity", label: "Capacity" },
+            { key: "status", label: "Status" }, { key: "driver_name", label: "Driver" },
+          ])}><Download size={14} /> Export</Button>
+        )}
+        {tab === "routes" && routes.length > 0 && (
+          <Button variant="secondary" onClick={() => exportRowsAsCsv(`transport-routes-${new Date().toISOString().slice(0,10)}.csv`, routes, [
+            { key: "route_code", label: "Code" }, { key: "name", label: "Name" },
+            { key: "description", label: "Description" },
+          ])}><Download size={14} /> Export</Button>
+        )}
         {canEdit && tab === "vehicles" && <Button variant="gold" onClick={() => openVehicleForm()}><Plus size={14} /> Add Vehicle</Button>}
         {canEdit && tab === "routes" && <Button variant="gold" onClick={() => openRouteForm()}><Plus size={14} /> Add Route</Button>}
         {canEdit && tab === "riders" && <Button variant="gold" onClick={openAssignForm}><Plus size={14} /> Assign Student</Button>}

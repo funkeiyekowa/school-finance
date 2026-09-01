@@ -22,13 +22,16 @@ import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtMoney, fmtDate, cn, generateCode, today } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState, KpiCard } from "@/components/ui/PageHeader";
+import { Tabs, TabDef } from "@/components/ui/Tabs";
+import { SetupHero } from "@/components/ui/SetupHero";
+import { exportRowsAsCsv } from "@/lib/export/csv";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import {
   Boxes, Plus, Wrench, Archive, UserCircle, MapPin,
-  TrendingDown, ChevronRight, History, Pencil, LogOut as DisposeIcon,
+  TrendingDown, ChevronRight, History, Pencil, LogOut as DisposeIcon, Download,
 } from "lucide-react";
 
 interface AssetRow {
@@ -343,7 +346,7 @@ export default function AssetsPage() {
     );
   }
 
-  const TABS: { key: Tab; label: string; icon: React.ReactNode; count?: number }[] = [
+  const TABS: TabDef<Tab>[] = [
     { key: "register", label: "Register", icon: <Boxes size={14} />, count: stats.total_assets },
     { key: "maintenance", label: "Maintenance", icon: <Wrench size={14} />, count: stats.open_maintenance },
     { key: "disposals", label: "Disposals", icon: <Archive size={14} />, count: stats.disposed_assets },
@@ -351,7 +354,25 @@ export default function AssetsPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Asset Management" subtitle="Fixed-asset register, assignments, maintenance, and disposals.">
+      <PageHeader
+        title="Asset Management"
+        subtitle="Fixed-asset register, assignments, maintenance, and disposals."
+        eyebrow="Operations"
+        icon={<Boxes size={22} />}
+        gradient="emerald"
+        breadcrumb={[{ label: "Operations" }, { label: "Assets" }]}
+      >
+        {tab === "register" && assets.length > 0 && (
+          <Button variant="secondary" onClick={() => exportRowsAsCsv(`assets-${new Date().toISOString().slice(0,10)}.csv`, assets, [
+            { key: "asset_code", label: "Code" },
+            { key: "name", label: "Name" },
+            { key: "category", label: "Category" },
+            { key: "status", label: "Status" },
+            { key: "purchase_date", label: "Purchase date" },
+            { key: "purchase_cost", label: "Cost" },
+            { key: "current_location", label: "Location" },
+          ])}><Download size={14} /> Export</Button>
+        )}
         {canEdit && tab === "register" && (
           <Button variant="gold" onClick={openNewAsset}><Plus size={16} /> New Asset</Button>
         )}
@@ -367,23 +388,7 @@ export default function AssetsPage() {
         <KpiCard label="Total Book Value" value={fmtMoney(stats.total_book_value)} icon={<TrendingDown size={18} />} />
       </div>
 
-      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={cn(
-              "flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
-              tab === t.key ? "border-[#C9A227] text-[#0F2A47]" : "border-transparent text-gray-500 hover:text-gray-700"
-            )}
-          >
-            {t.icon} {t.label}
-            {typeof t.count === "number" && t.count > 0 && (
-              <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{t.count}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs<Tab> tabs={TABS} value={tab} onChange={setTab} />
 
       {loading ? <LoadingSpinner /> : (
         <>
@@ -413,7 +418,19 @@ export default function AssetsPage() {
               </div>
 
               {filteredAssets.length === 0 ? (
-                <EmptyState message="No assets found." icon={<Boxes size={40} />} />
+                <SetupHero
+                  icon={<Boxes size={40} />}
+                  title="Start your fixed-asset register"
+                  description="Track individually-identified property — laptops, buses, buildings — with live straight-line depreciation, custody history, maintenance logs, and disposal records. Distinct from consumable inventory."
+                  bullets={[
+                    "Book value computed live, never stale",
+                    "Full custody + location history per asset",
+                    "Maintenance log with cost tracking",
+                    "One-transaction disposal with proceeds",
+                  ]}
+                  tone="emerald"
+                  primaryCta={canEdit ? { label: "Add your first asset", onClick: openNewAsset } : { label: "Editors only", onClick: () => {}, disabled: true }}
+                />
               ) : (
                 <div className="space-y-2">
                   {filteredAssets.map((a) => {

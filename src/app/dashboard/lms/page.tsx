@@ -17,11 +17,13 @@ import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState, KpiCard } from "@/components/ui/PageHeader";
+import { SetupHero } from "@/components/ui/SetupHero";
+import { exportRowsAsCsv } from "@/lib/export/csv";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { GraduationCap, Plus, BookOpen, Users, Layers, ChevronRight, Trophy } from "lucide-react";
+import { GraduationCap, Plus, BookOpen, Users, Layers, ChevronRight, Trophy, Download } from "lucide-react";
 
 interface CourseRow {
   id: string;
@@ -137,7 +139,17 @@ export default function LmsHomePage() {
       <PageHeader
         title="Learning Management"
         subtitle="Courses, lessons, quizzes, and assignments — with AI-assisted authoring and grading."
+        eyebrow="Learning"
+        icon={<BookOpen size={22} />}
+        gradient="navy"
+        breadcrumb={[{ label: "Learning" }, { label: "LMS" }]}
       >
+        {courses.length > 0 && (
+          <Button variant="secondary" onClick={() => exportRowsAsCsv(`lms-courses-${new Date().toISOString().slice(0,10)}.csv`, courses, [
+            { key: "title", label: "Title" }, { key: "status", label: "Status" },
+            { key: "description", label: "Description" }, { key: "created_at", label: "Created" },
+          ])}><Download size={14} /> Export</Button>
+        )}
         {canEdit && (
           <Button variant="gold" onClick={() => setShowForm(true)}>
             <Plus size={16} /> New Course
@@ -155,7 +167,19 @@ export default function LmsHomePage() {
       {loading ? (
         <LoadingSpinner />
       ) : courses.length === 0 ? (
-        <EmptyState message="No courses yet. Create your first course to get started." icon={<GraduationCap size={40} />} />
+        <SetupHero
+          icon={<GraduationCap size={40} />}
+          title="Launch your first course"
+          description="Build courses with lessons, quizzes, and assignments. AI can draft lesson content, generate quiz questions, and grade student work. Students see progress bars, earn badges, and climb a leaderboard."
+          bullets={[
+            "AI lesson content + quiz generation",
+            "Auto-graded scored quizzes with attempts",
+            "Progress + badges + leaderboard for students",
+            "Threaded Q&A per lesson",
+          ]}
+          tone="navy"
+          primaryCta={canEdit ? { label: "Create your first course", onClick: () => setShowForm(true) } : { label: "Editors only", onClick: () => {}, disabled: true }}
+        />
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {courses.map((c) => (

@@ -23,13 +23,16 @@ import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtDate, fmtDateTime, cn, generateCode, today } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState, KpiCard } from "@/components/ui/PageHeader";
+import { Tabs, TabDef } from "@/components/ui/Tabs";
+import { SetupHero } from "@/components/ui/SetupHero";
+import { exportRowsAsCsv } from "@/lib/export/csv";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import {
   Stethoscope, Plus, HeartPulse, Pill, Syringe, AlertTriangle,
-  Trash2, Users, AlertCircle, CheckCircle2,
+  Trash2, Users, AlertCircle, CheckCircle2, Download,
 } from "lucide-react";
 
 /* ---------------- Types ---------------- */
@@ -477,7 +480,7 @@ export default function ClinicPage() {
   /* ---------------- Detail view (visit expansion) ---------------- */
   const [expandedVisit, setExpandedVisit] = useState<string | null>(null);
 
-  const TABS: { key: Tab; label: string; icon: React.ReactNode; count?: number }[] = [
+  const TABS: TabDef<Tab>[] = [
     { key: "visits", label: "Visits", icon: <Stethoscope size={14} />, count: stats.visits_today },
     { key: "patients", label: "Patients", icon: <Users size={14} />, count: stats.patients_with_allergies },
     { key: "medications", label: "Medications", icon: <Pill size={14} />, count: stats.low_stock_medications },
@@ -487,7 +490,25 @@ export default function ClinicPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Health / Clinic" subtitle="Nurse's dashboard — visits, patient records, medications, vaccinations, incidents.">
+      <PageHeader
+        title="Health / Clinic"
+        subtitle="Nurse's dashboard — visits, patient records, medications, vaccinations, incidents."
+        eyebrow="Operations"
+        icon={<Stethoscope size={22} />}
+        gradient="rose"
+        breadcrumb={[{ label: "Operations" }, { label: "Health" }]}
+      >
+        {tab === "visits" && visits.length > 0 && (
+          <Button variant="secondary" onClick={() => exportRowsAsCsv(`clinic-visits-${new Date().toISOString().slice(0,10)}.csv`, visits, [
+            { key: "visit_code", label: "Code" },
+            { key: "visit_date", label: "Date" },
+            { key: "subject_type", label: "Subject" },
+            { key: "chief_complaint", label: "Complaint" },
+            { key: "diagnosis", label: "Diagnosis" },
+            { key: "outcome", label: "Outcome" },
+            { key: "parent_notified", label: "Parent notified" },
+          ])}><Download size={14} /> Export</Button>
+        )}
         {canEdit && tab === "visits" && (
           <Button variant="gold" onClick={() => setShowVisitForm(true)}><Plus size={16} /> New Visit</Button>
         )}
@@ -512,30 +533,26 @@ export default function ClinicPage() {
         <KpiCard label="Incidents This Month" value={String(stats.incidents_this_month)} icon={<AlertTriangle size={18} />} colorClass={stats.incidents_this_month > 0 ? "text-amber-600" : "text-[#0F2A47]"} />
       </div>
 
-      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={cn(
-              "flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
-              tab === t.key ? "border-[#C9A227] text-[#0F2A47]" : "border-transparent text-gray-500 hover:text-gray-700"
-            )}
-          >
-            {t.icon} {t.label}
-            {typeof t.count === "number" && t.count > 0 && (
-              <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{t.count}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs<Tab> tabs={TABS} value={tab} onChange={setTab} />
 
       {loading ? <LoadingSpinner /> : (
         <>
           {/* ---------------- VISITS ---------------- */}
           {tab === "visits" && (
             visits.length === 0 ? (
-              <EmptyState message="No clinic visits logged yet." icon={<Stethoscope size={40} />} />
+              <SetupHero
+                icon={<Stethoscope size={40} />}
+                title="Log your first clinic visit"
+                description="Capture vitals, diagnosis, treatment, and dispensed medications for every student or staff visit. Medications are auto-decremented from clinic stock in the same transaction as the visit."
+                bullets={[
+                  "Vitals + diagnosis + treatment in one form",
+                  "Server-side stock decrement (row-locked)",
+                  "Parent-notification tracking",
+                  "Full history per student across visits",
+                ]}
+                tone="rose"
+                primaryCta={canEdit ? { label: "Log a visit", onClick: () => setShowVisitForm(true) } : { label: "Editors only", onClick: () => {}, disabled: true }}
+              />
             ) : (
               <div className="space-y-2">
                 {visits.map((v) => {

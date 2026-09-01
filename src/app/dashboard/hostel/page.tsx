@@ -25,13 +25,16 @@ import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtDateTime, cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState, KpiCard } from "@/components/ui/PageHeader";
+import { Tabs, TabDef } from "@/components/ui/Tabs";
+import { SetupHero } from "@/components/ui/SetupHero";
+import { exportRowsAsCsv } from "@/lib/export/csv";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import {
   Home, Plus, Users, BedDouble, DoorOpen, UserCheck, AlertTriangle,
-  Trash2, Pencil, LogOut, CheckCircle2,
+  Trash2, Pencil, LogOut, CheckCircle2, Download,
 } from "lucide-react";
 
 interface HouseRow {
@@ -420,7 +423,7 @@ export default function HostelPage() {
   const onSiteVisitors = visitors.filter((v) => !v.signed_out_at);
   const openIncidents = incidents.filter((i) => i.status === "open");
 
-  const TABS: { key: Tab; label: string; icon: React.ReactNode; count?: number }[] = [
+  const TABS: TabDef<Tab>[] = [
     { key: "houses", label: "Houses", icon: <Home size={14} /> },
     { key: "allocations", label: "Allocations", icon: <BedDouble size={14} />, count: activeAllocations.length },
     { key: "visitors", label: "Visitors", icon: <UserCheck size={14} />, count: onSiteVisitors.length },
@@ -429,7 +432,27 @@ export default function HostelPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Hostel / Boarding" subtitle="Houses, rooms, beds, student allocation, visitor log, and incidents.">
+      <PageHeader
+        title="Hostel / Boarding"
+        subtitle="Houses, rooms, beds, allocations, and visitor tracking."
+        eyebrow="Operations"
+        icon={<BedDouble size={22} />}
+        gradient="purple"
+        breadcrumb={[{ label: "Operations" }, { label: "Hostel" }]}
+      >
+        {tab === "houses" && houses.length > 0 && (
+          <Button variant="secondary" onClick={() => exportRowsAsCsv(`hostel-houses-${new Date().toISOString().slice(0,10)}.csv`, houses, [
+            { key: "name", label: "Name" }, { key: "gender", label: "Gender" },
+            { key: "capacity", label: "Capacity" }, { key: "status", label: "Status" },
+          ])}><Download size={14} /> Export</Button>
+        )}
+        {tab === "allocations" && allocations.length > 0 && (
+          <Button variant="secondary" onClick={() => exportRowsAsCsv(`hostel-allocations-${new Date().toISOString().slice(0,10)}.csv`, allocations, [
+            { key: "student_id", label: "Student", format: (a) => studentById.get(a.student_id)?.full_name || "" },
+            { key: "bed_id", label: "Bed", format: (a) => bedById.get(a.bed_id)?.bed_label || "" },
+            { key: "checked_in_at", label: "Check in" }, { key: "checked_out_at", label: "Check out" }, { key: "status", label: "Status" },
+          ])}><Download size={14} /> Export</Button>
+        )}
         {canEdit && tab === "houses" && (
           <Button variant="gold" onClick={() => openHouseForm()}><Plus size={16} /> Add House</Button>
         )}
@@ -450,29 +473,25 @@ export default function HostelPage() {
         <KpiCard label="Open Incidents" value={String(stats.open_incidents)} icon={<AlertTriangle size={18} />} colorClass={stats.open_incidents > 0 ? "text-red-600" : "text-[#0F2A47]"} />
       </div>
 
-      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={cn(
-              "flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
-              tab === t.key ? "border-[#C9A227] text-[#0F2A47]" : "border-transparent text-gray-500 hover:text-gray-700"
-            )}
-          >
-            {t.icon} {t.label}
-            {typeof t.count === "number" && t.count > 0 && (
-              <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full", t.key === "incidents" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600")}>{t.count}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs<Tab> tabs={TABS} value={tab} onChange={setTab} />
 
       {loading ? <LoadingSpinner /> : (
         <>
           {tab === "houses" && (
             houses.filter((h) => h.status === "active").length === 0 ? (
-              <EmptyState message="No boarding houses yet." icon={<Home size={40} />} />
+              <SetupHero
+                icon={<Home size={40} />}
+                title="Set up your boarding houses"
+                description="Model your dormitories as houses → rooms → beds, then allocate students to beds. Visitor log and incident tracking come free. Only one active allocation per student, enforced by the database."
+                bullets={[
+                  "Houses → rooms → beds hierarchy",
+                  "One active allocation per student (DB-enforced)",
+                  "Visitor sign-in/out log",
+                  "Incidents log for supervisors",
+                ]}
+                tone="purple"
+                primaryCta={canEdit ? { label: "Add your first house", onClick: openHouseForm } : { label: "Editors only", onClick: () => {}, disabled: true }}
+              />
             ) : (
               <div className="space-y-3">
                 {houses.filter((h) => h.status === "active").map((h) => {

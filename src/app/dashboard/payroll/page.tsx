@@ -29,6 +29,10 @@ import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtMoney, fmtDate, cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState, KpiCard } from "@/components/ui/PageHeader";
+import { Tabs, TabDef } from "@/components/ui/Tabs";
+import { SetupHero } from "@/components/ui/SetupHero";
+import { exportRowsAsCsv } from "@/lib/export/csv";
+import { Download } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
@@ -249,15 +253,56 @@ export default function PayrollPage() {
 
   const nonUniversalComponents = components.filter((c) => c.active && !c.applies_to_all);
 
-  const TABS: { key: Tab; label: string; icon: React.ReactNode; count?: number }[] = [
-    { key: "runs", label: "Runs", icon: <Calendar size={14} />, count: stats.draft_runs > 0 ? stats.draft_runs : undefined },
+  const TABS: TabDef<Tab>[] = [
+    { key: "runs", label: "Runs", icon: <Calendar size={14} />, count: stats.draft_runs, emphasis: stats.draft_runs > 0 ? "danger" : undefined },
     { key: "components", label: "Components", icon: <ClipboardList size={14} />, count: stats.active_components },
     { key: "assignments", label: "Staff Assignments", icon: <Users size={14} /> },
   ];
 
+  // Little sparkline of the last 6 runs' net totals — feeds the "Monthly Gross" KpiCard.
+  const trailingNet = runs.slice(0, 6).map((r) => r.total_net).reverse();
+
+  function exportRuns() {
+    exportRowsAsCsv(`payroll-runs-${new Date().toISOString().slice(0, 10)}.csv`, runs, [
+      { key: "label", label: "Label", format: (r) => r.label || `${MONTHS[r.period_month - 1]} ${r.period_year}` },
+      { key: "period_year", label: "Year" },
+      { key: "period_month", label: "Month" },
+      { key: "status", label: "Status" },
+      { key: "staff_count", label: "Staff" },
+      { key: "total_gross", label: "Gross" },
+      { key: "total_deductions", label: "Deductions" },
+      { key: "total_net", label: "Net" },
+      { key: "finalized_at", label: "Finalized" },
+      { key: "paid_at", label: "Paid" },
+    ]);
+  }
+
+  function exportComponents() {
+    exportRowsAsCsv(`payroll-components-${new Date().toISOString().slice(0, 10)}.csv`, components, [
+      { key: "name", label: "Name" }, { key: "code", label: "Code" },
+      { key: "type", label: "Type" }, { key: "calculation_type", label: "Calculation" },
+      { key: "default_amount", label: "Default amount" },
+      { key: "is_taxable", label: "Taxable" }, { key: "applies_to_all", label: "Applies to all" },
+      { key: "active", label: "Active" },
+    ]);
+  }
+
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Payroll" subtitle="Monthly runs, allowances, deductions, and payslips.">
+      <PageHeader
+        title="Payroll"
+        subtitle="Monthly runs, allowances, deductions, and payslips."
+        eyebrow="People"
+        icon={<Wallet size={22} />}
+        gradient="navy"
+        breadcrumb={[{ label: "People" }, { label: "Payroll" }]}
+      >
+        {tab === "runs" && runs.length > 0 && (
+          <Button variant="secondary" onClick={exportRuns}><Download size={14} /> Export</Button>
+        )}
+        {tab === "components" && components.length > 0 && (
+          <Button variant="secondary" onClick={exportComponents}><Download size={14} /> Export</Button>
+        )}
         {canEdit && tab === "runs" && (
           <Button variant="gold" onClick={() => setShowRunForm(true)}><Plus size={16} /> New Run</Button>
         )}
@@ -267,36 +312,33 @@ export default function PayrollPage() {
       </PageHeader>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <KpiCard label="Staff on Payroll" value={String(stats.total_staff_on_payroll)} icon={<Users size={18} />} />
-        <KpiCard label="Monthly Gross" value={fmtMoney(stats.total_monthly_gross)} icon={<DollarSign size={18} />} />
-        <KpiCard label="Components" value={String(stats.active_components)} icon={<ClipboardList size={18} />} />
-        <KpiCard label="Draft Runs" value={String(stats.draft_runs)} icon={<Calendar size={18} />} colorClass={stats.draft_runs > 0 ? "text-amber-600" : "text-[#0F2A47]"} />
-        <KpiCard label="Unpaid this Month" value={String(stats.unpaid_this_month)} icon={<Wallet size={18} />} colorClass={stats.unpaid_this_month > 0 ? "text-red-600" : "text-[#0F2A47]"} />
+        <KpiCard label="Staff on Payroll" value={String(stats.total_staff_on_payroll)} icon={<Users size={18} />} accent="navy" />
+        <KpiCard label="Monthly Gross" value={fmtMoney(stats.total_monthly_gross)} icon={<DollarSign size={18} />} accent="gold" sparkline={trailingNet} sparklineTone="gold" />
+        <KpiCard label="Components" value={String(stats.active_components)} icon={<ClipboardList size={18} />} accent="purple" />
+        <KpiCard label="Draft Runs" value={String(stats.draft_runs)} icon={<Calendar size={18} />} colorClass={stats.draft_runs > 0 ? "text-amber-600" : "text-[#0F2A47]"} accent={stats.draft_runs > 0 ? "amber" : undefined} />
+        <KpiCard label="Unpaid this Month" value={String(stats.unpaid_this_month)} icon={<Wallet size={18} />} colorClass={stats.unpaid_this_month > 0 ? "text-red-600" : "text-[#0F2A47]"} accent={stats.unpaid_this_month > 0 ? "red" : "emerald"} />
       </div>
 
-      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={cn(
-              "flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
-              tab === t.key ? "border-[#C9A227] text-[#0F2A47]" : "border-transparent text-gray-500 hover:text-gray-700"
-            )}
-          >
-            {t.icon} {t.label}
-            {typeof t.count === "number" && t.count > 0 && (
-              <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{t.count}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs<Tab> tabs={TABS} value={tab} onChange={setTab} />
 
       {loading ? <LoadingSpinner /> : (
         <>
           {tab === "runs" && (
             runs.length === 0 ? (
-              <EmptyState message="No payroll runs yet — create your first one." icon={<Calendar size={40} />} />
+              <SetupHero
+                icon={<Wallet size={40} />}
+                title="Run your first monthly payroll"
+                description="Snapshot every staff member's salary, allowances and deductions for a month, generate itemised payslips, then finalise and mark paid — all with a single click. Every step is server-side and one-way (a finalised run can never be silently rewritten)."
+                bullets={[
+                  "Auto-applies your PAYE and pension components",
+                  "Per-staff overrides for allowances and deductions",
+                  "Printable, snapshotted payslips per employee",
+                  "Payments logged, finalised, and audit-trailed",
+                ]}
+                tone="navy"
+                primaryCta={canEdit ? { label: "Create your first payroll run", onClick: () => setShowRunForm(true) } : { label: "Only editors can start", onClick: () => {}, disabled: true }}
+                secondaryCta={{ label: "Set up components first →", onClick: () => setTab("components") }}
+              />
             ) : (
               <div className="space-y-2">
                 {runs.map((r) => (
@@ -329,7 +371,19 @@ export default function PayrollPage() {
 
           {tab === "components" && (
             components.length === 0 ? (
-              <EmptyState message="No pay components yet. PAYE and Pension are seeded by default when the SQL runs." icon={<ClipboardList size={40} />} />
+              <SetupHero
+                icon={<ClipboardList size={40} />}
+                title="Design your salary components"
+                description="Allowances (transport, housing) and deductions (PAYE, pension) are the building blocks of every payslip. Set them up once, mark the universal ones 'applies to all', and every future payroll run picks them up automatically."
+                bullets={[
+                  "Fixed-amount or % of basic salary",
+                  "Flag each as taxable or not",
+                  "'Applies to all' vs per-staff opt-in",
+                  "Seeded PAYE + Pension already inserted by the SQL migration",
+                ]}
+                tone="gold"
+                primaryCta={canEdit ? { label: "Add a component", onClick: () => openCompForm() } : { label: "Only editors can add", onClick: () => {}, disabled: true }}
+              />
             ) : (
               <div className="space-y-2">
                 {components.map((c) => (

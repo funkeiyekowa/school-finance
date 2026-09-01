@@ -26,12 +26,15 @@ import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtMoney, fmtDate, cn, generateCode } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState, KpiCard } from "@/components/ui/PageHeader";
+import { Tabs, TabDef } from "@/components/ui/Tabs";
+import { SetupHero } from "@/components/ui/SetupHero";
+import { exportRowsAsCsv } from "@/lib/export/csv";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import {
-  ClipboardList, Plus, ShoppingCart, CheckCircle2, XCircle, ChevronRight,
+  ClipboardList, Plus, ShoppingCart, Download, CheckCircle2, XCircle, ChevronRight,
   Trash2, DollarSign, Package, ArrowRight,
 } from "lucide-react";
 
@@ -225,14 +228,39 @@ export default function ProcurementPage() {
 
   const filteredRequests = requests.filter((r) => statusFilter === "all" || r.status === statusFilter);
 
-  const TABS: { key: Tab; label: string; icon: React.ReactNode; count?: number }[] = [
+  const TABS: TabDef<Tab>[] = [
     { key: "requests", label: "Requests", icon: <ClipboardList size={14} />, count: stats.pending_requests },
     { key: "orders", label: "Orders", icon: <ShoppingCart size={14} />, count: stats.open_orders },
   ];
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Procurement" subtitle="Purchase requests, approvals, and vendor orders.">
+      <PageHeader
+        title="Procurement"
+        subtitle="Purchase requests, approvals, and vendor orders."
+        eyebrow="Operations"
+        icon={<ClipboardList size={22} />}
+        gradient="purple"
+        breadcrumb={[{ label: "Operations" }, { label: "Procurement" }]}
+      >
+        {tab === "requests" && requests.length > 0 && canEdit && (
+          <Button variant="secondary" onClick={() => exportRowsAsCsv(`purchase-requests-${new Date().toISOString().slice(0,10)}.csv`, requests, [
+            { key: "request_code", label: "Code" },
+            { key: "status", label: "Status" },
+            { key: "created_at", label: "Created" },
+            { key: "justification", label: "Justification" },
+          ])}><Download size={14} /> Export</Button>
+        )}
+        {tab === "orders" && orders.length > 0 && canEdit && (
+          <Button variant="secondary" onClick={() => exportRowsAsCsv(`purchase-orders-${new Date().toISOString().slice(0,10)}.csv`, orders, [
+            { key: "order_code", label: "Code" },
+            { key: "status", label: "Status" },
+            { key: "vendor_id", label: "Vendor", format: (o) => o.vendor_id ? vendorById.get(o.vendor_id)?.name || "" : "" },
+            { key: "total_amount", label: "Total" },
+            { key: "expected_date", label: "Expected" },
+            { key: "created_at", label: "Created" },
+          ])}><Download size={14} /> Export</Button>
+        )}
         {canEdit && tab === "requests" && (
           <Button variant="gold" onClick={() => setShowRequestForm(true)}><Plus size={16} /> New Request</Button>
         )}
@@ -245,23 +273,7 @@ export default function ProcurementPage() {
         <KpiCard label="Received this Month" value={String(stats.received_this_month)} icon={<Package size={18} />} />
       </div>
 
-      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={cn(
-              "flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
-              tab === t.key ? "border-[#C9A227] text-[#0F2A47]" : "border-transparent text-gray-500 hover:text-gray-700"
-            )}
-          >
-            {t.icon} {t.label}
-            {typeof t.count === "number" && t.count > 0 && (
-              <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{t.count}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs<Tab> tabs={TABS} value={tab} onChange={setTab} />
 
       {loading ? <LoadingSpinner /> : (
         <>
@@ -283,7 +295,19 @@ export default function ProcurementPage() {
               </div>
 
               {filteredRequests.length === 0 ? (
-                <EmptyState message="No purchase requests." icon={<ClipboardList size={40} />} />
+                <SetupHero
+                  icon={<ClipboardList size={40} />}
+                  title="Submit your first purchase request"
+                  description="Staff request items with line items and justification; approvers review, then convert an approved request into a purchase order placed with your vendor. Received items automatically credit inventory when linked."
+                  bullets={[
+                    "Line-item requests with estimated costs",
+                    "Approve, reject, or convert to a PO",
+                    "Vendors picked from your Vendors list",
+                    "Server-side receiving updates inventory in one step",
+                  ]}
+                  tone="purple"
+                  primaryCta={canEdit ? { label: "Create your first request", onClick: () => setShowRequestForm(true) } : { label: "Editors only", onClick: () => {}, disabled: true }}
+                />
               ) : (
                 <div className="space-y-2">
                   {filteredRequests.map((r) => {

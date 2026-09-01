@@ -29,13 +29,16 @@ import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtDate, fmtMoney, cn, generateCode } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState, KpiCard } from "@/components/ui/PageHeader";
+import { Tabs, TabDef } from "@/components/ui/Tabs";
+import { SetupHero } from "@/components/ui/SetupHero";
+import { exportRowsAsCsv } from "@/lib/export/csv";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import {
   BookOpen, Plus, Search, Users, Layers, AlertTriangle, CheckCircle2,
-  Bookmark, ArrowLeftRight, Trash2, Pencil,
+  Bookmark, ArrowLeftRight, Trash2, Pencil, Download,
 } from "lucide-react";
 
 interface BookRow {
@@ -372,7 +375,7 @@ export default function LibraryPage() {
   const overdueLoans = activeLoans.filter((l) => l.due_date < new Date().toISOString().slice(0, 10));
   const pendingReservations = reservations.filter((r) => r.status === "pending");
 
-  const TABS: { key: Tab; label: string; icon: React.ReactNode; count?: number }[] = [
+  const TABS: TabDef<Tab>[] = [
     { key: "catalogue", label: "Catalogue", icon: <BookOpen size={14} /> },
     { key: "loans", label: "Active Loans", icon: <ArrowLeftRight size={14} />, count: activeLoans.length },
     { key: "reservations", label: "Reservations", icon: <Bookmark size={14} />, count: pendingReservations.length },
@@ -381,7 +384,21 @@ export default function LibraryPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Library" subtitle="Book catalogue, circulation, and reservations.">
+      <PageHeader
+        title="Library"
+        subtitle="Catalogue, loans, reservations, and overdue tracking."
+        eyebrow="Operations"
+        icon={<BookOpen size={22} />}
+        gradient="amber"
+        breadcrumb={[{ label: "Operations" }, { label: "Library" }]}
+      >
+        {tab === "catalogue" && books.length > 0 && (
+          <Button variant="secondary" onClick={() => exportRowsAsCsv(`library-books-${new Date().toISOString().slice(0,10)}.csv`, books, [
+            { key: "book_code", label: "Code" }, { key: "title", label: "Title" },
+            { key: "author", label: "Author" }, { key: "isbn", label: "ISBN" },
+            { key: "category", label: "Category" }, { key: "total_copies", label: "Total copies" },
+          ])}><Download size={14} /> Export</Button>
+        )}
         {canEdit && tab === "catalogue" && (
           <Button variant="gold" onClick={() => openBookForm()}><Plus size={16} /> Add Book</Button>
         )}
@@ -395,23 +412,7 @@ export default function LibraryPage() {
         <KpiCard label="Overdue" value={String(stats.overdue_loans)} icon={<AlertTriangle size={18} />} colorClass={stats.overdue_loans > 0 ? "text-red-600" : "text-[#0F2A47]"} />
       </div>
 
-      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={cn(
-              "flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
-              tab === t.key ? "border-[#C9A227] text-[#0F2A47]" : "border-transparent text-gray-500 hover:text-gray-700"
-            )}
-          >
-            {t.icon} {t.label}
-            {typeof t.count === "number" && t.count > 0 && (
-              <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full", t.key === "overdue" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600")}>{t.count}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs<Tab> tabs={TABS} value={tab} onChange={setTab} />
 
       {loading ? <LoadingSpinner /> : (
         <>
@@ -428,7 +429,19 @@ export default function LibraryPage() {
               </div>
 
               {filteredBooks.length === 0 ? (
-                <EmptyState message="No books in the catalogue yet." icon={<BookOpen size={40} />} />
+                <SetupHero
+                  icon={<BookOpen size={40} />}
+                  title="Build your library catalogue"
+                  description="Add books, track copies, lend them to students and staff, and see who's overdue at a glance. Reservations queue automatically when all copies are out."
+                  bullets={[
+                    "Multi-copy tracking per title",
+                    "One-click check-out and return",
+                    "Overdue alerts with days-late count",
+                    "Reservations queue when everything is loaned",
+                  ]}
+                  tone="amber"
+                  primaryCta={canEdit ? { label: "Add your first book", onClick: () => openBookForm() } : { label: "Editors only", onClick: () => {}, disabled: true }}
+                />
               ) : (
                 <div className="space-y-3">
                   {filteredBooks.map((b) => {
