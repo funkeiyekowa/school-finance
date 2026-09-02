@@ -570,6 +570,18 @@ export default function CourseDetailPage() {
     load();
   }
 
+  async function enrollWholeClass(gradeName: string) {
+    if (!orgId) return;
+    const matching = students.filter(s => s.grade === gradeName && !enrolledIds.has(s.id));
+    if (matching.length === 0) { notify(`No unenrolled students in ${gradeName}.`); return; }
+    if (!confirm(`Enroll ${matching.length} student(s) from ${gradeName} into this course?`)) return;
+    const payload = matching.map(s => ({ course_id: courseId, student_id: s.id, organization_id: orgId }));
+    const { error } = await supabase.from("lms_enrollments").insert(payload);
+    if (error) { notify(extractErrorMessage(error, "Bulk enrol failed."), "error"); return; }
+    notify(`Enrolled ${matching.length} student(s) from ${gradeName}.`);
+    load();
+  }
+
   useEffect(() => {
     if (tab !== "roster" || enrollments.length === 0) return;
     let cancelled = false;
@@ -785,7 +797,19 @@ export default function CourseDetailPage() {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-[#0F2A47]">{enrolledIds.size} enrolled</h3>
             {canEdit && (
-              <Button variant="secondary" size="sm" onClick={() => setEnrollPickerOpen(true)}><Plus size={14} /> Enroll student</Button>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={() => setEnrollPickerOpen(true)}><Plus size={14} /> Enroll student</Button>
+                <select
+                  onChange={e => { if (e.target.value) { enrollWholeClass(e.target.value); e.target.value = ""; } }}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white"
+                  title="Bulk-enrol every active student in a class"
+                >
+                  <option value="">Enrol whole class…</option>
+                  {Array.from(new Set(students.map(s => s.grade).filter(Boolean))).sort().map(g => (
+                    <option key={g} value={g as string}>{g}</option>
+                  ))}
+                </select>
+              </div>
             )}
           </div>
 
