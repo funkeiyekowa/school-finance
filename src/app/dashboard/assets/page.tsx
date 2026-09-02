@@ -29,7 +29,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Boxes, Plus, Wrench, Archive, UserCircle, MapPin, TrendingDown, ChevronRight, History, Pencil, LogOut as DisposeIcon, Download, Upload } from "lucide-react";
+import { Boxes, Plus, Wrench, Archive, UserCircle, MapPin, TrendingDown, ChevronRight, History, Pencil, LogOut as DisposeIcon, Download, Upload, Printer } from "lucide-react";
 
 interface AssetRow {
   id: string; asset_code: string; name: string; category: string | null; serial_number: string | null;
@@ -460,6 +460,15 @@ export default function AssetsPage() {
             { key: "purchase_cost", label: "Cost" },
             { key: "current_location", label: "Location" },
           ])}><Download size={14} /> Export</Button>
+        )}
+        {tab === "register" && (
+          <Button
+            variant="secondary"
+            onClick={() => window.open("/dashboard/assets/depreciation", "_blank")}
+            title="Printable fixed-asset depreciation report grouped by category"
+          >
+            <Printer size={16} /> Depreciation report
+          </Button>
         )}
         {canEdit && tab === "register" && (
           <>
