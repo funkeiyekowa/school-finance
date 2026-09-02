@@ -20,7 +20,6 @@ import { resolveTheme, themeToCss, googleFontsHref } from "@/lib/website/theme";
 import { RenderSection, type SectionContext } from "@/components/website/sections";
 import type { PagePayload } from "@/lib/website/types";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import { useAuth } from "@/lib/context/AuthContext";
 
 export default function DraftPreviewPage() {
   return (
@@ -34,7 +33,6 @@ function DraftPreviewInner() {
   const params = useSearchParams();
   const slug = params.get("page") ?? "";
   const supabase = useMemo(() => createClient(), []);
-  const { orgId } = useAuth();
 
   const [payload, setPayload] = useState<PagePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,12 +42,27 @@ function DraftPreviewInner() {
     setLoading(true);
     setError(null);
 
-    // Find THIS org's website. Without the org filter a platform admin gets
-    // multiple rows via websites_public_read RLS and .maybeSingle() throws,
-    // which surfaced as a mystery "no website" blank page in the preview.
-    let siteQuery = supabase.from("websites").select("id");
-    if (orgId) siteQuery = siteQuery.eq("organization_id", orgId);
-    const { data: siteRow, error: siteErr } = await siteQuery.maybeSingle();
+    // /preview-draft is a top-level route outside /dashboard, so
+    // AuthProvider isn't in the tree here and useAuth() would just
+    // return orgId=null. Resolve the caller's own org directly via
+    // the SECURITY DEFINER RPC — same source of truth RLS uses.
+    const { data: orgId, error: orgErr } = await supabase.rpc("current_user_org_id");
+    if (orgErr || !orgId) {
+      console.error("[DraftPreview] current_user_org_id failed", orgErr);
+      setError("Could not identify your school. Please sign in again.");
+      setLoading(false);
+      return;
+    }
+
+    // Find THIS org's website. Without the filter a platform admin gets
+    // multiple rows via the websites_public_read RLS policy and
+    // .maybeSingle() throws, which is what surfaced as
+    // "JSON object requested, multiple (or no) rows returned".
+    const { data: siteRow, error: siteErr } = await supabase
+      .from("websites")
+      .select("id")
+      .eq("organization_id", orgId)
+      .maybeSingle();
 
     if (siteErr) {
       console.error("[DraftPreview] load websites failed", siteErr);
@@ -80,7 +93,7 @@ function DraftPreviewInner() {
       setPayload(data as PagePayload);
     }
     setLoading(false);
-  }, [supabase, slug, orgId]);
+  }, [supabase, slug]);
 
   useEffect(() => { load(); }, [load]);
 
