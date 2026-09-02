@@ -250,6 +250,13 @@ h1{font-size:18px;margin-bottom:4px;}
           <Printer size={13} /> Admission letter
         </button>
         <button
+          onClick={() => window.open(`/dashboard/students/${student.id}/enrollment-certificate`, "_blank")}
+          className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-900 border border-emerald-200 hover:border-emerald-500 px-3 py-1.5 rounded-lg"
+          title="Formal certificate of enrolment for visa / scholarship / official use"
+        >
+          <Printer size={13} /> Enrolment certificate
+        </button>
+        <button
           onClick={async () => {
             setBriefOpen(true);
             setAiBrief(null);

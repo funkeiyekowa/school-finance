@@ -22,6 +22,7 @@ import { useAuth } from "@/lib/context/AuthContext";
 import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtDate, fmtDateTime, cn, generateCode, today } from "@/lib/utils";
+import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState, KpiCard } from "@/components/ui/PageHeader";
 import { Tabs, TabDef } from "@/components/ui/Tabs";
 import { SetupHero } from "@/components/ui/SetupHero";
@@ -30,7 +31,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Stethoscope, Plus, HeartPulse, Pill, Syringe, AlertTriangle, Trash2, Users, AlertCircle, CheckCircle2, Download, Printer } from "lucide-react";
+import { Stethoscope, Plus, HeartPulse, Pill, Syringe, AlertTriangle, Trash2, Users, AlertCircle, CheckCircle2, Download, Printer, UploadCloud } from "lucide-react";
 
 /* ---------------- Types ---------------- */
 interface StudentOption { id: string; full_name: string; }
@@ -131,6 +132,7 @@ export default function ClinicPage() {
   const [dispensed, setDispensed] = useState<DispensedRow[]>([]);
   const [medications, setMedications] = useState<MedicationRow[]>([]);
   const [vaccinations, setVaccinations] = useState<VaccinationRow[]>([]);
+  const [showBulkMeds, setShowBulkMeds] = useState(false);
   const [incidents, setIncidents] = useState<IncidentRow[]>([]);
   const [stats, setStats] = useState<Stats>({
     visits_today: 0, visits_this_week: 0, open_referrals: 0,
@@ -513,7 +515,10 @@ export default function ClinicPage() {
           <Button variant="gold" onClick={openNewPatient}><Plus size={16} /> New Patient Record</Button>
         )}
         {canEdit && tab === "medications" && (
-          <Button variant="gold" onClick={openNewMed}><Plus size={16} /> Add Medication</Button>
+          <>
+            <Button variant="secondary" onClick={() => setShowBulkMeds(true)}><UploadCloud size={16} /> Bulk import</Button>
+            <Button variant="gold" onClick={openNewMed}><Plus size={16} /> Add Medication</Button>
+          </>
         )}
         {canEdit && tab === "vaccinations" && (
           <Button variant="gold" onClick={() => setShowVaccinationForm(true)}><Plus size={16} /> Log Vaccination</Button>
@@ -1131,6 +1136,51 @@ export default function ClinicPage() {
       </Modal>
 
       <ToastHost />
+    
+      <BulkImportModal
+        open={showBulkMeds}
+        onClose={() => setShowBulkMeds(false)}
+        title="Bulk import clinic medications"
+        columns={[
+          { key: "medication_code", label: "Medication code", required: true },
+          { key: "name", label: "Name", required: true },
+          { key: "dosage_form", label: "Dosage form", hint: "tablet / syrup / etc" },
+          { key: "strength", label: "Strength", hint: "e.g. 500mg" },
+          { key: "quantity_on_hand", label: "Opening qty", required: true, transform: raw => Number(raw) || 0 },
+          { key: "unit", label: "Unit", hint: "tablets / bottles / etc" },
+          { key: "reorder_level", label: "Reorder level", transform: raw => Number(raw) || 0 },
+          { key: "expiry_date", label: "Expiry date", hint: "YYYY-MM-DD" },
+        ]}
+        example={{
+          medication_code: "PARA-500",
+          name: "Paracetamol",
+          dosage_form: "tablet",
+          strength: "500mg",
+          quantity_on_hand: "100",
+          unit: "tablets",
+          reorder_level: "20",
+          expiry_date: "2026-12-31",
+        }}
+        onImport={async (rows) => {
+          if (!orgId) return { ok: false, message: "No org context" };
+          const payload = rows.map(r => ({
+            organization_id: orgId,
+            medication_code: r.medication_code,
+            name: r.name,
+            dosage_form: r.dosage_form || null,
+            strength: r.strength || null,
+            quantity_on_hand: r.quantity_on_hand ?? 0,
+            unit: r.unit || "unit",
+            reorder_level: r.reorder_level ?? 0,
+            expiry_date: r.expiry_date || null,
+            active: true,
+          }));
+          const { error } = await supabase.from("clinic_medications").insert(payload);
+          if (error) return { ok: false, message: error.message };
+          await load();
+          return { ok: true, message: `Imported ${payload.length} medication(s).` };
+        }}
+      />
     </div>
   );
 }
