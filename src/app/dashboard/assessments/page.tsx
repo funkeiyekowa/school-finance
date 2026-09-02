@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Save, CheckCircle2, GraduationCap } from "lucide-react";
+import { Save, CheckCircle2, GraduationCap, Printer } from "lucide-react";
 
 interface ClassRow { id: string; name: string; }
 interface SubjectRow { id: string; name: string; short_code: string; }
@@ -240,11 +240,20 @@ export default function AssessmentsPage() {
       {selectedClassId && selectedSubjectId && students.length > 0 && (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <CardTitle>
                 {subjects.find(s => s.id === selectedSubjectId)?.name} — {classes.find(c => c.id === selectedClassId)?.name}
               </CardTitle>
-              <span className="text-xs text-gray-500">{students.length} students</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">{students.length} students</span>
+                <button
+                  onClick={() => window.open(`/dashboard/assessments/print?class=${selectedClassId}&subject=${selectedSubjectId}&term=${encodeURIComponent(selectedTerm)}`, "_blank")}
+                  className="text-xs font-semibold text-[#0F2A47] hover:text-[#C9A227] border border-gray-200 hover:border-[#C9A227] px-2.5 py-1 rounded-lg flex items-center gap-1"
+                  title="Print a blank score sheet on your school's letterhead to fill by hand"
+                >
+                  <Printer size={12} /> Print score sheet
+                </button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="py-0 overflow-x-auto">

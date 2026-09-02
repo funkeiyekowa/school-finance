@@ -15,13 +15,7 @@ import { SchoolBrandBar } from "@/components/layout/SchoolBrandBar";
 import ForcePasswordChange from "@/components/auth/ForcePasswordChange";
 import { CommandPalette, useNavCommandItems } from "@/components/ui/CommandPalette";
 import { cn } from "@/lib/utils";
-import {
-  LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2,
-  ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users,
-  Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen,
-  Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown,
-  Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope,
-} from "lucide-react";
+import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /* Navigation configuration                                           */
@@ -190,6 +184,7 @@ const NAV_GROUPS: NavGroup[] = [
     icon: <BarChart3 size={16} />,
     items: [
       { href: "/dashboard/reports", label: "Reports", icon: <FileBarChart size={17} />, feature: "reports" },
+      { href: "/dashboard/print-center", label: "Print Center", icon: <Printer size={17} /> },
       { href: "/dashboard/analytics", label: "Analytics", icon: <BarChart3 size={17} />, adminOnly: true },
       { href: "/dashboard/activity", label: "Activity", icon: <Activity size={17} />, feature: "activity", adminOnly: true },
       { href: "/dashboard/setup", label: "Setup", icon: <Settings size={17} />, feature: "setup" },
