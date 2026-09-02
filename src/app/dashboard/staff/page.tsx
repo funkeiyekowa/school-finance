@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { cn } from "@/lib/utils";
+import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -11,7 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
 import { usePaginatedData } from "@/lib/hooks/usePaginatedData";
-import { Plus, Save, Users, Search, Trash2, IdCard } from "lucide-react";
+import { Plus, Save, Users, Search, Trash2, IdCard, UploadCloud } from "lucide-react";
 
 interface DeptRow { id: string; name: string; }
 interface StaffRow { id: string; staff_code: string; full_name: string; email: string | null; phone: string | null; job_title: string | null; staff_type: string; department_id: string | null; status: string; date_joined: string | null; }
@@ -29,6 +30,7 @@ interface StaffStats {
 
 export default function StaffPage() {
   const { canEdit, profile, orgId } = useAuth();
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const supabase = useMemo(() => createClient(), []);
   const [departments, setDepartments] = useState<DeptRow[]>([]);
   const [search, setSearch] = useState("");
@@ -205,6 +207,11 @@ export default function StaffPage() {
         >
           <IdCard size={14} /> Print ID cards
         </Button>
+        {canEdit && (
+          <Button variant="secondary" onClick={() => setShowBulkImport(true)}>
+            <UploadCloud size={14} /> Bulk import
+          </Button>
+        )}
         {canEdit && <Button variant="gold" onClick={() => openForm()}><Plus size={14} /> Add Staff</Button>}
       </PageHeader>
 
@@ -374,6 +381,50 @@ export default function StaffPage() {
           </div>
         </Modal>
       )}
+    
+      <BulkImportModal
+        open={showBulkImport}
+        onClose={() => setShowBulkImport(false)}
+        title="Bulk import staff"
+        columns={[
+          { key: "staff_code", label: "Staff code", required: true },
+          { key: "full_name", label: "Full name", required: true },
+          { key: "email", label: "Email" },
+          { key: "phone", label: "Phone" },
+          { key: "job_title", label: "Job title" },
+          { key: "staff_type", label: "Staff type", hint: "teaching or non_teaching" },
+          { key: "date_joined", label: "Date joined", hint: "YYYY-MM-DD" },
+          { key: "status", label: "Status", hint: "active/inactive" },
+        ]}
+        example={{
+          staff_code: "STF001",
+          full_name: "Jane Doe",
+          email: "jane.doe@example.com",
+          phone: "+2348012345678",
+          job_title: "Class Teacher",
+          staff_type: "teaching",
+          date_joined: "2025-01-15",
+          status: "active",
+        }}
+        onImport={async (rows) => {
+          if (!orgId) return { ok: false, message: "No org context" };
+          const payload = rows.map(r => ({
+            organization_id: orgId,
+            staff_code: r.staff_code,
+            full_name: r.full_name,
+            email: r.email || null,
+            phone: r.phone || null,
+            job_title: r.job_title || null,
+            staff_type: r.staff_type || "teaching",
+            date_joined: r.date_joined || null,
+            status: r.status || "active",
+          }));
+          const { error } = await supabase.from("staff_members").insert(payload);
+          if (error) return { ok: false, message: error.message };
+          refetch();
+          return { ok: true, message: `Imported ${payload.length} staff member(s).` };
+        }}
+      />
     </div>
   );
 }

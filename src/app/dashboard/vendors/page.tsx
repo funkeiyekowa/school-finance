@@ -4,24 +4,26 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { fmtMoney, today } from "@/lib/utils";
+import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, Search, ChevronRight, Building2 } from "lucide-react";
+import { Plus, Search, ChevronRight, Building2, UploadCloud } from "lucide-react";
 import Link from "next/link";
 import type { Vendor } from "@/lib/types";
 import { VENDOR_CATEGORIES } from "@/lib/types";
 
 export default function VendorsPage() {
-  const { canEdit, profile } = useAuth();
+  const { canEdit, profile, orgId } = useAuth();
   const supabase = createClient();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorTotals, setVendorTotals] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,9 +53,14 @@ export default function VendorsPage() {
         icon={<Building2 size={24} />}
         gradient="navy" title="Vendors" subtitle={`${vendors.length} vendors registered`}>
         {canEdit && (
-          <Button onClick={() => setShowAdd(true)}>
-            <Plus size={16} /> Add Vendor
-          </Button>
+          <>
+            <Button variant="secondary" onClick={() => setShowBulk(true)}>
+              <UploadCloud size={16} /> Bulk import
+            </Button>
+            <Button onClick={() => setShowAdd(true)}>
+              <Plus size={16} /> Add Vendor
+            </Button>
+          </>
         )}
       </PageHeader>
 
@@ -108,6 +115,48 @@ export default function VendorsPage() {
       )}
 
       {showAdd && <AddVendorModal onClose={() => { setShowAdd(false); load(); }} />}
+      <BulkImportModal
+        open={showBulk}
+        onClose={() => setShowBulk(false)}
+        title="Bulk import vendors"
+        columns={[
+          { key: "vendor_code", label: "Vendor code", required: true },
+          { key: "name", label: "Vendor name", required: true },
+          { key: "category", label: "Category" },
+          { key: "contact_person", label: "Contact person" },
+          { key: "phone", label: "Phone" },
+          { key: "email", label: "Email" },
+          { key: "address", label: "Address" },
+        ]}
+        example={{
+          vendor_code: "VND001",
+          name: "ABC Suppliers Ltd",
+          category: "Stationery",
+          contact_person: "John Smith",
+          phone: "+2348012345678",
+          email: "sales@abc.example",
+          address: "12 Market Street, Lagos",
+        }}
+        onImport={async (rows) => {
+          if (!orgId) return { ok: false, message: "No org context" };
+          void profile;
+          const payload = rows.map(r => ({
+            organization_id: orgId,
+            vendor_code: r.vendor_code,
+            name: r.name,
+            category: r.category || null,
+            contact_person: r.contact_person || null,
+            phone: r.phone || null,
+            email: r.email || null,
+            address: r.address || null,
+            created_at: today(),
+          }));
+          const { error } = await supabase.from("vendors").insert(payload);
+          if (error) return { ok: false, message: error.message };
+          load();
+          return { ok: true, message: `Imported ${payload.length} vendor(s).` };
+        }}
+      />
     </div>
   );
 }
