@@ -115,6 +115,12 @@ const ENTRIES: Entry[] = [
     blurb: "Physical count sheet with book qty pre-filled + counted / variance / notes columns.",
     href: "/dashboard/inventory/stocktake",
     icon: <Boxes size={16} /> },
+  { group: "Transport",
+    title: "Route roster",
+    blurb: "Driver-friendly list of students on a route with pickup, drop-off, and guardian phone.",
+    href: "/dashboard/transport",
+    needs: "Routes tab → Print",
+    icon: <FileText size={16} /> },
 ];
 
 export default function PrintCenterPage() {

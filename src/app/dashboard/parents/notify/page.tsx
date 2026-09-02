@@ -17,7 +17,8 @@
  * note.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useBranding } from "@/lib/hooks/useBranding";
@@ -37,6 +38,14 @@ interface Charge { student_id: string; amount: number; }
 const DEFAULT_TEMPLATE = "Dear {guardian}, kindly note that {student} ({grade}) has an outstanding fee balance of {balance}. Please arrange payment at your earliest convenience. Thank you.";
 
 export default function ParentNotifyPage() {
+  return (
+    <Suspense fallback={null}>
+      <Inner />
+    </Suspense>
+  );
+}
+
+function Inner() {
   const supabase = useMemo(() => createClient(), []);
   const { orgId } = useAuth();
   const branding = useBranding();
@@ -48,7 +57,9 @@ export default function ParentNotifyPage() {
 
   const [filterGrade, setFilterGrade] = useState("");
   const [filterStatus, setFilterStatus] = useState<"" | "owing" | "paid" | "all">("owing");
-  const [message, setMessage] = useState(DEFAULT_TEMPLATE);
+  const params = useSearchParams();
+  const initialBody = params.get("body") ?? "";
+  const [message, setMessage] = useState(initialBody || DEFAULT_TEMPLATE);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {

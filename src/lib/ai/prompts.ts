@@ -31,7 +31,8 @@ export type AiTaskKind =
   | "lms_quiz_generate"
   | "lms_grading_assist"
   | "lms_course_outline"
-  | "lms_bulk_parse";
+  | "lms_bulk_parse"
+  | "student_term_summary";
 
 export interface AiPreset {
   kind: AiTaskKind;
@@ -203,6 +204,22 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
       return `Assignment instructions:\n${instructions}\n\nMax score: ${maxScore}\n\nStudent's response:\n${input}\n\nSuggest a score and feedback as the specified JSON.`;
     },
     maxTokens: 400,
+  },
+  student_term_summary: {
+    kind: "student_term_summary",
+    label: "Draft term summary for parents",
+    description: "Warm, honest paragraph summarising a student's academic performance, attendance and behaviour for the term — for a parent-teacher meeting or a report-card cover note.",
+    system: `${CORE_STYLE} You are drafting a parent-facing term summary for a school. Write ONE paragraph (5-7 sentences), warm, honest, specific. Reference the actual scores, attendance figures and any comments provided — NEVER invent details. Lead with a genuine strength, name the challenge kindly, then a concrete next step for the coming term. Use the student's first name. Return only the paragraph.`,
+    compose: (input, extra) => {
+      const name = extra?.student_name ?? "the student";
+      const grade = extra?.grade ?? "";
+      const term = extra?.term ?? "this term";
+      const avg = extra?.average ?? "";
+      const position = extra?.position ?? "";
+      const attendance = extra?.attendance ?? "";
+      return `Student: ${name}\nClass: ${grade}\nTerm: ${term}\nAverage: ${avg}\nPosition in class: ${position}\nAttendance: ${attendance}\n\nTeacher notes / raw comments:\n${input}\n\nWrite the term summary.`;
+    },
+    maxTokens: 350,
   },
   lms_bulk_parse: {
     kind: "lms_bulk_parse",

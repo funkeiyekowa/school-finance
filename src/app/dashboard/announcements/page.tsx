@@ -130,6 +130,20 @@ export default function AnnouncementsPage() {
                       >
                         <Printer size={11} /> Print
                       </button>
+                      <button
+                        onClick={() => {
+                          const params = new URLSearchParams({
+                            title: ann.title,
+                            body: ann.body,
+                            target: ann.target,
+                          });
+                          window.open(`/dashboard/parents/notify?${params.toString()}`, "_blank");
+                        }}
+                        className="text-xs text-[#0F2A47] hover:text-[#C9A227] flex items-center gap-1 border border-gray-200 hover:border-[#C9A227] px-2 py-1 rounded"
+                        title="Send this announcement to every relevant parent via SMS / WhatsApp / email"
+                      >
+                        <Send size={11} /> Broadcast
+                      </button>
                       {ann.published ? (
                         <span className="text-[10px] font-bold text-green-700 bg-green-50 px-2 py-1 rounded">Published</span>
                       ) : canEdit ? (

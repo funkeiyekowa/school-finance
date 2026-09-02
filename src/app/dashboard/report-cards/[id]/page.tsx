@@ -194,12 +194,16 @@ export default function ReportCardDetailPage() {
                 {isAdmin && !rc.published && (
                   <AiAssistButton
                     compact
-                    kinds={["class_teacher_comment", "polish", "rewrite_encouraging", "rewrite_positive", "shorten"]}
+                    kinds={["student_term_summary", "class_teacher_comment", "polish", "rewrite_encouraging", "rewrite_positive", "shorten"]}
                     currentValue={teacherComment}
                     extra={{
                       student_name: student.full_name,
+                      grade: student.grade ?? "",
+                      term: rc.term,
+                      average: `${Number(rc.average_score).toFixed(1)}%`,
                       average_score: `${Number(rc.average_score).toFixed(1)}%`,
                       position: rc.position_in_class ? `${rc.position_in_class} of ${rc.class_size ?? "?"}` : "",
+                      attendance: rc.attendance_total > 0 ? `${rc.attendance_present} / ${rc.attendance_total} days` : "",
                     }}
                     onApply={(text) => setTeacherComment(text)}
                     source="report_card_teacher_comment"

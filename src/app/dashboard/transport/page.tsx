@@ -441,6 +441,13 @@ export default function TransportPage() {
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-right space-x-2">
+                      <button
+                        onClick={() => window.open(`/dashboard/transport/routes/${r.id}/roster`, "_blank")}
+                        className="text-xs text-[#0F2A47] hover:text-[#C9A227]"
+                        title="Print roster for this route"
+                      >
+                        Print
+                      </button>
                       {canEdit && <>
                         <button onClick={() => openRouteForm(r)} className="text-xs text-[#0F2A47] hover:underline">Edit</button>
                         <button onClick={() => deleteRoute(r)} className="text-xs text-red-600 hover:underline">Delete</button>
