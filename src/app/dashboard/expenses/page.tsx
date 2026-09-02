@@ -14,7 +14,7 @@ import { Modal } from "@/components/ui/Modal";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { useToast } from "@/lib/hooks/useToast";
-import { Plus, Search, Download, CheckCircle, Circle, TrendingDown } from "lucide-react";
+import { Plus, Search, Download, CheckCircle, Circle, TrendingDown, Printer } from "lucide-react";
 import type { ExpenseEntry, Vendor } from "@/lib/types";
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "@/lib/types";
 
@@ -174,10 +174,17 @@ export default function ExpensesPage() {
                       <td className="px-4 py-3 text-gray-600">{entry.payment_method}</td>
                       <td className="px-4 py-3 text-gray-600">{entry.approved_by || "—"}</td>
                       <td className="px-4 py-3 text-right font-bold text-red-700">{fmtMoney(entry.amount)}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 space-x-2">
                         <button onClick={() => toggleReconcile(entry)}
-                          className="text-gray-400 hover:text-[#0F2A47] transition-colors">
+                          className="text-gray-400 hover:text-[#0F2A47] transition-colors align-middle" title={entry.reconciled ? "Reconciled" : "Mark reconciled"}>
                           {entry.reconciled ? <CheckCircle size={16} className="text-green-600" /> : <Circle size={16} />}
+                        </button>
+                        <button
+                          onClick={() => window.open(`/dashboard/expenses/${entry.id}/voucher`, "_blank")}
+                          className="text-gray-400 hover:text-[#C9A227] transition-colors align-middle"
+                          title="Print voucher"
+                        >
+                          <Printer size={16} />
                         </button>
                       </td>
                     </tr>

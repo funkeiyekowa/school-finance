@@ -5,12 +5,13 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useToast } from "@/lib/hooks/useToast";
 import { cn } from "@/lib/utils";
+import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, AlertTriangle, Save, CalendarClock, Printer } from "lucide-react";
+import { Plus, AlertTriangle, Save, CalendarClock, Printer, UploadCloud } from "lucide-react";
 
 interface ClassRow { id: string; name: string; }
 interface SubjectRow { id: string; name: string; short_code: string; }
@@ -42,6 +43,7 @@ export default function TimetablePage() {
   const [conflict, setConflict] = useState<string | null>(null);
   const [editEntry, setEditEntry] = useState<EntryRow | null>(null);
   const [form, setForm] = useState({ subject_id: "", teacher_name: "", room: "", period_id: "", day_of_week: "1" });
+  const [showBulk, setShowBulk] = useState(false);
 
   const load = useCallback(async () => {
     const [clsRes, subRes, perRes, entRes] = await Promise.all([
@@ -205,6 +207,11 @@ export default function TimetablePage() {
               >
                 <Printer size={14} /> Print timetable
               </Button>
+              {canEdit && (
+                <Button size="sm" variant="secondary" onClick={() => setShowBulk(true)} disabled={!selectedClassId}>
+                  <UploadCloud size={14} /> Bulk import
+                </Button>
+              )}
             </div>
           </div>
         </CardContent>
@@ -339,6 +346,56 @@ export default function TimetablePage() {
         </Modal>
       )}
       <ToastHost />
+    
+      <BulkImportModal
+        open={showBulk}
+        onClose={() => setShowBulk(false)}
+        title="Bulk import timetable entries"
+        columns={[
+          { key: "day_of_week", label: "Day", required: true, hint: "1=Mon .. 5=Fri", transform: (raw) => Number(raw) || 0 },
+          { key: "period", label: "Period", required: true, hint: "short_code of the period (e.g. P1)" },
+          { key: "subject", label: "Subject", required: true, hint: "subject short_code or name" },
+          { key: "teacher_name", label: "Teacher" },
+          { key: "room", label: "Room" },
+        ]}
+        example={{
+          day_of_week: "1",
+          period: "P1",
+          subject: "MTH",
+          teacher_name: "Ms. Adaobi",
+          room: "Room 12",
+        }}
+        onImport={async (rows) => {
+          if (!orgId || !selectedClassId) return { ok: false, message: "Select a class first." };
+          const periodByCode = new Map(periods.map(p => [p.short_code.toLowerCase(), p]));
+          const subjectByCode = new Map(subjects.map(s => [s.short_code.toLowerCase(), s]));
+          const subjectByName = new Map(subjects.map(s => [s.name.toLowerCase(), s]));
+          const errs: string[] = [];
+          const payload: Record<string, unknown>[] = [];
+          for (const r of rows) {
+            const p = periodByCode.get(String(r.period).toLowerCase());
+            const s = subjectByCode.get(String(r.subject).toLowerCase()) ?? subjectByName.get(String(r.subject).toLowerCase());
+            if (!p) { errs.push(`Unknown period: ${r.period}`); continue; }
+            if (!s) { errs.push(`Unknown subject: ${r.subject}`); continue; }
+            if (p.is_break) { errs.push(`Period ${r.period} is a break — cannot assign a subject.`); continue; }
+            payload.push({
+              organization_id: orgId,
+              class_id: selectedClassId,
+              period_id: p.id,
+              subject_id: s.id,
+              teacher_name: r.teacher_name || null,
+              room: r.room || null,
+              day_of_week: Number(r.day_of_week),
+            });
+          }
+          if (errs.length > 0) return { ok: false, errors: errs.slice(0, 20) };
+          if (payload.length === 0) return { ok: false, message: "Nothing to import." };
+          const { error } = await supabase.from("timetable_entries").upsert(payload, { onConflict: "class_id,day_of_week,period_id" });
+          if (error) return { ok: false, message: error.message };
+          await load();
+          return { ok: true, message: `Imported ${payload.length} entry(ies).` };
+        }}
+      />
     </div>
   );
 }
