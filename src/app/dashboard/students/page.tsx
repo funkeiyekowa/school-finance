@@ -220,6 +220,14 @@ function StudentsPageInner() {
           >
             <Printer size={14} /> Class list
           </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => window.open(`/dashboard/students/id-cards${filterGrade ? `?class=${encodeURIComponent(filterGrade)}` : ""}`, "_blank")}
+            title="Printable student ID cards"
+          >
+            <Printer size={14} /> ID cards
+          </Button>
           {canEdit && (
             <>
               <Button size="sm" variant="secondary" onClick={() => setShowImport(true)}>
