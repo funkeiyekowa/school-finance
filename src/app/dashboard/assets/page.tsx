@@ -470,6 +470,15 @@ export default function AssetsPage() {
             <Printer size={16} /> Depreciation report
           </Button>
         )}
+        {tab === "maintenance" && (
+          <Button
+            variant="secondary"
+            onClick={() => window.open("/dashboard/assets/maintenance-report", "_blank")}
+            title="Printable maintenance history + upcoming schedule"
+          >
+            <Printer size={16} /> Maintenance report
+          </Button>
+        )}
         {canEdit && tab === "register" && (
           <>
             <Button variant="secondary" onClick={() => setShowImport(true)}><Upload size={16} /> Bulk Import</Button>

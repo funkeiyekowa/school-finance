@@ -11,6 +11,7 @@
  */
 
 import { useState, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { Sparkles, X, Loader2, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateWithAi } from "@/lib/ai/client";
@@ -18,6 +19,7 @@ import { generateWithAi } from "@/lib/ai/client";
 interface Turn { role: "user" | "ai"; text: string; }
 
 export function AiAssistantFab() {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
@@ -37,7 +39,7 @@ export function AiAssistantFab() {
           "Answer briefly and practically. If the user asks 'how do I…', point to the correct dashboard section and steps. " +
           "You do not have access to live school data — if they ask about a specific number, tell them where to look for it. " +
           "Use British English.\n\n" +
-          "USER QUESTION:\n" + question,
+          `Current page: ${pathname ?? "/"}\n\nUSER QUESTION:\n${question}`,
         source: "ai_fab",
       });
       setTurns(t => [...t, { role: "ai", text: result.output }]);
@@ -46,7 +48,7 @@ export function AiAssistantFab() {
     } finally {
       setBusy(false);
     }
-  }, [q, busy]);
+  }, [q, busy, pathname]);
 
   return (
     <>
