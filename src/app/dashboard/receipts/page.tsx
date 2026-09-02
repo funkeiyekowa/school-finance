@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
-import { Search, Receipt, Download } from "lucide-react";
+import { Search, Receipt, Download, Printer } from "lucide-react";
 import type { IncomeEntry, SchoolSettings } from "@/lib/types";
 
 export default function ReceiptsPage() {
@@ -108,6 +108,18 @@ export default function ReceiptsPage() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader title="Receipts" subtitle="View and download payment receipts">
+        <button
+          onClick={() => {
+            const ids = filtered.map((e) => e.id).join(",");
+            if (!ids) return;
+            window.open(`/dashboard/receipts/bulk-print?ids=${ids}`, "_blank");
+          }}
+          className="text-xs font-semibold text-[#0F2A47] hover:text-[#C9A227] border border-gray-200 hover:border-[#C9A227] px-2.5 py-1.5 rounded-lg flex items-center gap-1"
+          disabled={filtered.length === 0}
+          title="Batch-print every filtered receipt as one PDF"
+        >
+          <Printer size={13} /> Print batch
+        </button>
         <span className="text-sm text-gray-400">{entries.length} receipts total</span>
       </PageHeader>
 

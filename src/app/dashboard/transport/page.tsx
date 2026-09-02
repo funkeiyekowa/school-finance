@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/context/AuthContext";
 import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtMoney, cn } from "@/lib/utils";
+import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { SetupHero } from "@/components/ui/SetupHero";
 import { exportRowsAsCsv } from "@/lib/export/csv";
@@ -13,7 +14,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, Save, Bus, Search, Route as RouteIcon, Users, Download } from "lucide-react";
+import { Plus, Save, Bus, Search, Route as RouteIcon, Users, Download, UploadCloud } from "lucide-react";
 
 interface VehicleRow {
   id: string;
@@ -228,6 +229,7 @@ export default function TransportPage() {
   const [savingAssign, setSavingAssign] = useState(false);
   const emptyAssignForm = { student_id: "", route_id: "", pickup_point: "", drop_off_point: "" };
   const [assignForm, setAssignForm] = useState(emptyAssignForm);
+  const [showBulkAssign, setShowBulkAssign] = useState(false);
 
   function openAssignForm() {
     setAssignForm(emptyAssignForm);
@@ -307,6 +309,7 @@ export default function TransportPage() {
         )}
         {canEdit && tab === "vehicles" && <Button variant="gold" onClick={() => openVehicleForm()}><Plus size={14} /> Add Vehicle</Button>}
         {canEdit && tab === "routes" && <Button variant="gold" onClick={() => openRouteForm()}><Plus size={14} /> Add Route</Button>}
+        {canEdit && tab === "riders" && <Button variant="secondary" onClick={() => setShowBulkAssign(true)}><UploadCloud size={14} /> Bulk assign</Button>}
         {canEdit && tab === "riders" && <Button variant="gold" onClick={openAssignForm}><Plus size={14} /> Assign Student</Button>}
       </PageHeader>
 
@@ -614,6 +617,54 @@ export default function TransportPage() {
       )}
 
       <ToastHost />
+    
+      <BulkImportModal
+        open={showBulkAssign}
+        onClose={() => setShowBulkAssign(false)}
+        title="Bulk-assign students to routes"
+        columns={[
+          { key: "student_code", label: "Student code", required: true },
+          { key: "route_code", label: "Route code", required: true },
+          { key: "pickup_point", label: "Pickup point" },
+          { key: "drop_off_point", label: "Drop-off point" },
+          { key: "start_date", label: "Start date", hint: "YYYY-MM-DD" },
+        ]}
+        example={{
+          student_code: "STU001",
+          route_code: "R-01",
+          pickup_point: "Bus Stop A",
+          drop_off_point: "School Gate",
+          start_date: new Date().toISOString().slice(0, 10),
+        }}
+        onImport={async (rows) => {
+          if (!orgId) return { ok: false, message: "No org context" };
+          const studentByCode = new Map(students.map((s) => [s.student_code, s]));
+          const routeByCode = new Map(routes.map((r) => [r.route_code, r]));
+          const errs: string[] = [];
+          const payload: Record<string, unknown>[] = [];
+          for (const r of rows) {
+            const stu = studentByCode.get(String(r.student_code));
+            const rt = routeByCode.get(String(r.route_code));
+            if (!stu) { errs.push(`Unknown student code: ${r.student_code}`); continue; }
+            if (!rt) { errs.push(`Unknown route code: ${r.route_code}`); continue; }
+            payload.push({
+              organization_id: orgId,
+              student_id: stu.id,
+              route_id: rt.id,
+              pickup_point: r.pickup_point || null,
+              drop_off_point: r.drop_off_point || null,
+              start_date: r.start_date || null,
+              status: "active",
+            });
+          }
+          if (errs.length > 0) return { ok: false, errors: errs.slice(0, 20) };
+          if (payload.length === 0) return { ok: false, message: "Nothing to assign." };
+          const { error } = await supabase.from("transport_student_assignments").insert(payload);
+          if (error) return { ok: false, message: error.message };
+          load();
+          return { ok: true, message: `Assigned ${payload.length} student(s).` };
+        }}
+      />
     </div>
   );
 }
