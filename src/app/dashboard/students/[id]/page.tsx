@@ -257,6 +257,13 @@ h1{font-size:18px;margin-bottom:4px;}
           <Printer size={13} /> Enrolment certificate
         </button>
         <button
+          onClick={() => window.open(`/dashboard/students/${student.id}/welcome-pack`, "_blank")}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[#C9A227] hover:text-[#a58a1f] border border-[#C9A227]/40 hover:border-[#C9A227] px-3 py-1.5 rounded-lg"
+          title="Admission letter + fee schedule + calendar in one PDF — hand to the family at admission"
+        >
+          <Printer size={13} /> Welcome pack
+        </button>
+        <button
           onClick={async () => {
             setBriefOpen(true);
             setAiBrief(null);
