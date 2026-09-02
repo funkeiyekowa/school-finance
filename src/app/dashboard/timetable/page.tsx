@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, AlertTriangle, Save, CalendarClock } from "lucide-react";
+import { Plus, AlertTriangle, Save, CalendarClock, Printer } from "lucide-react";
 
 interface ClassRow { id: string; name: string; }
 interface SubjectRow { id: string; name: string; short_code: string; }
@@ -195,6 +195,17 @@ export default function TimetablePage() {
                 {classEntries.length} entries scheduled
               </span>
             )}
+            <div className="ml-auto pb-1">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => selectedClassId && window.open(`/dashboard/timetable/print?class=${selectedClassId}`, "_blank")}
+                disabled={!selectedClassId}
+                title="Open a printable, letter-headed timetable for this class"
+              >
+                <Printer size={14} /> Print timetable
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

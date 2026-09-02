@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Save, CheckCircle2, Users, ClipboardCheck } from "lucide-react";
+import { Save, CheckCircle2, Users, ClipboardCheck, Printer } from "lucide-react";
 
 interface ClassRow { id: string; name: string; short_code: string; sequence: number; }
 interface StatusRow { id: string; code: string; label: string; color: string; counts_as_present: boolean; is_default: boolean; sort_order: number; }
@@ -219,7 +219,7 @@ export default function AttendancePage() {
               </select>
             </div>
             {selectedClassId && students.length > 0 && (
-              <div className="flex items-center gap-2 ml-auto">
+              <div className="flex items-center gap-2 ml-auto flex-wrap">
                 <span className="text-xs text-gray-500">Quick:</span>
                 {statuses.map(s => (
                   <button key={s.code} onClick={() => markAll(s.code)}
@@ -228,6 +228,20 @@ export default function AttendancePage() {
                     All {s.label}
                   </button>
                 ))}
+                <button
+                  onClick={() => window.open(`/dashboard/attendance/print?class=${selectedClassId}&date=${selectedDate}&mode=blank`, "_blank")}
+                  className="px-2 py-1 rounded text-[10px] font-bold border border-[#0F2A47] text-[#0F2A47] hover:bg-gray-50 flex items-center gap-1"
+                  title="Open a printable blank weekly register on your school's letterhead"
+                >
+                  <Printer size={10} /> Blank register
+                </button>
+                <button
+                  onClick={() => window.open(`/dashboard/attendance/print?class=${selectedClassId}&date=${selectedDate}&mode=marked`, "_blank")}
+                  className="px-2 py-1 rounded text-[10px] font-bold border border-[#0F2A47] text-[#0F2A47] hover:bg-gray-50 flex items-center gap-1"
+                  title="Open a printable copy of today's marked register"
+                >
+                  <Printer size={10} /> Marked
+                </button>
               </div>
             )}
           </div>
