@@ -5,12 +5,13 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { fmtMoney, fmtDateTime } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
+import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare, Pencil, Mail, RefreshCw, CheckCircle2, AlertTriangle, FlaskConical, GraduationCap, Rocket } from "lucide-react";
+import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare, Pencil, Mail, RefreshCw, CheckCircle2, AlertTriangle, FlaskConical, GraduationCap, Rocket, UploadCloud } from "lucide-react";
 import type { FeeSchedule, SchoolSettings } from "@/lib/types";
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES } from "@/lib/types";
 
@@ -150,10 +151,11 @@ function SchoolSettingsTab() {
 
 function FeeScheduleTab() {
   const supabase = createClient();
-  const { profile } = useAuth();
+  const { profile, orgId } = useAuth();
   const [fees, setFees] = useState<FeeSchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -183,11 +185,53 @@ function FeeScheduleTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={() => setShowBulk(true)}>
+          <UploadCloud size={14} /> Bulk import
+        </Button>
         <Button onClick={() => setShowAdd(true)}>
           <Plus size={14} /> Add Fee
         </Button>
       </div>
+      <BulkImportModal
+        open={showBulk}
+        onClose={() => setShowBulk(false)}
+        title="Bulk import fee schedules"
+        columns={[
+          { key: "name", label: "Fee name", required: true },
+          { key: "category", label: "Category" },
+          { key: "grade", label: "Grade / class (blank = all)" },
+          { key: "term", label: "Term" },
+          { key: "academic_year", label: "Academic year" },
+          { key: "amount", label: "Amount", required: true, transform: (raw) => Number(raw) },
+        ]}
+        example={{
+          name: "Tuition",
+          category: "Tuition",
+          grade: "JSS 1",
+          term: "Term 1",
+          academic_year: "2025/2026",
+          amount: "150000",
+        }}
+        onImport={async (rows) => {
+          if (!orgId) return { ok: false, message: "No org context" };
+          const payload = rows.map(r => ({
+            organization_id: orgId,
+            name: r.name,
+            category: r.category || null,
+            grade: r.grade || null,
+            term: r.term || null,
+            academic_year: r.academic_year || null,
+            amount: r.amount,
+            active: true,
+            created_by: profile?.full_name ?? null,
+          }));
+          const { error } = await supabase.from("fee_schedules").insert(payload);
+          if (error) return { ok: false, message: error.message };
+          load();
+          return { ok: true, message: `Imported ${payload.length} fee schedule(s).` };
+        }}
+      />
       {loading ? <LoadingSpinner /> : (
         <Card>
           <div className="overflow-x-auto">

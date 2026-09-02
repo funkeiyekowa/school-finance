@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { cn } from "@/lib/utils";
+import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -37,6 +38,7 @@ export default function AssessmentsPage() {
 
   // Editable scores: student_id → { type_id → score }
   const [editScores, setEditScores] = useState<Record<string, Record<string, string>>>({});
+  const [showBulk, setShowBulk] = useState(false);
 
   const loadBase = useCallback(async () => {
     const [clsRes, subRes, typRes, grdRes] = await Promise.all([
@@ -253,6 +255,15 @@ export default function AssessmentsPage() {
                 >
                   <Printer size={12} /> Print score sheet
                 </button>
+                {canEdit && (
+                  <button
+                    onClick={() => setShowBulk(true)}
+                    className="text-xs font-semibold text-[#0F2A47] hover:text-[#C9A227] border border-gray-200 hover:border-[#C9A227] px-2.5 py-1 rounded-lg flex items-center gap-1"
+                    title="Upload a CSV / Excel of scores in one go"
+                  >
+                    <Printer size={12} /> Bulk import scores
+                  </button>
+                )}
               </div>
             </div>
           </CardHeader>
@@ -361,6 +372,56 @@ export default function AssessmentsPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+    
+      {showBulk && (
+        <BulkImportModal
+          open={showBulk}
+          onClose={() => setShowBulk(false)}
+          title={`Bulk import scores — ${selectedTerm}`}
+          columns={[
+            { key: "student_code", label: "Student code", required: true },
+            ...types.map(t => ({ key: t.short_code.toLowerCase(), label: `${t.short_code} (/${t.max_score})`, transform: (raw: string) => raw === "" ? null : Number(raw) })),
+          ]}
+          example={Object.fromEntries([
+            ["student_code", students[0]?.student_code ?? "STU001"],
+            ...types.map(t => [t.short_code.toLowerCase(), String(Math.min(t.max_score, 15))]),
+          ])}
+          onImport={async (rows) => {
+            if (!orgId || !selectedClassId || !selectedSubjectId) return { ok: false, message: "Select class + subject first." };
+            const errs: string[] = [];
+            const studentByCode = new Map(students.map(s => [s.student_code, s]));
+            const inserts: Record<string, unknown>[] = [];
+            for (const r of rows) {
+              const code = String(r.student_code ?? "").trim();
+              const stu = studentByCode.get(code);
+              if (!stu) { errs.push(`Unknown student code: ${code}`); continue; }
+              for (const t of types) {
+                const raw = r[t.short_code.toLowerCase()];
+                if (raw == null || raw === "") continue;
+                const num = Number(raw);
+                if (!Number.isFinite(num)) { errs.push(`Bad score for ${code} / ${t.short_code}`); continue; }
+                if (num < 0 || num > t.max_score) { errs.push(`${code} / ${t.short_code}: ${num} is out of 0-${t.max_score}`); continue; }
+                inserts.push({
+                  organization_id: orgId,
+                  student_id: stu.id,
+                  class_id: selectedClassId,
+                  subject_id: selectedSubjectId,
+                  assessment_type_id: t.id,
+                  term: selectedTerm,
+                  score: num,
+                  entered_by: profile?.full_name ?? null,
+                });
+              }
+            }
+            if (errs.length > 0) return { ok: false, errors: errs.slice(0, 20) };
+            if (inserts.length === 0) return { ok: false, message: "Nothing to import." };
+            const { error } = await supabase.from("student_scores").upsert(inserts, { onConflict: "student_id,subject_id,assessment_type_id,term,class_id" });
+            if (error) return { ok: false, message: error.message };
+            await loadScores();
+            return { ok: true, message: `Saved ${inserts.length} score row(s) for ${rows.length} student(s).` };
+          }}
+        />
       )}
     </div>
   );

@@ -8,7 +8,7 @@ import { fmtMoney, cn } from "@/lib/utils";
 import { PageHeader, KpiCard, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { TrendingUp, TrendingDown, Users, GraduationCap, Award, DollarSign, ChevronDown, ChevronRight, BarChart3, PieChart as PieIcon, Activity, Clock, BookOpen, FileBarChart } from "lucide-react";
+import { TrendingUp, TrendingDown, Users, GraduationCap, Award, DollarSign, ChevronDown, ChevronRight, BarChart3, PieChart as PieIcon, Activity, Clock, BookOpen, FileBarChart, Sparkles } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, PieChart, Pie, Cell, Legend, AreaChart, Area } from "@/components/charts/LazyRecharts";
 
 interface Student { id: string; full_name: string; grade: string | null; status: string; gender: string | null; }
@@ -64,6 +64,40 @@ export default function AnalyticsPage() {
   }, [supabase]);
 
   useEffect(() => { load(); }, [load]);
+
+  const [aiDigest, setAiDigest] = useState<string | null>(null);
+  const [aiDigestLoading, setAiDigestLoading] = useState(false);
+  const [showAiDigest, setShowAiDigest] = useState(false);
+
+  async function generateDigest() {
+    setShowAiDigest(true);
+    setAiDigestLoading(true);
+    setAiDigest(null);
+    try {
+      const { generateWithAi } = await import("@/lib/ai/client");
+      const snapshot = {
+        active_students: kpis.students,
+        total_revenue: kpis.revenue,
+        total_expenses: kpis.expenses,
+        net_position: kpis.net,
+        attendance_rate_pct: kpis.attendance,
+        recent_months: monthlyFinance.slice(-3).map(m => ({
+          month: m.month, income: m.income, expense: m.expense, net: m.net,
+        })),
+      };
+      const result = await generateWithAi({
+        kind: "analytics_digest",
+        input: JSON.stringify(snapshot),
+        source: "analytics_digest",
+      });
+      setAiDigest(result.output);
+    } catch (err) {
+      setAiDigest(err instanceof Error ? err.message : "AI digest failed.");
+    } finally {
+      setAiDigestLoading(false);
+    }
+  }
+
 
   const kpis = useMemo(() => {
     const totalRev = incomes.reduce((s, i) => s + Number(i.amount), 0);
@@ -170,7 +204,34 @@ export default function AnalyticsPage() {
       <PageHeader
         title="Analytics"
         subtitle="Whole-application performance snapshot — click any chart section to drill down"
-      />
+      >
+        <Button size="sm" variant="secondary" onClick={generateDigest}>
+          <Sparkles size={13} /> AI digest
+        </Button>
+      </PageHeader>
+
+      {showAiDigest && (
+        <div className="rounded-xl border-2 border-purple-200 bg-purple-50/50 p-4 relative">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} className="text-purple-600" />
+              <h3 className="text-sm font-bold text-purple-900">AI Executive Digest</h3>
+            </div>
+            <button onClick={() => setShowAiDigest(false)} className="text-purple-400 hover:text-purple-700 text-xs">Close</button>
+          </div>
+          {aiDigestLoading ? (
+            <p className="text-xs text-gray-500 italic">Analysing your numbers…</p>
+          ) : (
+            <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+              {aiDigest ? aiDigest.split("\n").map((line, i) => {
+                const m = line.match(/^\*\*([^*]+)\*\*(.*)/);
+                if (m) return <p key={i} className="mt-3"><strong className="text-[#0F2A47]">{m[1]}</strong>{m[2]}</p>;
+                return <p key={i} className="mt-1">{line}</p>;
+              }) : ""}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <KpiCard label="Active Students" value={String(kpis.students)} icon={<GraduationCap size={18} />} colorClass="text-blue-700" />

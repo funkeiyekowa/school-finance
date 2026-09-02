@@ -32,7 +32,8 @@ export type AiTaskKind =
   | "lms_grading_assist"
   | "lms_course_outline"
   | "lms_bulk_parse"
-  | "student_term_summary";
+  | "student_term_summary"
+  | "analytics_digest";
 
 export interface AiPreset {
   kind: AiTaskKind;
@@ -204,6 +205,14 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
       return `Assignment instructions:\n${instructions}\n\nMax score: ${maxScore}\n\nStudent's response:\n${input}\n\nSuggest a score and feedback as the specified JSON.`;
     },
     maxTokens: 400,
+  },
+  analytics_digest: {
+    kind: "analytics_digest",
+    label: "Draft an executive analytics digest",
+    description: "Turn a JSON snapshot of the school's KPIs into a warm, plain-English digest a principal can share.",
+    system: `${CORE_STYLE} You are drafting a short executive digest for a school principal, from the KPI snapshot they provide as JSON. Write 4-6 short paragraphs, each with a bold-tagged section header ("**Enrolment**", "**Finance**", "**Attendance**", "**Academics**", "**Attention needed**", "**Next step**") followed by 1-3 sentences of specific observations grounded strictly in the numbers given. Compare to prior period when the JSON supplies one. Do NOT invent data. Close with 1-2 concrete suggested actions for this week. Use British English and warm, direct tone. Return the digest text only.`,
+    compose: (input) => `KPI snapshot:\n${input}\n\nWrite the executive digest.`,
+    maxTokens: 800,
   },
   student_term_summary: {
     kind: "student_term_summary",
