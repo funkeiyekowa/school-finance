@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, BookOpen, FileText, Save, Trash2, Upload, Link2, Copy, Pencil } from "lucide-react";
+import { Plus, BookOpen, FileText, Save, Trash2, Upload, Link2, Copy, Pencil, Sparkles, Loader2 } from "lucide-react";
 
 interface SubjectRow { id: string; name: string; short_code: string; }
 interface ClassRow { id: string; name: string; }
@@ -70,6 +70,76 @@ export default function CbtPage() {
   const [bulkSubjectId, setBulkSubjectId] = useState("");
   const [bulkUploading, setBulkUploading] = useState(false);
   const [bulkResult, setBulkResult] = useState<string | null>(null);
+  const [bulkExtracting, setBulkExtracting] = useState(false);
+  const [bulkAiParsing, setBulkAiParsing] = useState(false);
+
+  async function handleBulkFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBulkExtracting(true);
+    try {
+      const { extractContent } = await import("@/lib/import/docParser");
+      const rc = await extractContent(file);
+      if (rc.kind === "csv" || rc.kind === "xlsx") {
+        // If the file already has a CSV/xlsx table with a header row, load
+        // it in a form the existing CSV parser accepts.
+        if (rc.rows.length > 0) {
+          const csvLines = rc.rows.map(r => r.map(c => c.includes(",") || c.includes('"') || c.includes("\n") ? `"${c.replace(/"/g, '""')}"` : c).join(",")).join("\n");
+          setBulkCsv(csvLines);
+        } else {
+          setBulkCsv(rc.text);
+        }
+      } else {
+        // Free text — keep raw and offer "AI parse" button
+        setBulkCsv(rc.text);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not read file");
+    } finally {
+      setBulkExtracting(false);
+    }
+  }
+
+  async function bulkAiParse() {
+    if (!bulkCsv.trim()) return;
+    setBulkAiParsing(true);
+    try {
+      const { generateWithAi } = await import("@/lib/ai/client");
+      const result = await generateWithAi({
+        kind: "lms_quiz_generate",
+        input: bulkCsv.slice(0, 15000),
+        extra: { question_count: "20" },
+        source: "cbt_bulk_ai_parse",
+      });
+      let cleaned = result.output.trim();
+      if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```(?:json)?/, "").replace(/```$/, "").trim();
+      const parsed = JSON.parse(cleaned) as { questions: { question_text: string; options: { id: string; text: string; is_correct: boolean }[]; explanation?: string }[] };
+      // Convert to CSV rows the existing uploader understands.
+      const header = "question_type,question_text,option_a,option_b,option_c,option_d,correct_option,answer_text,difficulty,marks,topic,explanation,case_sensitive,matching_pairs";
+      const rows = [header];
+      for (const q of parsed.questions) {
+        const opts = q.options ?? [];
+        const a = opts[0]?.text ?? "";
+        const b = opts[1]?.text ?? "";
+        const c = opts[2]?.text ?? "";
+        const d = opts[3]?.text ?? "";
+        const correctIdx = opts.findIndex(o => o.is_correct);
+        const correct = ["A", "B", "C", "D"][correctIdx] ?? "A";
+        const esc = (s: string) => `"${(s ?? "").replace(/"/g, '""')}"`;
+        rows.push([
+          "multiple_choice", esc(q.question_text), esc(a), esc(b), esc(c), esc(d),
+          correct, "", "medium", "1", "", esc(q.explanation ?? ""), "false", "",
+        ].join(","));
+      }
+      setBulkCsv(rows.join("\n"));
+      setBulkResult(`AI extracted ${parsed.questions.length} question${parsed.questions.length === 1 ? "" : "s"} — review and click Upload.`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "AI parse failed");
+    } finally {
+      setBulkAiParsing(false);
+    }
+  }
+
 
   // Exam form (create + edit)
   const [showExamForm, setShowExamForm] = useState(false);
@@ -613,11 +683,22 @@ export default function CbtPage() {
         <Modal open onClose={() => { setShowBulkForm(false); setBulkResult(null); }} title="Bulk Upload Questions" size="lg">
           <div className="space-y-4">
             <p className="text-sm text-gray-600">Upload multiple questions at once using CSV format. Download the template, fill it in, then paste the contents below.</p>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <Button size="sm" variant="secondary" onClick={downloadTemplate}><Upload size={14} /> Download Template</Button>
+              <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-[#0F2A47] hover:bg-gray-50 text-xs font-medium">
+                {bulkExtracting ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                Upload file (.docx / .xlsx / .csv / .txt)
+                <input type="file" className="hidden" accept=".docx,.xlsx,.xls,.csv,.md,.txt" onChange={handleBulkFileUpload} />
+              </label>
+              <Button size="sm" variant="secondary" loading={bulkAiParsing} onClick={bulkAiParse} disabled={!bulkCsv.trim()}>
+                <Sparkles size={13} /> AI extract questions
+              </Button>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Subject</label><select value={bulkSubjectId} onChange={e => setBulkSubjectId(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="">Any</option>{subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
             </div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Paste CSV content (with header row)</label><textarea rows={8} value={bulkCsv} onChange={e => setBulkCsv(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#C9A227]" placeholder={CSV_TEMPLATE} /></div>
+            <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900">
+              Upload a file to fill the box below automatically. If it&apos;s a CSV/Excel with the template columns, it uploads as-is. If it&apos;s a Word doc / notes / a curriculum PDF (paste it), click <strong>AI extract questions</strong> to convert to the template shape first.
+            </div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">CSV / source content</label><textarea rows={10} value={bulkCsv} onChange={e => setBulkCsv(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#C9A227]" placeholder={CSV_TEMPLATE} /></div>
             {bulkResult && <p className="text-sm font-medium text-green-700">{bulkResult}</p>}
             <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShowBulkForm(false)}>Cancel</Button><Button variant="gold" loading={bulkUploading} onClick={uploadBulk} disabled={!bulkCsv.trim()}><Upload size={14} /> Upload</Button></div>
           </div>

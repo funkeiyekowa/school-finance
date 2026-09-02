@@ -30,7 +30,8 @@ export type AiTaskKind =
   | "lms_lesson_generate"
   | "lms_quiz_generate"
   | "lms_grading_assist"
-  | "lms_course_outline";
+  | "lms_course_outline"
+  | "lms_bulk_parse";
 
 export interface AiPreset {
   kind: AiTaskKind;
@@ -202,6 +203,18 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
       return `Assignment instructions:\n${instructions}\n\nMax score: ${maxScore}\n\nStudent's response:\n${input}\n\nSuggest a score and feedback as the specified JSON.`;
     },
     maxTokens: 400,
+  },
+  lms_bulk_parse: {
+    kind: "lms_bulk_parse",
+    label: "Parse into course structure",
+    description: "Turn arbitrary lesson notes/curriculum text into strict {lessons:[{title,content,quiz:{questions:[...]}]}} JSON.",
+    system: `${CORE_STYLE} You extract course structure from teacher-supplied notes. Return ONLY valid JSON (no markdown fences, no commentary) matching exactly: {"course_description":"...","lessons":[{"title":"...","content":"...","estimated_minutes":15,"quiz":{"pass_mark_percent":50,"questions":[{"question_text":"...","options":[{"id":"a","text":"...","is_correct":true},{"id":"b","text":"...","is_correct":false},{"id":"c","text":"...","is_correct":false},{"id":"d","text":"...","is_correct":false}],"explanation":"..."}]}}]}. Rules: (1) course_description is 2-3 sentences summarising the whole material. (2) Each lesson.title is a concrete topic (5-9 words). (3) lesson.content is the full teacher-facing body of the lesson in plain paragraphs — DO NOT summarise; keep facts, examples and lists intact. Use ## headers, **bold** and bullet lists where the source used them. (4) estimated_minutes is your best estimate of how long the lesson takes. (5) EVERY lesson MUST have a quiz object with 3-5 multiple-choice questions grounded strictly in that lesson's content — no invented facts. Each question has exactly 4 options, exactly one is_correct true. explanation is 1-2 sentences on why. (6) If the source is a table/spreadsheet with a lesson-per-row shape (columns like title/topic/content/objective), preserve that mapping precisely. (7) If the source is prose, split it into logical lessons where a heading, "Lesson N", or a topic shift naturally divides the material — never merge unrelated topics. Do not add lessons the source did not describe. Do not exceed a reasonable amount of output — aim for 3-15 lessons unless the source clearly has more.`,
+    compose: (input, extra) => {
+      const subject = extra?.subject ?? "";
+      const grade = extra?.grade ?? "";
+      return `Subject: ${subject}\nClass/Grade: ${grade}\n\nSource material follows. Extract the course structure as the specified JSON.\n\n----- SOURCE START -----\n${input}\n----- SOURCE END -----`;
+    },
+    maxTokens: 6000,
   },
   lms_course_outline: {
     kind: "lms_course_outline",

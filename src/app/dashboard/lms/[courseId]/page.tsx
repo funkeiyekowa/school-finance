@@ -35,10 +35,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import {
-  ArrowLeft, Plus, Sparkles, BookOpen, HelpCircle, ClipboardList, Users,
-  Trash2, Pencil, Check, X as XIcon, Trophy, Loader2, Eye, EyeOff,
-} from "lucide-react";
+import { ArrowLeft, Plus, Sparkles, BookOpen, HelpCircle, ClipboardList, Users, Trash2, Pencil, Check, X as XIcon, Trophy, Loader2, Eye, EyeOff, UploadCloud } from "lucide-react";
 
 interface CourseRow {
   id: string; title: string; description: string | null; status: string;
@@ -647,6 +644,11 @@ export default function CourseDetailPage() {
               <Button variant="secondary" size="sm" onClick={() => setShowOutlineModal(true)}>
                 <Sparkles size={14} /> Generate outline
               </Button>
+              <Link href={`/dashboard/lms/${courseId}/import`}>
+                <Button variant="secondary" size="sm">
+                  <UploadCloud size={14} /> Mass import
+                </Button>
+              </Link>
             </div>
           )}
 
