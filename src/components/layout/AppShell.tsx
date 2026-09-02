@@ -15,7 +15,7 @@ import { SchoolBrandBar } from "@/components/layout/SchoolBrandBar";
 import ForcePasswordChange from "@/components/auth/ForcePasswordChange";
 import { CommandPalette, useNavCommandItems } from "@/components/ui/CommandPalette";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer } from "lucide-react";
+import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /* Navigation configuration                                           */
@@ -112,6 +112,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/students", label: "Students", icon: <GraduationCap size={17} />, feature: "students", module: "students" },
       { href: "/dashboard/attendance", label: "Attendance", icon: <Clock size={17} />, module: "attendance" },
       { href: "/dashboard/timetable", label: "Timetable", icon: <Clock size={17} />, module: "timetable" },
+      { href: "/dashboard/calendar", label: "Calendar", icon: <CalendarClock size={17} /> },
       { href: "/dashboard/assessments", label: "Assessments", icon: <FileBarChart size={17} />, module: "assessments" },
       { href: "/dashboard/cbt", label: "CBT / Exams", icon: <BookOpen size={17} />, module: "cbt" },
       { href: "/dashboard/report-cards", label: "Report Cards", icon: <FileBarChart size={17} />, module: "academics" },
