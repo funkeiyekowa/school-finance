@@ -20,6 +20,7 @@ import { resolveTheme, themeToCss, googleFontsHref } from "@/lib/website/theme";
 import { RenderSection, type SectionContext } from "@/components/website/sections";
 import type { PagePayload } from "@/lib/website/types";
 import { AlertTriangle, Loader2 } from "lucide-react";
+import { useAuth } from "@/lib/context/AuthContext";
 
 export default function DraftPreviewPage() {
   return (
@@ -33,6 +34,7 @@ function DraftPreviewInner() {
   const params = useSearchParams();
   const slug = params.get("page") ?? "";
   const supabase = useMemo(() => createClient(), []);
+  const { orgId } = useAuth();
 
   const [payload, setPayload] = useState<PagePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,12 +44,21 @@ function DraftPreviewInner() {
     setLoading(true);
     setError(null);
 
-    // Find this org's website first — the RPC needs its id.
-    const { data: siteRow, error: siteErr } = await supabase
-      .from("websites").select("id").maybeSingle();
+    // Find THIS org's website. Without the org filter a platform admin gets
+    // multiple rows via websites_public_read RLS and .maybeSingle() throws,
+    // which surfaced as a mystery "no website" blank page in the preview.
+    let siteQuery = supabase.from("websites").select("id");
+    if (orgId) siteQuery = siteQuery.eq("organization_id", orgId);
+    const { data: siteRow, error: siteErr } = await siteQuery.maybeSingle();
 
-    if (siteErr || !siteRow) {
-      setError("No website found for this school yet.");
+    if (siteErr) {
+      console.error("[DraftPreview] load websites failed", siteErr);
+      setError(`Could not load your website: ${siteErr.message}`);
+      setLoading(false);
+      return;
+    }
+    if (!siteRow) {
+      setError("No website found for this school yet. Create one first from the Website Studio.");
       setLoading(false);
       return;
     }
@@ -69,7 +80,7 @@ function DraftPreviewInner() {
       setPayload(data as PagePayload);
     }
     setLoading(false);
-  }, [supabase, slug]);
+  }, [supabase, slug, orgId]);
 
   useEffect(() => { load(); }, [load]);
 
