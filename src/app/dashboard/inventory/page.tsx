@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, Save, Package, Search, TrendingUp, TrendingDown } from "lucide-react";
+import { Plus, Save, Package, Search, TrendingUp, TrendingDown, Printer } from "lucide-react";
 
 interface ItemRow { id: string; name: string; item_code: string | null; category: string | null; unit: string; quantity_on_hand: number; reorder_level: number; unit_cost: number | null; location: string | null; }
 
@@ -111,6 +111,13 @@ export default function InventoryPage() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader title="Inventory" subtitle="Track stock items, quantities, and movements">
+        <Button
+          variant="secondary"
+          onClick={() => window.open("/dashboard/inventory/stocktake", "_blank")}
+          title="Open a printable stock-take sheet with observed count + variance columns"
+        >
+          <Printer size={14} /> Stock-take sheet
+        </Button>
         {canEdit && <Button variant="gold" onClick={() => openItemForm()}><Plus size={14} /> Add Item</Button>}
       </PageHeader>
 

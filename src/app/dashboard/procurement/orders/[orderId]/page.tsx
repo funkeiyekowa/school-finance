@@ -24,7 +24,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { ArrowLeft, Package, CheckCircle2, Truck, Building2 } from "lucide-react";
+import { ArrowLeft, Package, CheckCircle2, Truck, Building2, Printer } from "lucide-react";
 
 interface OrderRow {
   id: string; order_code: string; request_id: string | null; vendor_id: string | null; status: string;
@@ -171,6 +171,14 @@ export default function PurchaseOrderPage() {
           order.status === "partially_received" ? "bg-blue-100 text-blue-700" :
           order.status === "cancelled" ? "bg-gray-200 text-gray-500" : "bg-amber-100 text-amber-700"
         )}>{order.status.replace("_", " ")}</span>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => window.open(`/dashboard/procurement/orders/${orderId}/print`, "_blank")}
+          title="Open a printable purchase order on your school's letterhead"
+        >
+          <Printer size={14} /> Print PO
+        </Button>
         {canEdit && order.status === "draft" && (
           <Button variant="gold" size="sm" onClick={sendOrder} loading={updatingStatus}><Truck size={14} /> Mark Sent</Button>
         )}

@@ -21,10 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import {
-  Plus, Save, Users, Search, KeyRound, Mail, Phone, AlertTriangle,
-  ArrowUpDown, Download, X, User, Trash2,
-} from "lucide-react";
+import { Plus, Save, Users, Search, KeyRound, Mail, Phone, AlertTriangle, ArrowUpDown, Download, X, User, Trash2, MessageCircle } from "lucide-react";
 
 interface ParentRow {
   id: string;
@@ -291,6 +288,13 @@ export default function ParentsPage() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader title="Parents" subtitle="Contact details, emergency info and child linkage.">
+        <Button
+          variant="secondary"
+          onClick={() => window.open("/dashboard/parents/notify", "_blank")}
+          title="Compose one message, personalise it per parent, and reach every relevant family at once"
+        >
+          <MessageCircle size={14} /> Notify parents
+        </Button>
         <Button variant="ghost" onClick={exportCsv}><Download size={14} /> Export CSV</Button>
         {canEdit && <Button variant="gold" onClick={openNew}><Plus size={14} /> Add Parent</Button>}
       </PageHeader>

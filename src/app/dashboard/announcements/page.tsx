@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { AiAssistButton } from "@/components/ai/AiAssistButton";
-import { Plus, Save, Send, Bell } from "lucide-react";
+import { Plus, Save, Send, Bell, Printer } from "lucide-react";
 
 interface ClassRow { id: string; name: string; }
 interface AnnRow { id: string; title: string; body: string; target: string; target_class_id: string | null; priority: string; published: boolean; published_at: string | null; created_by: string | null; created_at: string; }
@@ -122,7 +122,14 @@ export default function AnnouncementsPage() {
                         By {ann.created_by} · {fmtDateTime(ann.published_at || ann.created_at)}
                       </div>
                     </div>
-                    <div className="shrink-0">
+                    <div className="shrink-0 flex items-center gap-2">
+                      <button
+                        onClick={() => window.open(`/dashboard/announcements/${ann.id}/print`, "_blank")}
+                        className="text-xs text-[#0F2A47] hover:text-[#C9A227] flex items-center gap-1 border border-gray-200 hover:border-[#C9A227] px-2 py-1 rounded"
+                        title="Open a printable, letterhead version of this announcement to send home"
+                      >
+                        <Printer size={11} /> Print
+                      </button>
                       {ann.published ? (
                         <span className="text-[10px] font-bold text-green-700 bg-green-50 px-2 py-1 rounded">Published</span>
                       ) : canEdit ? (
