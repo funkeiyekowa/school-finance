@@ -32,10 +32,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import {
-  Home, Plus, Users, BedDouble, DoorOpen, UserCheck, AlertTriangle,
-  Trash2, Pencil, LogOut, CheckCircle2, Download,
-} from "lucide-react";
+import { Home, Plus, Users, BedDouble, DoorOpen, UserCheck, AlertTriangle, Trash2, Pencil, LogOut, CheckCircle2, Download, Printer } from "lucide-react";
 
 interface HouseRow {
   id: string; name: string; gender: string; house_parent_staff_id: string | null;
@@ -510,12 +507,19 @@ export default function HostelPage() {
                             <p className="text-xs text-gray-400 mt-0.5">{houseRooms.length} room{houseRooms.length === 1 ? "" : "s"} · {occupiedBeds}/{totalBeds} beds occupied</p>
                           </div>
                         </div>
-                        {canEdit && (
-                          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => window.open(`/dashboard/hostel/houses/${h.id}/roster`, "_blank")}
+                            title="Print roster"
+                            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+                          >
+                            <Printer size={14} />
+                          </button>
+                          {canEdit && <>
                             <button onClick={() => openHouseForm(h)} title="Edit" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"><Pencil size={14} /></button>
                             <button onClick={() => closeHouse(h)} title="Close house" className="p-1.5 rounded-lg hover:bg-red-50 text-red-500"><Trash2 size={14} /></button>
-                          </div>
-                        )}
+                          </>}
+                        </div>
                       </div>
 
                       {expanded && (

@@ -154,6 +154,14 @@ export default function StudentFinancePage() {
           >
             <Printer size={14} /> Print statements
           </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => window.open("/dashboard/student-finance/class-report", "_blank")}
+            title="Printable class-by-class fee collection summary for management"
+          >
+            <Printer size={14} /> Class report
+          </Button>
           <Button size="sm" variant="secondary" onClick={exportDebtors}>
             <Download size={14} /> Export Debtors
           </Button>
