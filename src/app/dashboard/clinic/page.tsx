@@ -34,8 +34,8 @@ import { Modal } from "@/components/ui/Modal";
 import { Stethoscope, Plus, HeartPulse, Pill, Syringe, AlertTriangle, Trash2, Users, AlertCircle, CheckCircle2, Download, Printer, UploadCloud } from "lucide-react";
 
 /* ---------------- Types ---------------- */
-interface StudentOption { id: string; full_name: string; }
-interface StaffOption { id: string; full_name: string; }
+interface StudentOption { id: string; full_name: string; student_code?: string; }
+interface StaffOption { id: string; full_name: string; staff_code?: string; }
 
 interface PatientRow {
   id: string; subject_type: string; student_id: string | null; staff_id: string | null;
@@ -133,6 +133,7 @@ export default function ClinicPage() {
   const [medications, setMedications] = useState<MedicationRow[]>([]);
   const [vaccinations, setVaccinations] = useState<VaccinationRow[]>([]);
   const [showBulkMeds, setShowBulkMeds] = useState(false);
+  const [showBulkVac, setShowBulkVac] = useState(false);
   const [incidents, setIncidents] = useState<IncidentRow[]>([]);
   const [stats, setStats] = useState<Stats>({
     visits_today: 0, visits_this_week: 0, open_referrals: 0,
@@ -143,8 +144,8 @@ export default function ClinicPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const [stRes, sfRes, pRes, vRes, dRes, mRes, vacRes, incRes, statsRes] = await Promise.all([
-      supabase.from("students").select("id, full_name").order("full_name"),
-      supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name"),
+      supabase.from("students").select("id, full_name, student_code").order("full_name"),
+      supabase.from("staff_members").select("id, full_name, staff_code").eq("status", "active").order("full_name"),
       supabase.from("clinic_patient_records").select("*").order("created_at", { ascending: false }),
       supabase.from("clinic_visits").select("*").order("visit_date", { ascending: false }),
       supabase.from("clinic_medications_dispensed").select("*"),
@@ -521,7 +522,10 @@ export default function ClinicPage() {
           </>
         )}
         {canEdit && tab === "vaccinations" && (
-          <Button variant="gold" onClick={() => setShowVaccinationForm(true)}><Plus size={16} /> Log Vaccination</Button>
+          <>
+            <Button variant="secondary" onClick={() => setShowBulkVac(true)}><UploadCloud size={16} /> Bulk import</Button>
+            <Button variant="gold" onClick={() => setShowVaccinationForm(true)}><Plus size={16} /> Log Vaccination</Button>
+          </>
         )}
         {canEdit && tab === "incidents" && (
           <Button variant="gold" onClick={() => setShowIncidentForm(true)}><Plus size={16} /> Log Incident</Button>
@@ -1179,6 +1183,76 @@ export default function ClinicPage() {
           if (error) return { ok: false, message: error.message };
           await load();
           return { ok: true, message: `Imported ${payload.length} medication(s).` };
+        }}
+      />
+      <BulkImportModal
+        open={showBulkVac}
+        onClose={() => setShowBulkVac(false)}
+        title="Bulk import vaccination records"
+        columns={[
+          { key: "student_code", label: "Student code (or blank for staff)" },
+          { key: "staff_code", label: "Staff code (or blank for student)" },
+          { key: "vaccine_name", label: "Vaccine name", required: true },
+          { key: "administered_date", label: "Administered date", required: true, hint: "YYYY-MM-DD" },
+          { key: "administered_by", label: "Administered by" },
+          { key: "dose_number", label: "Dose number", transform: raw => raw === "" ? null : Number(raw) },
+          { key: "batch_number", label: "Batch number" },
+          { key: "next_dose_due", label: "Next dose due", hint: "YYYY-MM-DD" },
+          { key: "notes", label: "Notes" },
+        ]}
+        example={{
+          student_code: "STU001",
+          staff_code: "",
+          vaccine_name: "MMR",
+          administered_date: new Date().toISOString().slice(0, 10),
+          administered_by: "School Nurse",
+          dose_number: "1",
+          batch_number: "BATCH-A-2026",
+          next_dose_due: "",
+          notes: "Booster in 28 days",
+        }}
+        onImport={async (rows) => {
+          if (!orgId) return { ok: false, message: "No org context" };
+          const studentByCode = new Map(students.map(s => [s.student_code, s]));
+          const staffByCode = new Map(staff.map(s => [(s as unknown as { staff_code?: string }).staff_code ?? "", s]));
+          const errs: string[] = [];
+          const payload: Record<string, unknown>[] = [];
+          for (const r of rows) {
+            const scode = String(r.student_code ?? "");
+            const stcode = String(r.staff_code ?? "");
+            if (!scode && !stcode) { errs.push(`Row for ${r.vaccine_name}: needs student_code or staff_code`); continue; }
+            let subject_type: "student" | "staff" = "student";
+            let student_id: string | null = null, staff_id: string | null = null;
+            if (scode) {
+              const s = studentByCode.get(scode);
+              if (!s) { errs.push(`Unknown student code: ${scode}`); continue; }
+              student_id = s.id;
+              subject_type = "student";
+            } else {
+              const st = staffByCode.get(stcode);
+              if (!st) { errs.push(`Unknown staff code: ${stcode}`); continue; }
+              staff_id = (st as unknown as { id: string }).id;
+              subject_type = "staff";
+            }
+            payload.push({
+              organization_id: orgId,
+              subject_type,
+              student_id, staff_id,
+              vaccine_name: r.vaccine_name,
+              administered_date: r.administered_date,
+              administered_by: r.administered_by || null,
+              dose_number: r.dose_number,
+              batch_number: r.batch_number || null,
+              next_dose_due: r.next_dose_due || null,
+              notes: r.notes || null,
+            });
+          }
+          if (errs.length > 0) return { ok: false, errors: errs.slice(0, 20) };
+          if (payload.length === 0) return { ok: false, message: "Nothing to import." };
+          const { error } = await supabase.from("clinic_vaccinations").insert(payload);
+          if (error) return { ok: false, message: error.message };
+          await load();
+          return { ok: true, message: `Imported ${payload.length} vaccination record(s).` };
         }}
       />
     </div>
