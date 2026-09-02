@@ -24,6 +24,7 @@ import { useAuth } from "@/lib/context/AuthContext";
 import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtDateTime, cn } from "@/lib/utils";
+import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState, KpiCard } from "@/components/ui/PageHeader";
 import { Tabs, TabDef } from "@/components/ui/Tabs";
 import { SetupHero } from "@/components/ui/SetupHero";
@@ -32,7 +33,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Home, Plus, Users, BedDouble, DoorOpen, UserCheck, AlertTriangle, Trash2, Pencil, LogOut, CheckCircle2, Download, Printer } from "lucide-react";
+import { Home, Plus, Users, BedDouble, DoorOpen, UserCheck, AlertTriangle, Trash2, Pencil, LogOut, CheckCircle2, Download, Printer, UploadCloud } from "lucide-react";
 
 interface HouseRow {
   id: string; name: string; gender: string; house_parent_staff_id: string | null;
@@ -67,6 +68,7 @@ export default function HostelPage() {
   const [tab, setTab] = useState<Tab>("houses");
 
   const [houses, setHouses] = useState<HouseRow[]>([]);
+  const [showBulkBeds, setShowBulkBeds] = useState(false);
   const [rooms, setRooms] = useState<RoomRow[]>([]);
   const [beds, setBeds] = useState<BedRow[]>([]);
   const [allocations, setAllocations] = useState<AllocationRow[]>([]);
@@ -451,7 +453,10 @@ export default function HostelPage() {
           ])}><Download size={14} /> Export</Button>
         )}
         {canEdit && tab === "houses" && (
-          <Button variant="gold" onClick={() => openHouseForm()}><Plus size={16} /> Add House</Button>
+          <>
+            <Button variant="secondary" onClick={() => setShowBulkBeds(true)}><UploadCloud size={16} /> Bulk beds</Button>
+            <Button variant="gold" onClick={() => openHouseForm()}><Plus size={16} /> Add House</Button>
+          </>
         )}
         {canEdit && tab === "visitors" && (
           <Button variant="gold" onClick={() => setShowVisitorForm(true)}><Plus size={16} /> Sign In Visitor</Button>
@@ -871,6 +876,58 @@ export default function HostelPage() {
       </Modal>
 
       <ToastHost />
+    
+      <BulkImportModal
+        open={showBulkBeds}
+        onClose={() => setShowBulkBeds(false)}
+        title="Bulk create rooms + beds"
+        columns={[
+          { key: "house_name", label: "House name", required: true },
+          { key: "room_number", label: "Room number", required: true },
+          { key: "floor_level", label: "Floor" },
+          { key: "beds_per_room", label: "Beds in room", required: true, transform: raw => Math.max(1, Number(raw) || 1) },
+          { key: "bed_prefix", label: "Bed label prefix", hint: "e.g. B → B1, B2, …" },
+        ]}
+        example={{
+          house_name: "Nightingale House",
+          room_number: "101",
+          floor_level: "Ground",
+          beds_per_room: "4",
+          bed_prefix: "B",
+        }}
+        onImport={async (rows) => {
+          if (!orgId) return { ok: false, message: "No org context" };
+          const houseByName = new Map(houses.map(h => [h.name.toLowerCase(), h]));
+          const errs: string[] = [];
+          let roomsCreated = 0, bedsCreated = 0;
+          for (const r of rows) {
+            const h = houseByName.get(String(r.house_name).toLowerCase());
+            if (!h) { errs.push(`Unknown house: ${r.house_name}`); continue; }
+            const { data: room, error: rErr } = await supabase.from("hostel_rooms").insert({
+              organization_id: orgId,
+              house_id: h.id,
+              room_number: String(r.room_number),
+              floor_level: r.floor_level || null,
+            }).select("id").single();
+            if (rErr || !room) { errs.push(`${r.house_name} · Room ${r.room_number}: ${rErr?.message ?? "insert failed"}`); continue; }
+            roomsCreated++;
+            const n = Math.max(1, Number(r.beds_per_room) || 1);
+            const prefix = String(r.bed_prefix ?? "B");
+            const beds = Array.from({ length: n }, (_, i) => ({
+              organization_id: orgId,
+              room_id: (room as { id: string }).id,
+              bed_label: `${prefix}${i + 1}`,
+              status: "available",
+            }));
+            const { error: bErr } = await supabase.from("hostel_beds").insert(beds);
+            if (bErr) { errs.push(`${r.house_name} · Room ${r.room_number} beds: ${bErr.message}`); continue; }
+            bedsCreated += beds.length;
+          }
+          if (errs.length > 0) return { ok: false, errors: errs.slice(0, 20) };
+          load();
+          return { ok: true, message: `Created ${roomsCreated} room(s), ${bedsCreated} bed(s).` };
+        }}
+      />
     </div>
   );
 }
