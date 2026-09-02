@@ -14,7 +14,7 @@ import { Modal } from "@/components/ui/Modal";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { useToast } from "@/lib/hooks/useToast";
-import { Plus, Search, Download, CheckCircle, Circle, TrendingDown, Printer } from "lucide-react";
+import { Plus, Search, Download, CheckCircle, Circle, TrendingDown, Printer, Sparkles } from "lucide-react";
 import type { ExpenseEntry, Vendor } from "@/lib/types";
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "@/lib/types";
 
@@ -218,6 +218,7 @@ function AddExpenseModal({ vendors, onClose }: { vendors: Vendor[]; onClose: () 
     approved_by: "",
     notes: "",
   });
+  const [aiCatBusy, setAiCatBusy] = useState(false);
 
   const vendorOptions = vendors.map(v => ({
     value: v.id, label: v.name,
@@ -264,8 +265,40 @@ function AddExpenseModal({ vendors, onClose }: { vendors: Vendor[]; onClose: () 
         <SearchableSelect label="Vendor / Payee" options={vendorOptions} value={selectedVendorId}
           onChange={setSelectedVendorId} placeholder="Search and select vendor…" />
         <div className="grid grid-cols-2 gap-3">
-          <Select label="Category" value={form.category} onChange={set("category")}
-            options={EXPENSE_CATEGORIES.map(c => ({ value: c, label: c }))} />
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">Category</label>
+              <button
+                type="button"
+                disabled={!form.description.trim() || aiCatBusy}
+                onClick={async () => {
+                  setAiCatBusy(true);
+                  try {
+                    const { generateWithAi } = await import("@/lib/ai/client");
+                    const result = await generateWithAi({
+                      kind: "expense_category_suggest",
+                      input: form.description,
+                      extra: { allowed: EXPENSE_CATEGORIES.join(", ") },
+                      source: "expense_form",
+                    });
+                    const suggested = result.output.trim();
+                    const match = (EXPENSE_CATEGORIES as readonly string[]).find(c => c.toLowerCase() === suggested.toLowerCase());
+                    if (match) setForm(f => ({ ...f, category: match }));
+                  } finally {
+                    setAiCatBusy(false);
+                  }
+                }}
+                className="text-[10px] text-[#C9A227] hover:text-[#a58a1f] font-semibold flex items-center gap-1 disabled:opacity-40"
+                title="Suggest a category from the description"
+              >
+                <Sparkles size={10} /> {aiCatBusy ? "…" : "Ask AI"}
+              </button>
+            </div>
+            <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+              {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
           <Input label="Description" value={form.description} onChange={set("description")} placeholder="e.g. January rent" />
           <Input label="Amount (₦)" type="number" value={form.amount} onChange={set("amount")} min="0" step="0.01" required />
           <Select label="Payment Method" value={form.payment_method} onChange={set("payment_method")}

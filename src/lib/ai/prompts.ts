@@ -34,7 +34,8 @@ export type AiTaskKind =
   | "lms_bulk_parse"
   | "student_term_summary"
   | "analytics_digest"
-  | "student_brief";
+  | "student_brief"
+  | "expense_category_suggest";
 
 export interface AiPreset {
   kind: AiTaskKind;
@@ -206,6 +207,17 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
       return `Assignment instructions:\n${instructions}\n\nMax score: ${maxScore}\n\nStudent's response:\n${input}\n\nSuggest a score and feedback as the specified JSON.`;
     },
     maxTokens: 400,
+  },
+  expense_category_suggest: {
+    kind: "expense_category_suggest",
+    label: "Suggest expense category",
+    description: "Given a short expense description, return the single best-matching category from the caller's allowed list.",
+    system: `${CORE_STYLE} You classify a Nigerian K-12 school expense description into ONE category from an allowed list. Return the category name only, exactly as written in the allowed list — no punctuation, no explanation, no quotes.`,
+    compose: (input, extra) => {
+      const allowed = extra?.allowed ?? "Miscellaneous";
+      return `Allowed categories (pick exactly one, verbatim): ${allowed}\nExpense description: ${input}\n\nCategory:`;
+    },
+    maxTokens: 20,
   },
   student_brief: {
     kind: "student_brief",
