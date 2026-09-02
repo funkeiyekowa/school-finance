@@ -29,10 +29,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import {
-  Boxes, Plus, Wrench, Archive, UserCircle, MapPin,
-  TrendingDown, ChevronRight, History, Pencil, LogOut as DisposeIcon, Download,
-} from "lucide-react";
+import { Boxes, Plus, Wrench, Archive, UserCircle, MapPin, TrendingDown, ChevronRight, History, Pencil, LogOut as DisposeIcon, Download, Upload } from "lucide-react";
 
 interface AssetRow {
   id: string; asset_code: string; name: string; category: string | null; serial_number: string | null;
@@ -222,6 +219,97 @@ export default function AssetsPage() {
   /* ---------------- Detail modal ---------------- */
   const [detailAsset, setDetailAsset] = useState<AssetRow | null>(null);
 
+  /* ---------------- Bulk CSV import ---------------- */
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+
+  function parseCsvLine(line: string): string[] {
+    const out: string[] = [];
+    let cur = "";
+    let quoted = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === "\"") {
+        if (quoted && line[i + 1] === "\"") { cur += "\""; i++; }
+        else quoted = !quoted;
+      } else if (ch === "," && !quoted) { out.push(cur); cur = ""; }
+      else cur += ch;
+    }
+    out.push(cur);
+    return out.map((s) => s.trim());
+  }
+
+  async function runBulkImport() {
+    if (!orgId) return;
+    setImportErrors([]);
+    const lines = importText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) {
+      setImportErrors(["Paste at least a header row and one asset row."]);
+      return;
+    }
+    const header = parseCsvLine(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]+/g, "_"));
+    const required = ["asset_code", "name"];
+    const missing = required.filter((r) => !header.includes(r));
+    if (missing.length) {
+      setImportErrors([`Missing required column(s): ${missing.join(", ")}`]);
+      return;
+    }
+    const rows: Record<string, unknown>[] = [];
+    const errs: string[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]);
+      const obj: Record<string, string> = {};
+      header.forEach((h, idx) => { obj[h] = cols[idx] ?? ""; });
+      if (!obj.asset_code || !obj.name) {
+        errs.push(`Line ${i + 1}: asset_code and name required`);
+        continue;
+      }
+      rows.push({
+        organization_id: orgId,
+        asset_code: obj.asset_code,
+        name: obj.name,
+        category: obj.category || null,
+        serial_number: obj.serial_number || null,
+        purchase_date: obj.purchase_date || null,
+        purchase_cost: parseFloat(obj.purchase_cost) || 0,
+        salvage_value: parseFloat(obj.salvage_value) || 0,
+        useful_life_years: parseFloat(obj.useful_life_years) || 5,
+        depreciation_method: obj.depreciation_method || "straight_line",
+        current_location: obj.current_location || null,
+        notes: obj.notes || null,
+      });
+    }
+    if (errs.length) { setImportErrors(errs.slice(0, 20)); return; }
+    if (rows.length === 0) { setImportErrors(["No valid rows to import."]); return; }
+    setImporting(true);
+    const { error } = await supabase.from("assets").insert(rows);
+    setImporting(false);
+    if (error) {
+      setImportErrors([error.message]);
+      return;
+    }
+    notify(`Imported ${rows.length} asset${rows.length === 1 ? "" : "s"}.`);
+    setShowImport(false);
+    setImportText("");
+    load();
+  }
+
+  function downloadImportTemplate() {
+    const csv = [
+      "asset_code,name,category,serial_number,purchase_date,purchase_cost,salvage_value,useful_life_years,depreciation_method,current_location,notes",
+      "AST-0001,Sample laptop,IT Equipment,SN123,2025-01-15,850000,50000,4,straight_line,Staff room,Sample row - delete before import",
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "assets-import-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   /* ---------------- Assign ---------------- */
   const [assignTarget, setAssignTarget] = useState<AssetRow | null>(null);
   const [assignForm, setAssignForm] = useState({ staff_id: "", location: "", notes: "" });
@@ -374,7 +462,10 @@ export default function AssetsPage() {
           ])}><Download size={14} /> Export</Button>
         )}
         {canEdit && tab === "register" && (
-          <Button variant="gold" onClick={openNewAsset}><Plus size={16} /> New Asset</Button>
+          <>
+            <Button variant="secondary" onClick={() => setShowImport(true)}><Upload size={16} /> Bulk Import</Button>
+            <Button variant="gold" onClick={openNewAsset}><Plus size={16} /> New Asset</Button>
+          </>
         )}
         {canEdit && tab === "maintenance" && (
           <Button variant="gold" onClick={() => openMaintenanceForm()}><Plus size={16} /> Log Maintenance</Button>
@@ -790,6 +881,50 @@ export default function AssetsPage() {
       </Modal>
 
       <ToastHost />
+    
+      {/* Bulk CSV import */}
+      <Modal open={showImport} onClose={() => { setShowImport(false); setImportErrors([]); }} title="Bulk import assets from CSV" size="lg">
+        <div className="space-y-3">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+            <p className="font-semibold mb-1">Expected columns (header row required):</p>
+            <p className="font-mono text-[11px] break-all">asset_code, name, category, serial_number, purchase_date, purchase_cost, salvage_value, useful_life_years, depreciation_method, current_location, notes</p>
+            <p className="mt-1"><code>asset_code</code> and <code>name</code> are required. Dates as YYYY-MM-DD. depreciation_method: straight_line or reducing_balance.</p>
+            <button onClick={downloadImportTemplate} className="mt-2 text-blue-700 hover:text-blue-900 underline text-xs">Download template</button>
+          </div>
+          <textarea
+            className="w-full h-56 p-3 border border-gray-300 rounded-lg font-mono text-xs"
+            placeholder="Paste CSV content here (including header row)…"
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+          />
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            className="text-xs"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              const reader = new FileReader();
+              reader.onload = () => setImportText(String(reader.result ?? ""));
+              reader.readAsText(f);
+            }}
+          />
+          {importErrors.length > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800 max-h-40 overflow-y-auto">
+              <p className="font-semibold mb-1">Import failed:</p>
+              <ul className="list-disc pl-5 space-y-0.5">
+                {importErrors.map((e, i) => (<li key={i}>{e}</li>))}
+              </ul>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => { setShowImport(false); setImportErrors([]); }}>Cancel</Button>
+            <Button variant="gold" onClick={runBulkImport} loading={importing} disabled={!importText.trim()}>
+              Import
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -228,14 +228,24 @@ export default function PayrollRunPage() {
         <EmptyState message="No payslips yet — click Generate to build them from current staff data." icon={<FileText size={40} />} />
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <h3 className="text-sm font-semibold text-[#0F2A47]">Payslips ({payslips.length})</h3>
-            <Input
-              placeholder="Search…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="max-w-xs"
-            />
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Search…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="max-w-xs"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => window.open(`/dashboard/payroll/${runId}/payslips-print`, "_blank")}
+                title="Open all payslips in a printable page — Print / Save as PDF from your browser"
+              >
+                <Printer size={14} /> Print all
+              </Button>
+            </div>
           </div>
           <div className="space-y-1.5">
             {filteredSlips.map((p) => (

@@ -36,10 +36,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import {
-  BookOpen, Plus, Search, Users, Layers, AlertTriangle, CheckCircle2,
-  Bookmark, ArrowLeftRight, Trash2, Pencil, Download,
-} from "lucide-react";
+import { BookOpen, Plus, Search, Users, Layers, AlertTriangle, CheckCircle2, Bookmark, ArrowLeftRight, Trash2, Pencil, Download, Printer } from "lucide-react";
 
 interface BookRow {
   id: string; isbn: string | null; title: string; author: string | null; publisher: string | null;
@@ -571,6 +568,16 @@ export default function LibraryPage() {
               <EmptyState message="Nothing overdue — great job!" icon={<CheckCircle2 size={40} />} />
             ) : (
               <div className="space-y-2">
+                <div className="flex justify-end">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => window.open("/dashboard/library/overdue-notices", "_blank")}
+                    title="Open all overdue notices in a printable page — Print / Save as PDF from your browser"
+                  >
+                    <Printer size={14} /> Print notices
+                  </Button>
+                </div>
                 {overdueLoans.map((l) => {
                   const copy = copyById.get(l.copy_id);
                   const book = copy ? bookById.get(copy.book_id) : null;
