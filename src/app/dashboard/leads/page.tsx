@@ -19,9 +19,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { cn, fmtDateTime } from "@/lib/utils";
-import {
-  Inbox, Mail, Phone, AlertTriangle, Search, Trash2, ShieldAlert,
-} from "lucide-react";
+import { Inbox, Mail, Phone, AlertTriangle, Search, Trash2, ShieldAlert, Target } from "lucide-react";
 
 interface Submission {
   id: string;
@@ -160,6 +158,8 @@ function LeadsPageInner() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader
+        icon={<Target size={24} />}
+        gradient="amber"
         title="Enquiries"
         subtitle="Messages and applications from your public website"
       />

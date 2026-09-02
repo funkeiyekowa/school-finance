@@ -14,7 +14,7 @@ import { Modal } from "@/components/ui/Modal";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { useToast } from "@/lib/hooks/useToast";
-import { Plus, Search, Download, CheckCircle, Circle } from "lucide-react";
+import { Plus, Search, Download, CheckCircle, Circle, TrendingDown } from "lucide-react";
 import type { ExpenseEntry, Vendor } from "@/lib/types";
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "@/lib/types";
 
@@ -84,7 +84,9 @@ export default function ExpensesPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Expense Ledger" subtitle="All vendor payments and operating expenses">
+      <PageHeader
+        icon={<TrendingDown size={24} />}
+        gradient="rose" title="Expense Ledger" subtitle="All vendor payments and operating expenses">
         <Button variant="secondary" size="sm" onClick={() => exportCSV(filtered.map(e => ({
           Voucher: e.voucher_no, Date: fmtDate(e.date), Vendor: e.vendor_name || "",
           Category: e.category, Description: e.description || "", Amount: e.amount,

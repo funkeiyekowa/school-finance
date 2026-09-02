@@ -7,7 +7,7 @@ import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
-import { Download, Printer } from "lucide-react";
+import { Download, Printer, FileBarChart } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -196,7 +196,9 @@ export default function ReportsPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Reports" subtitle="Generate and export financial reports">
+      <PageHeader
+        icon={<FileBarChart size={24} />}
+        gradient="gold" title="Reports" subtitle="Generate and export financial reports">
         <Button variant="secondary" size="sm" onClick={() => window.print()}>
           <Printer size={14} /> Print
         </Button>

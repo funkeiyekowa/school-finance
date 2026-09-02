@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/context/AuthContext";
 import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { FileBarChart, CheckCircle2, Clock } from "lucide-react";
+import { FileBarChart, CheckCircle2, Clock, Award } from "lucide-react";
 
 interface ScoreRow { id: string; subject_id: string; assessment_type_id: string; score: number | null; term: string | null; }
 interface SubjectRow { id: string; name: string; short_code: string; }
@@ -113,7 +113,9 @@ export default function MyResultsPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="My Results" subtitle="View your academic performance, exam results, and attendance" />
+      <PageHeader
+        icon={<Award size={24} />}
+        gradient="gold" title="My Results" subtitle="View your academic performance, exam results, and attendance" />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

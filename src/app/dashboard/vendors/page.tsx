@@ -47,7 +47,9 @@ export default function VendorsPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Vendors" subtitle={`${vendors.length} vendors registered`}>
+      <PageHeader
+        icon={<Building2 size={24} />}
+        gradient="navy" title="Vendors" subtitle={`${vendors.length} vendors registered`}>
         {canEdit && (
           <Button onClick={() => setShowAdd(true)}>
             <Plus size={16} /> Add Vendor

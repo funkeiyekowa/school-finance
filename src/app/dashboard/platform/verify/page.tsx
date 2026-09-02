@@ -148,6 +148,8 @@ export default function VerifyIsolationPage() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader
+        icon={<ShieldCheck size={24} />}
+        gradient="emerald"
         title="Tenant Isolation Verification"
         subtitle="Prove that one school cannot reach another school's data"
       >

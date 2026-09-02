@@ -16,7 +16,7 @@ import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { useToast } from "@/lib/hooks/useToast";
 import { cn } from "@/lib/utils";
-import { Plus, Search, Download, Receipt, CheckCircle, Circle } from "lucide-react";
+import { Plus, Search, Download, Receipt, CheckCircle, Circle, TrendingUp } from "lucide-react";
 import type { IncomeEntry, Student, FeeSchedule } from "@/lib/types";
 import { INCOME_CATEGORIES, PAYMENT_METHODS } from "@/lib/types";
 
@@ -109,7 +109,9 @@ function IncomePageInner() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Income Ledger" subtitle="All fee payments and other income">
+      <PageHeader
+        icon={<TrendingUp size={24} />}
+        gradient="emerald" title="Income Ledger" subtitle="All fee payments and other income">
         <Button variant="secondary" size="sm" onClick={handleExport}>
           <Download size={14} /> Export CSV
         </Button>

@@ -30,10 +30,7 @@ import { useAuth } from "@/lib/context/AuthContext";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import {
-  Sparkles, ShieldAlert, CheckCircle2, KeyRound, Lock, Eye, EyeOff,
-  Trash2, BarChart3, Info, PlayCircle, Loader2, XCircle,
-} from "lucide-react";
+import { Sparkles, ShieldAlert, CheckCircle2, KeyRound, Lock, Eye, EyeOff, Trash2, BarChart3, Info, PlayCircle, Loader2, XCircle, Bot } from "lucide-react";
 
 interface ProviderStatus {
   id: string;
@@ -250,6 +247,8 @@ export default function SchoolAiProviderPage() {
   return (
     <div className="space-y-6 max-w-3xl">
       <PageHeader
+        icon={<Bot size={24} />}
+        gradient="purple"
         title="AI Provider"
         subtitle={`Choose which AI backend powers AI Studio for ${org?.name ?? "your school"}`}
       />

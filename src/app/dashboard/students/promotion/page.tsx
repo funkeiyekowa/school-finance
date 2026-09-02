@@ -8,7 +8,7 @@ import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { CheckCircle2, AlertTriangle, GraduationCap, ArrowRight, ArrowDown, RotateCcw, Users } from "lucide-react";
+import { CheckCircle2, AlertTriangle, GraduationCap, ArrowRight, ArrowDown, RotateCcw, Users, ArrowUpRight } from "lucide-react";
 
 interface ClassRow { id: string; name: string; short_code: string; sequence: number; next_class_id: string | null; is_terminal: boolean; }
 interface YearRow { id: string; name: string; status: string; }
@@ -341,7 +341,9 @@ export default function PromotionPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Promotion Center" subtitle="Promote students to the next academic year and class" />
+      <PageHeader
+        icon={<ArrowUpRight size={24} />}
+        gradient="emerald" title="Promotion Center" subtitle="Promote students to the next academic year and class" />
 
       {/* Year selection */}
       <Card>

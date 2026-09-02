@@ -132,7 +132,9 @@ export default function MyChildrenPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="My Children" subtitle="View your children's fees, payments, attendance, and results" />
+      <PageHeader
+        icon={<Users size={24} />}
+        gradient="emerald" title="My Children" subtitle="View your children's fees, payments, attendance, and results" />
 
       {/* Child selector */}
       {children.length > 1 && (

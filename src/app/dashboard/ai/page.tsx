@@ -133,6 +133,8 @@ export default function AiPage() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader
+        icon={<Sparkles size={24} />}
+        gradient="purple"
         title="AI Studio"
         subtitle="A drafting assistant for report cards, announcements, and website copy. Every request is logged."
       />

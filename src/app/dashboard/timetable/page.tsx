@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, AlertTriangle, Save } from "lucide-react";
+import { Plus, AlertTriangle, Save, CalendarClock } from "lucide-react";
 
 interface ClassRow { id: string; name: string; }
 interface SubjectRow { id: string; name: string; short_code: string; }
@@ -174,7 +174,9 @@ export default function TimetablePage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Timetable" subtitle="Manage class timetables — assign subjects, teachers, and rooms to periods" />
+      <PageHeader
+        icon={<CalendarClock size={24} />}
+        gradient="navy" title="Timetable" subtitle="Manage class timetables — assign subjects, teachers, and rooms to periods" />
 
       {/* Class selector */}
       <Card>

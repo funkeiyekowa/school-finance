@@ -8,7 +8,7 @@ import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
-import { BookOpen, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
+import { BookOpen, CheckCircle2, Clock, AlertTriangle, FileText } from "lucide-react";
 
 interface ExamRow { id: string; title: string; exam_type: string; duration_minutes: number; total_marks: number; pass_mark: number; class_id: string | null; status: string; max_attempts: number; show_answers: boolean; starts_at: string | null; ends_at: string | null; }
 interface AttemptRow { id: string; exam_id: string; attempt_number: number; total_score: number | null; percentage: number | null; passed: boolean | null; status: string; submitted_at: string | null; started_at: string; }
@@ -137,7 +137,9 @@ export default function MyExamsPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="My Exams" subtitle="View available exams, take tests, and review your results" />
+      <PageHeader
+        icon={<FileText size={24} />}
+        gradient="navy" title="My Exams" subtitle="View available exams, take tests, and review your results" />
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

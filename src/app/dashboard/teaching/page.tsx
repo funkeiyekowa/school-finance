@@ -98,7 +98,9 @@ export default function TeachingPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="My Teaching" subtitle={`Welcome, ${profile?.full_name || "Teacher"}`} />
+      <PageHeader
+        icon={<BookOpen size={24} />}
+        gradient="emerald" title="My Teaching" subtitle={`Welcome, ${profile?.full_name || "Teacher"}`} />
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

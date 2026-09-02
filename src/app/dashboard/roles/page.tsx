@@ -113,7 +113,9 @@ export default function RolesPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Roles & Permissions" subtitle="Configure what each role can access across every screen">
+      <PageHeader
+        icon={<ShieldCheck size={24} />}
+        gradient="navy" title="Roles & Permissions" subtitle="Configure what each role can access across every screen">
         <Button onClick={() => setShowAdd(true)}>
           <Plus size={14} /> Add Custom Role
         </Button>

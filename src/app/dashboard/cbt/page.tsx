@@ -479,7 +479,9 @@ export default function CbtPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="CBT / Online Exams" subtitle="Manage question bank, create and assign exams" />
+      <PageHeader
+        icon={<FileText size={24} />}
+        gradient="navy" title="CBT / Online Exams" subtitle="Manage question bank, create and assign exams" />
 
       <div className="flex gap-2">
         <button onClick={() => setTab("exams")} className={cn("flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg", tab === "exams" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}><FileText size={14} /> Exams ({exams.length})</button>

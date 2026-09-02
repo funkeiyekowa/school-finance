@@ -43,7 +43,7 @@ import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/lib/hooks/useToast";
-import { ArrowLeft, Play } from "lucide-react";
+import { ArrowLeft, Play, FileOutput } from "lucide-react";
 
 interface Student { id: string; student_code: string; full_name: string; grade: string | null; }
 interface AcademicYear { id: string; name: string; status: string; }
@@ -402,6 +402,8 @@ export default function GenerateReportCardsPage() {
       </Link>
 
       <PageHeader
+        icon={<FileOutput size={24} />}
+        gradient="gold"
         title="Generate Report Cards"
         subtitle="Bulk-generate report cards from recorded assessment scores. Positions, attendance, and class stats are computed automatically."
       />

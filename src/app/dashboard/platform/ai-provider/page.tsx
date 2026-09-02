@@ -34,10 +34,7 @@ import { useAuth } from "@/lib/context/AuthContext";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import {
-  Sparkles, ShieldAlert, CheckCircle2, KeyRound, Lock, Gauge, AlertTriangle,
-  PlayCircle, Loader2, XCircle, Settings2, Plus, Pencil, Trash2, X,
-} from "lucide-react";
+import { Sparkles, ShieldAlert, CheckCircle2, KeyRound, Lock, Gauge, AlertTriangle, PlayCircle, Loader2, XCircle, Settings2, Plus, Pencil, Trash2, X, Bot } from "lucide-react";
 
 interface ProviderStatus {
   id: string;
@@ -316,6 +313,8 @@ export default function AiProviderSettingsPage() {
   return (
     <div className="space-y-6 max-w-3xl">
       <PageHeader
+        icon={<Bot size={24} />}
+        gradient="purple"
         title="AI Provider (Platform Default)"
         subtitle="Choose the fallback AI backend every school inherits unless it sets its own"
       />

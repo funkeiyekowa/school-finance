@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Save, CheckCircle2, Users } from "lucide-react";
+import { Save, CheckCircle2, Users, ClipboardCheck } from "lucide-react";
 
 interface ClassRow { id: string; name: string; short_code: string; sequence: number; }
 interface StatusRow { id: string; code: string; label: string; color: string; counts_as_present: boolean; is_default: boolean; sort_order: number; }
@@ -188,7 +188,9 @@ export default function AttendancePage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Attendance" subtitle="Record daily student attendance by class" />
+      <PageHeader
+        icon={<ClipboardCheck size={24} />}
+        gradient="emerald" title="Attendance" subtitle="Record daily student attendance by class" />
 
       {/* Controls */}
       <Card>

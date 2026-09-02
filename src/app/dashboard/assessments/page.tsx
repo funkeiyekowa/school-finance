@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Save, CheckCircle2 } from "lucide-react";
+import { Save, CheckCircle2, GraduationCap } from "lucide-react";
 
 interface ClassRow { id: string; name: string; }
 interface SubjectRow { id: string; name: string; short_code: string; }
@@ -199,7 +199,9 @@ export default function AssessmentsPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Assessments & Gradebook" subtitle="Enter student scores and view calculated grades" />
+      <PageHeader
+        icon={<GraduationCap size={24} />}
+        gradient="purple" title="Assessments & Gradebook" subtitle="Enter student scores and view calculated grades" />
 
       {/* Selectors */}
       <Card>

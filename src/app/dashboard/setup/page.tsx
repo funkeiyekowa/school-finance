@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare, Pencil, Mail, RefreshCw, CheckCircle2, AlertTriangle, FlaskConical, GraduationCap } from "lucide-react";
+import { Plus, Trash2, Save, Settings, DollarSign, Tags, MessageSquare, Pencil, Mail, RefreshCw, CheckCircle2, AlertTriangle, FlaskConical, GraduationCap, Rocket } from "lucide-react";
 import type { FeeSchedule, SchoolSettings } from "@/lib/types";
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES } from "@/lib/types";
 
@@ -26,7 +26,9 @@ export default function SetupPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Setup" subtitle="Configure your school's financial settings" />
+      <PageHeader
+        icon={<Rocket size={24} />}
+        gradient="gold" title="Setup" subtitle="Configure your school's financial settings" />
 
       <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
         {[

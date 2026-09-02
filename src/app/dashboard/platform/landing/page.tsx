@@ -124,6 +124,8 @@ export default function LandingSettingsPage() {
   return (
     <div className="space-y-6 max-w-3xl">
       <PageHeader
+        icon={<Globe size={24} />}
+        gradient="navy"
         title="Landing Page Settings"
         subtitle="Configure the public marketing site at smartandthrive.com"
       />
