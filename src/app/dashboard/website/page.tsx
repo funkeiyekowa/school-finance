@@ -206,7 +206,25 @@ export default function WebsiteStudioPage() {
     }
     setThemes((themeRows ?? []) as WebsiteTheme[]);
 
-    const { data: siteRow } = await supabase.from("websites").select("*").maybeSingle();
+    // A platform admin sees more than one row via RLS (every published site
+    // via websites_public_read, plus every tenant row for orgs they belong to).
+    // Filter to the ACTIVE org so .maybeSingle() never throws
+    // "Multiple rows returned" and we never pick some other school's site.
+    let siteQuery = supabase.from("websites").select("*");
+    if (orgId) siteQuery = siteQuery.eq("organization_id", orgId);
+    const { data: siteRow, error: siteErr } = await siteQuery.maybeSingle();
+
+    if (siteErr) {
+      console.error("[WebsiteStudio] load websites failed", siteErr);
+      setError(
+        siteErr.message.includes("does not exist")
+          ? "The website tables are missing. Run supabase/website_module.sql, then reload."
+          : `Could not load your website: ${siteErr.message}`
+      );
+      setSite(null);
+      setLoading(false);
+      return;
+    }
 
     if (!siteRow) {
       setSite(null);
@@ -214,17 +232,25 @@ export default function WebsiteStudioPage() {
       return;
     }
     setSite(siteRow as SiteRow);
+    const siteId = (siteRow as SiteRow).id;
 
+    // All child selects also need to be scoped to this org's site — otherwise
+    // a platform admin would see pages/sections/news/events for every other
+    // school layered on top of their own.
     const [pageRes, secRes, newsRes, evRes, domRes, verRes, medRes] = await Promise.all([
-      supabase.from("website_pages").select("*").order("nav_order"),
-      supabase.from("website_sections").select("*").order("position"),
-      supabase.from("website_news").select("*").order("created_at", { ascending: false }),
-      supabase.from("website_events").select("*").order("starts_at"),
-      supabase.from("website_domains").select("*").order("created_at"),
+      supabase.from("website_pages").select("*").eq("website_id", siteId).order("nav_order"),
+      supabase.from("website_sections").select("*").eq("website_id", siteId).order("position"),
+      supabase.from("website_news").select("*").eq("website_id", siteId).order("created_at", { ascending: false }),
+      supabase.from("website_events").select("*").eq("website_id", siteId).order("starts_at"),
+      supabase.from("website_domains").select("*").eq("website_id", siteId).order("created_at"),
       supabase.from("website_versions")
         .select("id, label, created_at, created_by_email")
+        .eq("website_id", siteId)
         .order("created_at", { ascending: false }).limit(30),
-      supabase.from("website_media").select("*").order("created_at", { ascending: false }).limit(200),
+      supabase.from("website_media")
+        .select("*")
+        .eq("organization_id", (siteRow as SiteRow).organization_id)
+        .order("created_at", { ascending: false }).limit(200),
     ]);
 
     setPages((pageRes.data ?? []) as PageRow[]);
@@ -235,37 +261,48 @@ export default function WebsiteStudioPage() {
     setVersions((verRes.data ?? []) as VersionRow[]);
     setMedia((medRes.data ?? []) as MediaRow[]);
 
-    const { data: ctRows } = await supabase
-      .from("website_custom_themes").select("*").order("created_at", { ascending: false });
+    // Custom themes: also scope by org so a platform admin doesn't get another
+    // school's saved themes mixed in.
+    let ctQuery = supabase.from("website_custom_themes").select("*");
+    if (orgId) ctQuery = ctQuery.eq("organization_id", orgId);
+    const { data: ctRows } = await ctQuery.order("created_at", { ascending: false });
     setCustomThemes((ctRows ?? []) as CustomTheme[]);
 
     setActivePageId(prev => prev ?? ((pageRes.data ?? [])[0]?.id ?? null));
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 
   /* ------------------------- site level ------------------------- */
 
   async function createSite(themeKey: string) {
+    setError(null);
     setSaving(true);
+    console.log("[WebsiteStudio] creating site", { themeKey, orgId });
     const { data, error: err } = await supabase.rpc("provision_website", {
       p_org: orgId,
       p_theme: themeKey,
     });
     setSaving(false);
     if (err) {
+      console.error("[WebsiteStudio] provision_website failed", err);
       setError(
         err.message.includes("does not exist")
-          ? "provision_website is missing. Run supabase/website_module.sql first."
-          : err.message
+          ? "provision_website is missing. Run supabase/website_module.sql in the Supabase SQL editor first, then reload."
+          : `Could not create the website: ${err.message}`
       );
       return;
     }
-    const res = data as { ok?: boolean } | null;
+    const res = data as { ok?: boolean; website_id?: string; created?: boolean; error?: string } | null;
+    console.log("[WebsiteStudio] provision_website result", res);
     if (res?.ok) {
-      flash("Website created with a starter home page. Edit it, then publish.");
+      flash(res.created === false
+        ? "Website already exists — reloading it."
+        : "Website created with a starter home page. Edit it, then publish.");
       await load();
+    } else {
+      setError(res?.error ?? "The server did not return a website. Please try another theme or reload the page.");
     }
   }
 
@@ -319,6 +356,31 @@ export default function WebsiteStudioPage() {
           title="Website Studio"
           subtitle={`Create the public website for ${org?.name ?? "your school"}`}
         />
+        {error && (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800">
+            <AlertTriangle size={16} className="mt-px shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">Could not create your website</div>
+              <div className="mt-0.5 break-words">{error}</div>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-500 hover:text-red-700 text-xs px-2 py-0.5 rounded hover:bg-red-100"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        {notice && (
+          <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800">
+            {notice}
+          </div>
+        )}
+        {saving && (
+          <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-800">
+            Creating your website — this can take a few seconds…
+          </div>
+        )}
         {!isOrgAdmin && (
           <div className="p-4 rounded-lg bg-gray-50 border text-sm text-gray-600">
             Only a school administrator can create the website.
