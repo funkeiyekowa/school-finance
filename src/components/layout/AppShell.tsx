@@ -13,6 +13,7 @@ import { signOutToSchoolLogin } from "@/lib/auth/signOutToSchoolLogin";
 import { OrgSwitcher, ActiveOrgBadge } from "@/components/layout/OrgSwitcher";
 import { SchoolBrandBar } from "@/components/layout/SchoolBrandBar";
 import ForcePasswordChange from "@/components/auth/ForcePasswordChange";
+import { AiAssistantFab } from "@/components/ai/AiAssistantFab";
 import { CommandPalette, useNavCommandItems } from "@/components/ui/CommandPalette";
 import { cn } from "@/lib/utils";
 import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock } from "lucide-react";
@@ -402,6 +403,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <>
     <ForcePasswordChange />
     <CommandPalette items={commandItems} />
+    <AiAssistantFab />
     <div className="flex h-screen overflow-hidden bg-[#F7F5F0]">
       {/* Desktop sidebar */}
       <div className="hidden lg:flex shrink-0">
