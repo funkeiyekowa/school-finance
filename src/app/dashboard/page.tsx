@@ -33,7 +33,7 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
-  const { profile } = useAuth();
+  const { profile, org } = useAuth();
   const supabase = createClient();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -135,8 +135,10 @@ export default function DashboardPage() {
   return (
     <div className="p-6 space-y-6">
       <PageHeader
-        title="Dashboard"
-        subtitle="Every figure below is live from your ledgers."
+        title={org?.name ? `${org.name} · Dashboard` : "Dashboard"}
+        subtitle={profile?.full_name
+          ? `Welcome back, ${profile.full_name.split(" ")[0]} — every figure below is live from your ledgers.`
+          : "Every figure below is live from your ledgers."}
       >
         <button onClick={load} className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-white border border-transparent hover:border-gray-200 transition-all">
           <RefreshCw size={14} />

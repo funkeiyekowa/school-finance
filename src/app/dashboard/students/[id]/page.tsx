@@ -236,9 +236,16 @@ h1{font-size:18px;margin-bottom:4px;}
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <button onClick={() => router.back()} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
           <ChevronLeft size={16} /> Back to Students
+        </button>
+        <button
+          onClick={() => window.open(`/dashboard/students/${student.id}/admission-letter`, "_blank")}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[#0F2A47] hover:text-[#C9A227] border border-[#0F2A47]/20 hover:border-[#C9A227] px-3 py-1.5 rounded-lg"
+          title="Open a printable admission letter for this student on your school's letterhead"
+        >
+          <Printer size={13} /> Admission letter
         </button>
       </div>
 

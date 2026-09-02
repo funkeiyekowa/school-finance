@@ -18,7 +18,7 @@ interface Attempt { id: string; exam_id: string; total_score: number | null; sta
 interface ReportCard { id: string; term: string; average_score: number; grade_overall: string | null; published: boolean; }
 
 export default function StudentPortalPage() {
-  const { user, profile } = useAuth();
+  const { user, profile, org } = useAuth();
   const router = useRouter();
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
@@ -135,7 +135,7 @@ export default function StudentPortalPage() {
   if (!me) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Student Portal" subtitle="Your academic dashboard" />
+        <PageHeader title={org?.name ? `${org.name} · Student Portal` : "Student Portal"} subtitle="Your academic dashboard" />
         <EmptyState message="Your student profile is not linked. Contact your school." icon={<GraduationCap />} />
       </div>
     );
@@ -175,7 +175,7 @@ export default function StudentPortalPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={`Welcome, ${me.full_name.split(" ")[0]}!`} subtitle={`${me.grade || "—"} · ${me.student_code}`} />
+      <PageHeader title={`Welcome, ${me.full_name.split(" ")[0]}!`} subtitle={`${org?.name ? org.name + " · " : ""}${me.grade || "—"} · ${me.student_code}`} />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <KpiCard label="Available Exams" value={String(stats.available)} icon={<BookOpen size={18} />} colorClass="text-[#C9A227]" />

@@ -16,7 +16,7 @@ interface Exam { id: string; student_id: string; exam_id: string; total_score: n
 interface ReportCard { id: string; student_id: string; term: string; average_score: number; grade_overall: string | null; published: boolean; }
 
 export default function ParentPortalPage() {
-  const { user } = useAuth();
+  const { user, org } = useAuth();
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
   const [children, setChildren] = useState<Student[]>([]);
@@ -116,7 +116,7 @@ export default function ParentPortalPage() {
   if (children.length === 0) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Parent Portal" subtitle="View and support your children's academic journey" />
+        <PageHeader title={org?.name ? `${org.name} · Parent Portal` : "Parent Portal"} subtitle="View and support your children's academic journey" />
         <EmptyState message="No children linked to your account. Contact your school administrator to link your children." icon={<Users />} />
       </div>
     );
@@ -124,7 +124,7 @@ export default function ParentPortalPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Parent Portal" subtitle={`Welcome — you have ${children.length} ${children.length === 1 ? "child" : "children"} enrolled`} />
+      <PageHeader title={org?.name ? `${org.name} · Parent Portal` : "Parent Portal"} subtitle={`Welcome — you have ${children.length} ${children.length === 1 ? "child" : "children"} enrolled`} />
 
       {/* Child selector */}
       {children.length > 1 && (
