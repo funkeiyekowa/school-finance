@@ -39,7 +39,7 @@ import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import {
   Wallet, Plus, Calendar, ChevronRight, Users, Trash2, Pencil,
-  ArrowUpCircle, ArrowDownCircle, DollarSign, ClipboardList,
+  ArrowUpCircle, ArrowDownCircle, DollarSign, ClipboardList, AlertTriangle,
 } from "lucide-react";
 
 interface RunRow {
@@ -103,6 +103,7 @@ export default function PayrollPage() {
 
   const componentById = useMemo(() => new Map(components.map((c) => [c.id, c])), [components]);
   const staffById = useMemo(() => new Map(staff.map((s) => [s.id, s])), [staff]);
+  const staffWithNoSalary = useMemo(() => staff.filter((s) => !s.salary || s.salary <= 0), [staff]);
   const assignmentsByStaff = useMemo(() => {
     const map: Record<string, AssignmentRow[]> = {};
     for (const a of assignments) (map[a.staff_id] ||= []).push(a);
@@ -320,6 +321,18 @@ export default function PayrollPage() {
       </div>
 
       <Tabs<Tab> tabs={TABS} value={tab} onChange={setTab} />
+
+      {staffWithNoSalary.length > 0 && (
+        <Link href="/dashboard/staff"
+          className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-colors">
+          <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+          <span className="text-sm font-medium text-amber-800">
+            {staffWithNoSalary.length} active staff member{staffWithNoSalary.length === 1 ? " has" : "s have"} no basic salary set — their PAYE and pension
+            (percent-of-basic components) will compute to ₦0 on any payslip.
+          </span>
+          <span className="ml-auto text-amber-600 text-sm font-medium whitespace-nowrap">Set salaries →</span>
+        </Link>
+      )}
 
       {loading ? <LoadingSpinner /> : (
         <>
