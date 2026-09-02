@@ -70,9 +70,41 @@ const HEX_COLOR = /^#[0-9a-fA-F]{3,8}$/;
 const RGB_COLOR = /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+))?\s*\)$/;
 const HSL_COLOR = /^hsla?\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(,\s*(0|1|0?\.\d+))?\s*\)$/;
 
+// Standard CSS Level 4 named colors (e.g. "papayawhip", "lightblue", "navy").
+// Free-text style fields (e.g. a section's "Custom background") accepted
+// these before validation was added here — rejecting them silently dropped
+// a school's previously-working color choice. Named colors contain only
+// letters, so they can never match DANGEROUS_PATTERNS or carry a payload.
+const CSS_NAMED_COLORS = new Set([
+  "transparent","currentcolor","black","silver","gray","grey","white","maroon","red",
+  "purple","fuchsia","green","lime","olive","yellow","navy","blue","teal","aqua","orange",
+  "aliceblue","antiquewhite","aquamarine","azure","beige","bisque","blanchedalmond",
+  "blueviolet","brown","burlywood","cadetblue","chartreuse","chocolate","coral",
+  "cornflowerblue","cornsilk","crimson","cyan","darkblue","darkcyan","darkgoldenrod",
+  "darkgray","darkgreen","darkgrey","darkkhaki","darkmagenta","darkolivegreen",
+  "darkorange","darkorchid","darkred","darksalmon","darkseagreen","darkslateblue",
+  "darkslategray","darkslategrey","darkturquoise","darkviolet","deeppink","deepskyblue",
+  "dimgray","dimgrey","dodgerblue","firebrick","floralwhite","forestgreen","gainsboro",
+  "ghostwhite","gold","goldenrod","greenyellow","honeydew","hotpink","indianred","indigo",
+  "ivory","khaki","lavender","lavenderblush","lawngreen","lemonchiffon","lightblue",
+  "lightcoral","lightcyan","lightgoldenrodyellow","lightgray","lightgreen","lightgrey",
+  "lightpink","lightsalmon","lightseagreen","lightskyblue","lightslategray",
+  "lightslategrey","lightsteelblue","lightyellow","limegreen","linen","magenta",
+  "mediumaquamarine","mediumblue","mediumorchid","mediumpurple","mediumseagreen",
+  "mediumslateblue","mediumspringgreen","mediumturquoise","mediumvioletred",
+  "midnightblue","mintcream","mistyrose","moccasin","navajowhite","oldlace",
+  "olivedrab","orangered","orchid","palegoldenrod","palegreen","paleturquoise",
+  "palevioletred","papayawhip","peachpuff","peru","pink","plum","powderblue",
+  "rebeccapurple","rosybrown","royalblue","saddlebrown","salmon","sandybrown",
+  "seagreen","seashell","sienna","skyblue","slateblue","slategray","slategrey",
+  "snow","springgreen","steelblue","tan","thistle","tomato","turquoise","violet",
+  "wheat","whitesmoke","yellowgreen",
+]);
+
 export function isValidColor(value: string): boolean {
   if (value.length > 30) return false;
   if (isDangerous(value)) return false;
+  if (CSS_NAMED_COLORS.has(value.trim().toLowerCase())) return true;
   return HEX_COLOR.test(value) || RGB_COLOR.test(value) || HSL_COLOR.test(value);
 }
 
