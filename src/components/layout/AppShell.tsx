@@ -15,6 +15,7 @@ import { SchoolBrandBar } from "@/components/layout/SchoolBrandBar";
 import ForcePasswordChange from "@/components/auth/ForcePasswordChange";
 import { AiAssistantFab } from "@/components/ai/AiAssistantFab";
 import { CommandPalette, useNavCommandItems } from "@/components/ui/CommandPalette";
+import { useUnreadMessagesBadge } from "@/lib/messaging/hooks";
 import { cn } from "@/lib/utils";
 import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock } from "lucide-react";
 
@@ -55,6 +56,7 @@ const NAV_GROUPS: NavGroup[] = [
     standalone: true,
     items: [
       { href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={17} /> },
+      { href: "/dashboard/messages", label: "Messages", icon: <MessageSquare size={17} />, module: "communication" },
     ],
   },
   {
@@ -225,6 +227,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     profile, signOut, hasFeature, hasModule, isAdmin, isSuperAdmin,
     org, availableOrgs, isSupportSession, membership,
   } = useAuth();
+  const unreadMessages = useUnreadMessagesBadge();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -327,6 +330,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div key={group.key} className="mb-1">
                   {visibleItems.map(item => (
                     <NavLink key={item.href} item={item} active={item.href === activeHref}
+                      badgeCount={item.href === "/dashboard/messages" ? unreadMessages : undefined}
                       onClick={() => setMobileOpen(false)} />
                   ))}
                 </div>
@@ -357,6 +361,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <div className="ml-2 border-l border-[#1B3E63] pl-2 mb-2">
                     {visibleItems.map(item => (
                       <NavLink key={item.href} item={item} active={item.href === activeHref}
+                        badgeCount={item.href === "/dashboard/messages" ? unreadMessages : undefined}
                         onClick={() => setMobileOpen(false)} />
                     ))}
                   </div>
@@ -465,7 +470,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 /* ------------------------------------------------------------------ */
 
-function NavLink({ item, active, onClick }: { item: NavItem; active: boolean; onClick: () => void }) {
+function NavLink({ item, active, onClick, badgeCount }: { item: NavItem; active: boolean; onClick: () => void; badgeCount?: number }) {
   return (
     <Link
       href={item.href}
@@ -483,7 +488,15 @@ function NavLink({ item, active, onClick }: { item: NavItem; active: boolean; on
       )}>
         {item.icon}
       </span>
-      {item.label}
+      <span className="flex-1">{item.label}</span>
+      {!!badgeCount && badgeCount > 0 && (
+        <span className={cn(
+          "text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center",
+          active ? "bg-[#0F2A47] text-white" : "bg-[#C9A227] text-[#0F2A47]"
+        )}>
+          {badgeCount > 99 ? "99+" : badgeCount}
+        </span>
+      )}
     </Link>
   );
 }

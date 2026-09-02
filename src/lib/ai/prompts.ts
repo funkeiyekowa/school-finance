@@ -36,7 +36,12 @@ export type AiTaskKind =
   | "analytics_digest"
   | "student_brief"
   | "expense_category_suggest"
-  | "school_newsletter";
+  | "school_newsletter"
+  | "message_polish"
+  | "message_shorten"
+  | "message_translate"
+  | "message_announcement_draft"
+  | "message_thread_summary";
 
 export interface AiPreset {
   kind: AiTaskKind;
@@ -310,6 +315,55 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
     system: "Reply with exactly one word: OK",
     compose: () => "Reply with exactly one word: OK",
     maxTokens: 10,
+  },
+  // Communication / chat assist (staff-only — /api/ai/generate enforces this).
+  // AI never sends on the user's behalf: every one of these returns text
+  // into the composer for the sender to review before hitting Send.
+  message_polish: {
+    kind: "message_polish",
+    label: "Polish message",
+    description: "Tidy grammar and tone for a school message, keep it brief.",
+    system: `${CORE_STYLE} Rewrite this chat message to a parent, student, or colleague: fix grammar, keep it warm and professional, keep it about the same length. Return only the rewritten message, no quotes.`,
+    compose: (input) => input,
+    maxTokens: 300,
+  },
+  message_shorten: {
+    kind: "message_shorten",
+    label: "Shorten message",
+    description: "Trim a draft message to its essential point.",
+    system: `${CORE_STYLE} Shorten this chat message to its essential point in one or two sentences, keeping the key facts (names, dates, numbers). Return only the rewritten message.`,
+    compose: (input) => input,
+    maxTokens: 200,
+  },
+  message_translate: {
+    kind: "message_translate",
+    label: "Translate message",
+    description: "Translate a draft or received message into another language.",
+    system: `${CORE_STYLE} Translate the given message accurately, preserving names, dates and numbers exactly. If a target language is specified, use it; otherwise use clear, simple English. Return only the translation.`,
+    compose: (input, extra) => {
+      const lang = extra?.target_language?.trim();
+      return lang ? `Target language: ${lang}
+
+Message:
+${input}` : input;
+    },
+    maxTokens: 300,
+  },
+  message_announcement_draft: {
+    kind: "message_announcement_draft",
+    label: "Draft announcement",
+    description: "Turn rough notes into a polished announcement-channel post.",
+    system: `${CORE_STYLE} You are drafting a school announcement to be posted in an announcement channel. Turn the notes into a clear, well-organized notice: a short heading line, then 2-5 sentences or a brief list of the key details (dates, actions required, who it affects). Return only the announcement text.`,
+    compose: (input) => input,
+    maxTokens: 400,
+  },
+  message_thread_summary: {
+    kind: "message_thread_summary",
+    label: "Summarize conversation",
+    description: "Summarize a long or unread group conversation.",
+    system: `${CORE_STYLE} Summarize this chat conversation for someone who has not read it. 3-6 bullet-style sentences (write them as short sentences, not literal bullet characters): who said what of substance, any decisions or action items, and anything requiring a response. Skip greetings and small talk.`,
+    compose: (input) => input,
+    maxTokens: 350,
   },
 };
 

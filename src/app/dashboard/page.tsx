@@ -12,7 +12,8 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "@/components/charts/LazyRecharts";
-import { TrendingUp, TrendingDown, Scale, AlertTriangle, RefreshCw, Printer } from "lucide-react";
+import { TrendingUp, TrendingDown, Scale, AlertTriangle, RefreshCw, Printer, MessageSquare } from "lucide-react";
+import { useMessagingDashboardStats } from "@/lib/messaging/hooks";
 import type { IncomeEntry, ExpenseEntry, StudentWithBalance } from "@/lib/types";
 
 const CHART_COLORS = ["#0F2A47", "#C9A227", "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"];
@@ -196,6 +197,8 @@ export default function DashboardPage() {
         </Link>
       )}
 
+      <MessagingDashboardBanner />
+
       {/* Charts row */}
       <div className="grid lg:grid-cols-5 gap-4">
         {/* Cash flow chart - wider */}
@@ -353,5 +356,23 @@ export default function DashboardPage() {
         </div>
       </Card>
     </div>
+  );
+}
+
+/** Compact messaging summary — only rendered when there's something worth surfacing. */
+function MessagingDashboardBanner() {
+  const stats = useMessagingDashboardStats();
+  if (!stats) return null;
+  const parts: string[] = [];
+  if (stats.unread_messages > 0) parts.push(`${stats.unread_messages} unread message${stats.unread_messages === 1 ? "" : "s"}`);
+  if (stats.pending_reports) parts.push(`${stats.pending_reports} pending moderation report${stats.pending_reports === 1 ? "" : "s"}`);
+  if (parts.length === 0) return null;
+  return (
+    <Link href="/dashboard/messages"
+      className="flex items-center gap-3 p-4 bg-[#FBF6E8] border border-[#C9A227] rounded-xl hover:bg-[#f7edd0] transition-colors">
+      <MessageSquare size={18} className="text-[#0F2A47] shrink-0" />
+      <span className="text-sm font-medium text-[#0F2A47]">{parts.join(" · ")}</span>
+      <span className="ml-auto text-[#0F2A47] text-sm font-medium">Open Messages →</span>
+    </Link>
   );
 }
