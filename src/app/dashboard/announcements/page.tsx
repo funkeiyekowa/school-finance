@@ -10,13 +10,14 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { AiAssistButton } from "@/components/ai/AiAssistButton";
-import { Plus, Save, Send, Bell, Printer } from "lucide-react";
+import { Plus, Save, Send, Bell, Printer, Sparkles } from "lucide-react";
 
 interface ClassRow { id: string; name: string; }
 interface AnnRow { id: string; title: string; body: string; target: string; target_class_id: string | null; priority: string; published: boolean; published_at: string | null; created_by: string | null; created_at: string; }
 
 export default function AnnouncementsPage() {
-  const { canEdit, profile, orgId } = useAuth();
+  const { canEdit, profile, orgId, org } = useAuth();
+  const [draftingNewsletter, setDraftingNewsletter] = useState(false);
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
   const [announcements, setAnnouncements] = useState<AnnRow[]>([]);
@@ -78,6 +79,44 @@ export default function AnnouncementsPage() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader title="Announcements" subtitle="Send targeted messages to staff, parents, students, or specific classes">
+        {canEdit && (
+          <Button variant="secondary" onClick={async () => {
+            try {
+              setDraftingNewsletter(true);
+              const [studRes, incRes, expRes] = await Promise.all([
+                supabase.from("students").select("id, grade, status").eq("status", "active"),
+                supabase.from("income_entries").select("amount, date"),
+                supabase.from("expense_entries").select("amount, date"),
+              ]);
+              const studs = (studRes.data ?? []) as { grade: string | null }[];
+              const byGrade: Record<string, number> = {};
+              studs.forEach(s => { byGrade[s.grade ?? "—"] = (byGrade[s.grade ?? "—"] ?? 0) + 1; });
+              const total_income = (incRes.data ?? []).reduce((s: number, i) => s + Number((i as { amount: number }).amount), 0);
+              const total_expenses = (expRes.data ?? []).reduce((s: number, i) => s + Number((i as { amount: number }).amount), 0);
+              const facts = JSON.stringify({
+                active_students: studs.length,
+                enrolment_by_grade: byGrade,
+                total_income_ytd: total_income,
+                total_expenses_ytd: total_expenses,
+              }, null, 2);
+              const { generateWithAi } = await import("@/lib/ai/client");
+              const result = await generateWithAi({
+                kind: "school_newsletter",
+                input: facts,
+                extra: { school_name: org?.name ?? "the school" },
+                source: "announcement_newsletter",
+              });
+              setForm({ title: "Term newsletter", body: result.output, target: "parents", target_class_id: "", priority: "normal" });
+              setShowForm(true);
+            } catch (err) {
+              alert(err instanceof Error ? err.message : "AI newsletter failed");
+            } finally {
+              setDraftingNewsletter(false);
+            }
+          }} loading={draftingNewsletter}>
+            <Sparkles size={14} /> Draft newsletter
+          </Button>
+        )}
         {canEdit && <Button variant="gold" onClick={() => setShowForm(true)}><Plus size={14} /> New Announcement</Button>}
       </PageHeader>
 

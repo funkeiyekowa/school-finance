@@ -35,7 +35,8 @@ export type AiTaskKind =
   | "student_term_summary"
   | "analytics_digest"
   | "student_brief"
-  | "expense_category_suggest";
+  | "expense_category_suggest"
+  | "school_newsletter";
 
 export interface AiPreset {
   kind: AiTaskKind;
@@ -207,6 +208,18 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
       return `Assignment instructions:\n${instructions}\n\nMax score: ${maxScore}\n\nStudent's response:\n${input}\n\nSuggest a score and feedback as the specified JSON.`;
     },
     maxTokens: 400,
+  },
+  school_newsletter: {
+    kind: "school_newsletter",
+    label: "Draft a parent newsletter",
+    description: "Term-end newsletter for parents, warmly summarising the term's highlights from a facts snapshot.",
+    system: `${CORE_STYLE} You draft a school newsletter for parents. Structure: an opening paragraph from the head of school; a "**Highlights this term**" section with 3-5 bullet-style items grounded in the numbers provided; a "**Upcoming**" section (2-3 items); and a warm closing. Use **bold section labels**. Never invent statistics. Use warm British English and keep the whole thing under 350 words. Return only the newsletter text.`,
+    compose: (input, extra) => {
+      const school = extra?.school_name ?? "the school";
+      const term = extra?.term ?? "this term";
+      return `School: ${school}\nTerm: ${term}\nFacts snapshot:\n${input}\n\nDraft the newsletter.`;
+    },
+    maxTokens: 900,
   },
   expense_category_suggest: {
     kind: "expense_category_suggest",
