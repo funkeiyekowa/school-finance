@@ -16,12 +16,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { cn } from "@/lib/utils";
+import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, Save, Users, Search, KeyRound, Mail, Phone, AlertTriangle, ArrowUpDown, Download, X, User, Trash2, MessageCircle } from "lucide-react";
+import { Plus, Save, Users, Search, KeyRound, Mail, Phone, AlertTriangle, ArrowUpDown, Download, X, User, Trash2, MessageCircle, UploadCloud } from "lucide-react";
 
 interface ParentRow {
   id: string;
@@ -76,6 +77,7 @@ export default function ParentsPage() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const [showForm, setShowForm] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<ParentRow | null>(null);
   const [form, setForm] = useState<typeof EMPTY>(EMPTY);
@@ -296,6 +298,7 @@ export default function ParentsPage() {
           <MessageCircle size={14} /> Notify parents
         </Button>
         <Button variant="ghost" onClick={exportCsv}><Download size={14} /> Export CSV</Button>
+        {canEdit && <Button variant="secondary" onClick={() => setShowBulk(true)}><UploadCloud size={14} /> Bulk import</Button>}
         {canEdit && <Button variant="gold" onClick={openNew}><Plus size={14} /> Add Parent</Button>}
       </PageHeader>
 
@@ -409,6 +412,44 @@ export default function ParentsPage() {
       </Card>
 
       {/* Form modal */}
+              <BulkImportModal
+          open={showBulk}
+          onClose={() => setShowBulk(false)}
+          title="Bulk import parents"
+          columns={[
+            { key: "full_name", label: "Full name", required: true },
+            { key: "email", label: "Email" },
+            { key: "phone", label: "Phone" },
+            { key: "relationship", label: "Relationship", hint: "father / mother / guardian" },
+            { key: "address", label: "Address" },
+            { key: "occupation", label: "Occupation" },
+          ]}
+          example={{
+            full_name: "Mrs. Amara Okafor",
+            email: "amara.okafor@example.com",
+            phone: "+2348012345678",
+            relationship: "mother",
+            address: "12 Palm Grove, Ikeja",
+            occupation: "Pharmacist",
+          }}
+          onImport={async (rows) => {
+            if (!orgId) return { ok: false, message: "No org context" };
+            const payload = rows.map(r => ({
+              organization_id: orgId,
+              full_name: r.full_name,
+              email: r.email || null,
+              phone: r.phone || null,
+              relationship: r.relationship || null,
+              address: r.address || null,
+              occupation: r.occupation || null,
+            }));
+            const { error } = await supabase.from("parent_profiles").insert(payload);
+            if (error) return { ok: false, message: error.message };
+            load();
+            return { ok: true, message: `Imported ${payload.length} parent(s).` };
+          }}
+        />
+
       {showForm && (
         <Modal open onClose={() => { setShowForm(false); setEditing(null); }} title={editing ? `Edit — ${editing.full_name}` : "Add Parent"} size="lg">
           <div className="space-y-5">

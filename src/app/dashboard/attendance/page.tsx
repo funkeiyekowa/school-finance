@@ -218,6 +218,13 @@ export default function AttendancePage() {
                 <option value="afternoon">Afternoon</option>
               </select>
             </div>
+            <button
+              onClick={() => window.open("/dashboard/attendance/summary", "_blank")}
+              className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#0F2A47] text-[#0F2A47] hover:bg-gray-50 flex items-center gap-1"
+              title="Printable attendance summary — per-class attendance % across a date range"
+            >
+              <Printer size={10} /> Summary report
+            </button>
             {selectedClassId && students.length > 0 && (
               <div className="flex items-center gap-2 ml-auto flex-wrap">
                 <span className="text-xs text-gray-500">Quick:</span>

@@ -32,10 +32,7 @@ import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { useToast } from "@/lib/hooks/useToast";
 import { cn, today } from "@/lib/utils";
-import {
-  GraduationCap, Plus, Search, ChevronRight, Upload, Trash2,
-  Check, X, Pencil, Filter, Users, UserCheck, UserX, Download,
-} from "lucide-react";
+import { GraduationCap, Plus, Search, ChevronRight, Upload, Trash2, Check, X, Pencil, Filter, Users, UserCheck, UserX, Download, Printer } from "lucide-react";
 import Link from "next/link";
 import type { Student } from "@/lib/types";
 
@@ -214,16 +211,26 @@ function StudentsPageInner() {
         title="Students"
         subtitle={`${stats.total} registered · ${stats.active} active · ${stats.classCount} classes`}
       >
-        {canEdit && (
-          <div className="flex gap-2">
-            <Button size="sm" variant="secondary" onClick={() => setShowImport(true)}>
-              <Upload size={14} /> Import
-            </Button>
-            <Button size="sm" variant="gold" onClick={() => setShowAdd(true)}>
-              <Plus size={14} /> Add Student
-            </Button>
-          </div>
-        )}
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => window.open(`/dashboard/students/class-list${filterGrade ? `?class=${encodeURIComponent(filterGrade)}` : ""}`, "_blank")}
+            title="Printable class list on your school's letterhead"
+          >
+            <Printer size={14} /> Class list
+          </Button>
+          {canEdit && (
+            <>
+              <Button size="sm" variant="secondary" onClick={() => setShowImport(true)}>
+                <Upload size={14} /> Import
+              </Button>
+              <Button size="sm" variant="gold" onClick={() => setShowAdd(true)}>
+                <Plus size={14} /> Add Student
+              </Button>
+            </>
+          )}
+        </div>
       </PageHeader>
 
       {/* Quick stats */}

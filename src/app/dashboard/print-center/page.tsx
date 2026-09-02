@@ -11,11 +11,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent } from "@/components/ui/Card";
-import {
-  Printer, FileText, Receipt, IdCard, MessageCircle, HeartPulse,
-  BookOpen, Award, GraduationCap, ClipboardCheck, CalendarClock,
-  ShoppingCart, Boxes, Search, Wallet, ArrowRight, UserPlus,
-} from "lucide-react";
+import { Printer, FileText, Receipt, IdCard, MessageCircle, HeartPulse, BookOpen, Award, GraduationCap, ClipboardCheck, CalendarClock, ShoppingCart, Boxes, Search, Wallet, ArrowRight, UserPlus, Users } from "lucide-react";
 
 interface Entry {
   title: string;
@@ -82,11 +78,22 @@ const ENTRIES: Entry[] = [
     needs: "Select a class → Print timetable",
     icon: <CalendarClock size={16} /> },
   { group: "Academics",
+    title: "Attendance summary",
+    blurb: "Per-class attendance % across a date range — great for management review.",
+    href: "/dashboard/attendance/summary",
+    icon: <ClipboardCheck size={16} /> },
+  { group: "Academics",
     title: "Attendance register (blank or marked)",
     blurb: "Mon–Fri hand-mark sheet or today's recorded register, per class.",
     href: "/dashboard/attendance",
     needs: "Select class → Blank register / Marked",
     icon: <ClipboardCheck size={16} /> },
+  { group: "Students & Parents",
+    title: "Class list",
+    blurb: "All active students in a chosen class with guardian phone + notes column.",
+    href: "/dashboard/students/class-list",
+    needs: "Filter by grade first for a scoped list",
+    icon: <Users size={16} /> },
   { group: "Students & Parents",
     title: "Admission letter",
     blurb: "Formal offer of admission on letterhead, personalised per student.",
