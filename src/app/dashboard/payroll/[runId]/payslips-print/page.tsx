@@ -12,9 +12,10 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/lib/context/AuthContext";
+import { useBranding } from "@/lib/hooks/useBranding";
 import { fmtMoney, fmtDateTime } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
+import { PrintableLetterhead, PrintableFooter } from "@/components/print/PrintableLetterhead";
 import { Printer } from "lucide-react";
 
 interface PayslipLine { name: string; code: string; type: string; amount: number; }
@@ -37,7 +38,7 @@ export default function BulkPayslipsPrintPage() {
   const params = useParams<{ runId: string }>();
   const runId = params.runId;
   const supabase = useMemo(() => createClient(), []);
-  const { org } = useAuth();
+  const branding = useBranding();
 
   const [run, setRun] = useState<RunRow | null>(null);
   const [payslips, setPayslips] = useState<PayslipRow[]>([]);
@@ -55,7 +56,7 @@ export default function BulkPayslipsPrintPage() {
     })();
   }, [supabase, runId]);
 
-  if (loading) return <div className="p-8"><LoadingSpinner /></div>;
+  if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (!run) return <div className="p-8 text-center text-gray-500">Run not found.</div>;
 
   const periodLabel = `${MONTHS[run.period_month - 1]} ${run.period_year}`;
@@ -65,7 +66,7 @@ export default function BulkPayslipsPrintPage() {
       {/* Toolbar — hidden on print */}
       <div className="no-print sticky top-0 z-10 bg-[#0F2A47] text-white px-6 py-3 flex items-center justify-between shadow-md">
         <div>
-          <p className="text-xs uppercase tracking-wider text-[#C9A227] font-bold">Bulk Payslips</p>
+          <p className="text-xs uppercase tracking-wider text-[#C9A227] font-bold">Bulk Payslips · {branding.schoolName}</p>
           <p className="text-sm font-medium">{run.label || `${periodLabel} payroll`} — {payslips.length} payslip{payslips.length === 1 ? "" : "s"}</p>
         </div>
         <button
@@ -79,19 +80,19 @@ export default function BulkPayslipsPrintPage() {
       <div className="max-w-3xl mx-auto py-6 print:py-0 print:max-w-full">
         {payslips.map((slip) => (
           <div key={slip.id} className="bg-white shadow-sm rounded-lg p-8 mb-6 print:shadow-none print:mb-0 print:rounded-none payslip-page">
-            {/* Header */}
-            <div className="flex items-start justify-between border-b-2 border-[#0F2A47] pb-3 mb-4">
-              <div>
-                <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Payslip</p>
-                <h2 className="text-base font-bold text-[#0F2A47]">{org?.name ?? "School"}</h2>
-                <p className="text-xs text-gray-600 mt-0.5">{run.label || `${periodLabel} payroll`}</p>
-                <p className="text-[11px] text-gray-500">{periodLabel}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-base font-bold text-[#0F2A47]">{slip.staff_name}</p>
-                <p className="text-xs text-gray-500">Staff ID: {slip.staff_code}</p>
-              </div>
-            </div>
+            <PrintableLetterhead
+              branding={branding}
+              eyebrow="Payslip"
+              accent="navy"
+              right={
+                <div>
+                  <p className="text-sm font-bold" style={{ color: branding.primaryColor }}>{slip.staff_name}</p>
+                  <p className="text-[11px] text-gray-500">Staff ID: {slip.staff_code}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">{run.label || `${periodLabel} payroll`}</p>
+                  <p className="text-[11px] text-gray-500">{periodLabel}</p>
+                </div>
+              }
+            />
 
             {/* Body */}
             <div className="space-y-1 text-sm">
@@ -143,7 +144,7 @@ export default function BulkPayslipsPrintPage() {
               </div>
             </div>
 
-            {/* Footer */}
+            {/* Payment status + signature */}
             <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-500">
               <div>
                 {slip.payment_status === "paid" ? (
@@ -157,9 +158,10 @@ export default function BulkPayslipsPrintPage() {
               </div>
               <div className="text-right">
                 <p>_______________________________</p>
-                <p>Authorized Signature</p>
+                <p>Authorised Signature</p>
               </div>
             </div>
+            <PrintableFooter branding={branding} />
           </div>
         ))}
       </div>

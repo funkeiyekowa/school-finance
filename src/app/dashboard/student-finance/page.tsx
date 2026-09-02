@@ -24,10 +24,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
-import {
-  Wallet, Search, GraduationCap, TrendingUp, AlertTriangle,
-  ChevronRight, Download, CircleDollarSign, PiggyBank, Receipt,
-} from "lucide-react";
+import { Wallet, Search, GraduationCap, TrendingUp, AlertTriangle, ChevronRight, Download, CircleDollarSign, PiggyBank, Receipt, Printer } from "lucide-react";
 import Link from "next/link";
 import type { Student, FeeSchedule } from "@/lib/types";
 
@@ -143,7 +140,20 @@ export default function StudentFinancePage() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader title="Student Finance" subtitle="Fee balances, payment tracking, and collection analytics">
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              const ids = filtered.map((s) => s.id).join(",");
+              if (!ids) return;
+              window.open(`/dashboard/student-finance/statements?ids=${ids}`, "_blank");
+            }}
+            disabled={filtered.length === 0}
+            title="Open a printable fee statement for every student in the current filter"
+          >
+            <Printer size={14} /> Print statements
+          </Button>
           <Button size="sm" variant="secondary" onClick={exportDebtors}>
             <Download size={14} /> Export Debtors
           </Button>

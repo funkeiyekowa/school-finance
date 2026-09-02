@@ -12,8 +12,10 @@
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useBranding } from "@/lib/hooks/useBranding";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
+import { PrintableLetterhead, PrintableFooter } from "@/components/print/PrintableLetterhead";
 import { Printer } from "lucide-react";
 
 interface LoanRow {
@@ -30,7 +32,8 @@ const FINE_PER_DAY = 50;
 
 export default function OverdueNoticesPage() {
   const supabase = useMemo(() => createClient(), []);
-  const { org, orgId } = useAuth();
+  const { orgId } = useAuth();
+  const branding = useBranding();
   const [loading, setLoading] = useState(true);
   const [loans, setLoans] = useState<LoanRow[]>([]);
   const [copies, setCopies] = useState<CopyRow[]>([]);
@@ -57,14 +60,14 @@ export default function OverdueNoticesPage() {
   const today = new Date().toISOString().slice(0, 10);
   const overdue = loans.filter((l) => l.due_date < today);
 
-  if (loading) return <div className="p-8"><LoadingSpinner /></div>;
+  if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
 
   return (
     <div className="min-h-screen bg-gray-100 print:bg-white">
       <div className="no-print sticky top-0 z-10 bg-[#0F2A47] text-white px-6 py-3 flex items-center justify-between shadow-md">
         <div>
           <p className="text-xs uppercase tracking-wider text-[#C9A227] font-bold">Overdue Notices</p>
-          <p className="text-sm font-medium">{overdue.length} notice{overdue.length === 1 ? "" : "s"} — {org?.name ?? "Library"}</p>
+          <p className="text-sm font-medium">{overdue.length} notice{overdue.length === 1 ? "" : "s"} — {branding.schoolName}</p>
         </div>
         <button
           onClick={() => window.print()}
@@ -86,10 +89,7 @@ export default function OverdueNoticesPage() {
             const estFine = daysLate * FINE_PER_DAY;
             return (
               <div key={l.id} className="bg-white shadow-sm rounded-lg p-8 mb-4 print:shadow-none print:mb-0 print:rounded-none notice-page">
-                <div className="border-b-2 border-red-600 pb-2 mb-3">
-                  <p className="text-[10px] text-red-600 uppercase font-bold tracking-widest">Overdue Book Notice</p>
-                  <h2 className="text-lg font-bold text-[#0F2A47] mt-1">{org?.name ?? "School Library"}</h2>
-                </div>
+                <PrintableLetterhead branding={branding} eyebrow="Overdue Book Notice" accent="rose" />
 
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm mb-4">
                   <div>
@@ -129,6 +129,7 @@ export default function OverdueNoticesPage() {
                     <p>Librarian&apos;s Signature</p>
                   </div>
                 </div>
+                <PrintableFooter branding={branding} />
               </div>
             );
           })}

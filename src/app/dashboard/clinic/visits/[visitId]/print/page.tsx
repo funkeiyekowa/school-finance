@@ -13,10 +13,11 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/lib/context/AuthContext";
+import { useBranding } from "@/lib/hooks/useBranding";
 import { fmtDate } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
-import { Printer, HeartPulse } from "lucide-react";
+import { PrintableLetterhead, PrintableFooter } from "@/components/print/PrintableLetterhead";
+import { Printer } from "lucide-react";
 
 interface VisitRow {
   id: string; visit_code: string; subject_type: string; student_id: string | null; staff_id: string | null;
@@ -46,7 +47,7 @@ export default function ClinicVisitPrintPage() {
   const params = useParams<{ visitId: string }>();
   const visitId = params.visitId;
   const supabase = useMemo(() => createClient(), []);
-  const { org } = useAuth();
+  const branding = useBranding();
 
   const [loading, setLoading] = useState(true);
   const [visit, setVisit] = useState<VisitRow | null>(null);
@@ -88,7 +89,7 @@ export default function ClinicVisitPrintPage() {
     })();
   }, [supabase, visitId]);
 
-  if (loading) return <div className="p-8"><LoadingSpinner /></div>;
+  if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (!visit) return <div className="p-8 text-center text-gray-500">Visit not found.</div>;
 
   const subjectName = subject ? `${(subject as StudentRow | StaffRow).first_name ?? ""} ${(subject as StudentRow | StaffRow).last_name ?? ""}`.trim() : "Unknown";
@@ -102,7 +103,7 @@ export default function ClinicVisitPrintPage() {
       <div className="no-print sticky top-0 z-10 bg-[#0F2A47] text-white px-6 py-3 flex items-center justify-between shadow-md">
         <div>
           <p className="text-xs uppercase tracking-wider text-[#C9A227] font-bold">Clinic Visit Summary</p>
-          <p className="text-sm font-medium">Visit {visit.visit_code} — {org?.name ?? "Clinic"}</p>
+          <p className="text-sm font-medium">Visit {visit.visit_code} — {branding.schoolName}</p>
         </div>
         <button
           onClick={() => window.print()}
@@ -114,23 +115,18 @@ export default function ClinicVisitPrintPage() {
 
       <div className="max-w-3xl mx-auto py-6 print:py-0 print:max-w-full">
         <div className="bg-white shadow-sm rounded-lg p-8 print:shadow-none print:rounded-none">
-          {/* Header */}
-          <div className="flex items-start justify-between border-b-2 border-emerald-600 pb-3 mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-emerald-600 flex items-center justify-center text-white">
-                <HeartPulse size={22} />
-              </div>
+          <PrintableLetterhead
+            branding={branding}
+            eyebrow="Clinic Visit Summary"
+            accent="emerald"
+            right={
               <div>
-                <p className="text-[10px] text-emerald-700 uppercase font-bold tracking-widest">Clinic Visit Summary</p>
-                <h2 className="text-lg font-bold text-[#0F2A47]">{org?.name ?? "School Clinic"}</h2>
+                <p className="text-[10px] text-gray-500 uppercase font-bold">Visit code</p>
+                <p className="text-sm font-bold" style={{ color: branding.primaryColor }}>{visit.visit_code}</p>
+                <p className="text-xs text-gray-500">{fmtDate(visit.visit_date)}</p>
               </div>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] text-gray-500 uppercase font-bold">Visit code</p>
-              <p className="text-sm font-bold text-[#0F2A47]">{visit.visit_code}</p>
-              <p className="text-xs text-gray-500">{fmtDate(visit.visit_date)}</p>
-            </div>
-          </div>
+            }
+          />
 
           {/* Patient block */}
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 mb-4 text-sm">
@@ -269,6 +265,7 @@ export default function ClinicVisitPrintPage() {
               <p>Parent / Guardian Acknowledgement</p>
             </div>
           </div>
+          <PrintableFooter branding={branding} />
         </div>
       </div>
 

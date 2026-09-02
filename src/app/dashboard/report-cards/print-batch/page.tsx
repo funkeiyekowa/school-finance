@@ -12,9 +12,10 @@
 import { Suspense, useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/lib/context/AuthContext";
+import { useBranding } from "@/lib/hooks/useBranding";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
-import { Printer, Award } from "lucide-react";
+import { PrintableLetterhead, PrintableFooter } from "@/components/print/PrintableLetterhead";
+import { Printer } from "lucide-react";
 
 interface Card {
   id: string; student_id: string; term: string; session_name: string | null;
@@ -43,7 +44,7 @@ export default function ReportCardBatchPrint() {
 function Inner() {
   const params = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
-  const { org } = useAuth();
+  const branding = useBranding();
   const ids = (params.get("ids") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
   const [cards, setCards] = useState<Card[]>([]);
@@ -83,7 +84,7 @@ function Inner() {
     return m;
   }, [subjects]);
 
-  if (loading) return <div className="p-8"><LoadingSpinner /></div>;
+  if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (cards.length === 0) return <div className="p-8 text-center text-gray-500">No report cards selected.</div>;
 
   return (
@@ -91,7 +92,7 @@ function Inner() {
       <div className="no-print sticky top-0 z-10 bg-[#0F2A47] text-white px-6 py-3 flex items-center justify-between shadow-md">
         <div>
           <p className="text-xs uppercase tracking-wider text-[#C9A227] font-bold">Batch Report Cards</p>
-          <p className="text-sm font-medium">{cards.length} report card{cards.length === 1 ? "" : "s"} — {org?.name ?? "School"}</p>
+          <p className="text-sm font-medium">{cards.length} report card{cards.length === 1 ? "" : "s"} — {branding.schoolName}</p>
         </div>
         <button
           onClick={() => window.print()}
@@ -110,26 +111,21 @@ function Inner() {
 
           return (
             <div key={c.id} className="bg-white shadow-sm rounded-lg p-8 mb-4 print:shadow-none print:mb-0 print:rounded-none rc-page">
-              {/* Header */}
-              <div className="flex items-start justify-between border-b-2 border-[#0F2A47] pb-3 mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#C9A227] to-[#e6bf39] flex items-center justify-center text-[#0F2A47]">
-                    <Award size={22} />
-                  </div>
+              <PrintableLetterhead
+                branding={branding}
+                eyebrow="Student Report Card"
+                accent="gold"
+                right={
                   <div>
-                    <p className="text-[10px] text-[#C9A227] uppercase font-bold tracking-widest">Student Report Card</p>
-                    <h2 className="text-lg font-bold text-[#0F2A47]">{org?.name ?? "School"}</h2>
-                    <p className="text-xs text-gray-500">{c.session_name ?? ""} · {c.term}</p>
+                    <p className="text-base font-bold" style={{ color: branding.primaryColor }}>{st?.full_name ?? "Student"}</p>
+                    <p className="text-xs text-gray-500">{st?.student_code ?? ""}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">{c.session_name ?? ""} · {c.term}</p>
+                    {!c.published && (
+                      <p className="text-[10px] mt-1 text-amber-700 font-bold uppercase">Draft</p>
+                    )}
                   </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-base font-bold text-[#0F2A47]">{st?.full_name ?? "Student"}</p>
-                  <p className="text-xs text-gray-500">{st?.student_code ?? ""}</p>
-                  {!c.published && (
-                    <p className="text-[10px] mt-1 text-amber-700 font-bold uppercase">Draft</p>
-                  )}
-                </div>
-              </div>
+                }
+              />
 
               {/* Summary strip */}
               <div className="grid grid-cols-4 gap-2 mb-4">
@@ -224,6 +220,7 @@ function Inner() {
                   <p>Principal</p>
                 </div>
               </div>
+              <PrintableFooter branding={branding} />
             </div>
           );
         })}

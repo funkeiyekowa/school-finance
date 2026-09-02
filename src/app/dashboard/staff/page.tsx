@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
 import { usePaginatedData } from "@/lib/hooks/usePaginatedData";
-import { Plus, Save, Users, Search, Trash2 } from "lucide-react";
+import { Plus, Save, Users, Search, Trash2, IdCard } from "lucide-react";
 
 interface DeptRow { id: string; name: string; }
 interface StaffRow { id: string; staff_code: string; full_name: string; email: string | null; phone: string | null; job_title: string | null; staff_type: string; department_id: string | null; status: string; date_joined: string | null; }
@@ -198,6 +198,13 @@ export default function StaffPage() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader title="Staff Directory" subtitle="Manage teaching and non-teaching staff">
+        <Button
+          variant="secondary"
+          onClick={() => window.open("/dashboard/staff/id-cards", "_blank")}
+          title="Open a printable page of staff ID cards for all active staff"
+        >
+          <IdCard size={14} /> Print ID cards
+        </Button>
         {canEdit && <Button variant="gold" onClick={() => openForm()}><Plus size={14} /> Add Staff</Button>}
       </PageHeader>
 
