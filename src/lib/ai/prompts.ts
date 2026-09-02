@@ -29,7 +29,8 @@ export type AiTaskKind =
   | "connection_test"
   | "lms_lesson_generate"
   | "lms_quiz_generate"
-  | "lms_grading_assist";
+  | "lms_grading_assist"
+  | "lms_course_outline";
 
 export interface AiPreset {
   kind: AiTaskKind;
@@ -201,6 +202,20 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
       return `Assignment instructions:\n${instructions}\n\nMax score: ${maxScore}\n\nStudent's response:\n${input}\n\nSuggest a score and feedback as the specified JSON.`;
     },
     maxTokens: 400,
+  },
+  lms_course_outline: {
+    kind: "lms_course_outline",
+    label: "Generate course outline",
+    description: "Given a subject and class level, draft a term-long course outline as a list of lesson titles with brief objectives.",
+    system: `${CORE_STYLE} You are drafting a term-long course outline for a school Learning Management System. Return ONLY valid JSON (no markdown fences, no commentary) matching exactly: {"course_description":"...","lessons":[{"title":"...","objective":"..."}]}. course_description is 2-3 sentences describing the course. Generate the number of lessons requested. Each lesson.title is a short concrete topic (5-9 words); each lesson.objective is one sentence stating what a student will be able to do after the lesson. Progress logically from foundational to advanced across the term. Match the subject and class level given.`,
+    compose: (input, extra) => {
+      const subject = extra?.subject ?? "the subject";
+      const grade = extra?.grade ?? "the class";
+      const count = extra?.lesson_count ?? "10";
+      const brief = input || "Standard term-long curriculum.";
+      return `Subject: ${subject}\nClass/Grade: ${grade}\nRequested lessons: ${count}\nAdditional brief: ${brief}\n\nGenerate the outline as the specified JSON.`;
+    },
+    maxTokens: 1400,
   },
   free_form: {
     kind: "free_form",

@@ -93,6 +93,19 @@ export default function ReportCardsHubPage() {
         title="Report Cards"
         subtitle="Generate, publish, and manage student report cards & master sheets"
       >
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            const ids = filtered.map((r) => r.id).join(",");
+            if (!ids) return;
+            window.open(`/dashboard/report-cards/print-batch?ids=${ids}`, "_blank");
+          }}
+          disabled={filtered.length === 0}
+          title="Open every filtered report card in a printable page — Print / Save as PDF from your browser"
+        >
+          <Printer size={14} /> Print batch
+        </Button>
         {isAdmin && (
           <>
             <Link href="/dashboard/report-cards/generate">

@@ -30,10 +30,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import {
-  Stethoscope, Plus, HeartPulse, Pill, Syringe, AlertTriangle,
-  Trash2, Users, AlertCircle, CheckCircle2, Download,
-} from "lucide-react";
+import { Stethoscope, Plus, HeartPulse, Pill, Syringe, AlertTriangle, Trash2, Users, AlertCircle, CheckCircle2, Download, Printer } from "lucide-react";
 
 /* ---------------- Types ---------------- */
 interface StudentOption { id: string; full_name: string; }
@@ -606,6 +603,18 @@ export default function ClinicPage() {
                               </div>
                             )}
                             {v.notes && <p className="italic text-gray-500">&ldquo;{v.notes}&rdquo;</p>}
+                            <div className="pt-2 flex justify-end">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  window.open(`/dashboard/clinic/visits/${v.id}/print`, "_blank");
+                                }}
+                                className="text-xs text-[#0F2A47] hover:text-[#C9A227] flex items-center gap-1"
+                                title="Open printable visit summary"
+                              >
+                                <Printer size={11} /> Print summary
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>

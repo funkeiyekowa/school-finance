@@ -163,6 +163,79 @@ export default function CourseDetailPage() {
   const [savingLesson, setSavingLesson] = useState(false);
   const [generatingLesson, setGeneratingLesson] = useState(false);
 
+  // Bulk course outline generation
+  const [showOutlineModal, setShowOutlineModal] = useState(false);
+  const [outlineForm, setOutlineForm] = useState({ subject: "", grade: "", lesson_count: "10", brief: "" });
+  const [generatingOutline, setGeneratingOutline] = useState(false);
+  const [outlinePreview, setOutlinePreview] = useState<{ title: string; objective: string }[] | null>(null);
+  const [outlineDescription, setOutlineDescription] = useState("");
+
+  async function generateOutline() {
+    if (!outlineForm.subject.trim() || !outlineForm.grade.trim()) {
+      notify("Subject and class/grade are required.", "error");
+      return;
+    }
+    setGeneratingOutline(true);
+    setOutlinePreview(null);
+    try {
+      const result = await generateWithAi({
+        kind: "lms_course_outline",
+        input: outlineForm.brief,
+        extra: {
+          subject: outlineForm.subject.trim(),
+          grade: outlineForm.grade.trim(),
+          lesson_count: outlineForm.lesson_count.trim() || "10",
+        },
+        source: "lms_course_outline",
+      });
+      let cleaned = result.output.trim();
+      if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```(?:json)?/, "").replace(/```$/, "").trim();
+      const parsed = JSON.parse(cleaned) as { course_description: string; lessons: { title: string; objective: string }[] };
+      if (!Array.isArray(parsed.lessons)) throw new Error("Malformed AI response.");
+      setOutlineDescription(parsed.course_description || "");
+      setOutlinePreview(parsed.lessons);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "AI outline failed.", "error");
+    } finally {
+      setGeneratingOutline(false);
+    }
+  }
+
+  async function acceptOutline() {
+    if (!outlinePreview || outlinePreview.length === 0 || !orgId) return;
+    setGeneratingOutline(true);
+    try {
+      // Append course description if the course had none
+      if (outlineDescription && (!course?.description || !course.description.trim())) {
+        await supabase.from("lms_courses").update({ description: outlineDescription }).eq("id", courseId);
+      }
+      const startOrder = lessons.length;
+      const rows = outlinePreview.map((l, i) => ({
+        organization_id: orgId,
+        course_id: courseId,
+        title: l.title,
+        content: l.objective ? `**Learning objective**\n\n${l.objective}` : "",
+        estimated_minutes: 30,
+        sort_order: startOrder + i,
+        status: "draft",
+        ai_generated: true,
+        ai_source_prompt: `Auto-generated from course outline: ${outlineForm.subject} / ${outlineForm.grade}`,
+      }));
+      const { error } = await supabase.from("lms_lessons").insert(rows);
+      if (error) throw error;
+      notify(`Added ${rows.length} lesson${rows.length === 1 ? "" : "s"} from the outline. Fill in the full content for each.`);
+      setShowOutlineModal(false);
+      setOutlinePreview(null);
+      setOutlineForm({ subject: "", grade: "", lesson_count: "10", brief: "" });
+      load();
+    } catch (err) {
+      notify(extractErrorMessage(err, "Failed to save outline."), "error");
+    } finally {
+      setGeneratingOutline(false);
+    }
+  }
+
+
   function openLessonForm(l?: LessonRow) {
     if (l) {
       setEditingLesson(l);
@@ -567,9 +640,14 @@ export default function CourseDetailPage() {
       {tab === "lessons" && (
         <div className="space-y-4">
           {canEdit && (
-            <Button variant="gold" size="sm" onClick={() => openLessonForm()}>
-              <Plus size={14} /> New Lesson
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="gold" size="sm" onClick={() => openLessonForm()}>
+                <Plus size={14} /> New Lesson
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setShowOutlineModal(true)}>
+                <Sparkles size={14} /> Generate outline
+              </Button>
+            </div>
           )}
 
           {lessons.length === 0 ? (
@@ -966,6 +1044,93 @@ export default function CourseDetailPage() {
               </button>
             ))}
           </div>
+        </div>
+      </Modal>
+
+      
+      {/* Bulk course outline generator */}
+      <Modal open={showOutlineModal} onClose={() => { setShowOutlineModal(false); setOutlinePreview(null); }} title="Generate course outline" size="lg">
+        <div className="space-y-3">
+          {!outlinePreview ? (
+            <>
+              <p className="text-xs text-gray-600">
+                AI drafts a course description plus a list of lesson titles with objectives.
+                You review, edit each lesson later, and add full content.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-700">Subject</label>
+                  <input
+                    value={outlineForm.subject}
+                    onChange={(e) => setOutlineForm({ ...outlineForm, subject: e.target.value })}
+                    placeholder="e.g. Mathematics"
+                    className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-700">Class / grade</label>
+                  <input
+                    value={outlineForm.grade}
+                    onChange={(e) => setOutlineForm({ ...outlineForm, grade: e.target.value })}
+                    placeholder="e.g. JSS 2"
+                    className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-700">Number of lessons</label>
+                  <input
+                    type="number" min={1} max={30}
+                    value={outlineForm.lesson_count}
+                    onChange={(e) => setOutlineForm({ ...outlineForm, lesson_count: e.target.value })}
+                    className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-700">Additional brief (optional)</label>
+                <textarea
+                  value={outlineForm.brief}
+                  onChange={(e) => setOutlineForm({ ...outlineForm, brief: e.target.value })}
+                  placeholder="e.g. focus on real-world word problems; align to WAEC syllabus"
+                  className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm h-20"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="secondary" onClick={() => setShowOutlineModal(false)}>Cancel</Button>
+                <Button variant="gold" onClick={generateOutline} loading={generatingOutline}>
+                  <Sparkles size={14} /> Draft outline
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-900">
+                <p className="font-semibold mb-1">Course description</p>
+                <p>{outlineDescription}</p>
+              </div>
+              <p className="text-xs text-gray-600">
+                Review the {outlinePreview.length} draft lesson{outlinePreview.length === 1 ? "" : "s"} below.
+                Accepting will create them all in draft state — you can then open each to fill in the full content.
+              </p>
+              <div className="max-h-72 overflow-y-auto space-y-2 border border-gray-200 rounded-lg p-2">
+                {outlinePreview.map((l, i) => (
+                  <div key={i} className="bg-white p-2 rounded border border-gray-100">
+                    <p className="text-sm font-semibold text-[#0F2A47]">{i + 1}. {l.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{l.objective}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-between gap-2 pt-2">
+                <Button variant="secondary" onClick={() => setOutlinePreview(null)}>Re-draft</Button>
+                <div className="flex gap-2">
+                  <Button variant="secondary" onClick={() => { setShowOutlineModal(false); setOutlinePreview(null); }}>Cancel</Button>
+                  <Button variant="gold" onClick={acceptOutline} loading={generatingOutline}>
+                    Add all {outlinePreview.length} lessons
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
 
