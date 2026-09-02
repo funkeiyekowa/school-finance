@@ -12,7 +12,7 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "@/components/charts/LazyRecharts";
-import { TrendingUp, TrendingDown, Scale, AlertTriangle, RefreshCw } from "lucide-react";
+import { TrendingUp, TrendingDown, Scale, AlertTriangle, RefreshCw, Printer } from "lucide-react";
 import type { IncomeEntry, ExpenseEntry, StudentWithBalance } from "@/lib/types";
 
 const CHART_COLORS = ["#0F2A47", "#C9A227", "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"];
@@ -140,6 +140,13 @@ export default function DashboardPage() {
           ? `Welcome back, ${profile.full_name.split(" ")[0]} — every figure below is live from your ledgers.`
           : "Every figure below is live from your ledgers."}
       >
+        <button
+          onClick={() => window.open("/dashboard/analytics/print", "_blank")}
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-white border border-transparent hover:border-gray-200 transition-all"
+        >
+          <Printer size={14} />
+          Executive summary
+        </button>
         <button onClick={load} className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-white border border-transparent hover:border-gray-200 transition-all">
           <RefreshCw size={14} />
           Refresh
