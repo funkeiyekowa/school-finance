@@ -34,7 +34,7 @@ import { generateWithAi } from "@/lib/ai/client";
 import { extractContent, parseCsv, type RawContent } from "@/lib/import/docParser";
 import {
   UploadCloud, FileText, Sparkles, ChevronDown, ChevronRight, Loader2,
-  Save, ArrowLeft, CheckCircle2, HelpCircle, AlertTriangle,
+  Save, ArrowLeft, CheckCircle2, HelpCircle, AlertTriangle, Download,
 } from "lucide-react";
 
 interface CourseRow {
@@ -60,6 +60,60 @@ interface ParsedLesson {
 interface ParsedCourse {
   course_description: string;
   lessons: ParsedLesson[];
+}
+
+const SAMPLE_CSV_ROWS: string[][] = [
+  ["title", "content", "objective", "minutes"],
+  [
+    "Introduction to Fractions",
+    "A fraction represents a part of a whole. The top number (numerator) shows how many parts we have; the bottom number (denominator) shows how many equal parts the whole is divided into.",
+    "Explain what a fraction represents using everyday examples.",
+    "20",
+  ],
+  [
+    "Adding Fractions with the Same Denominator",
+    "When two fractions share the same denominator, add the numerators and keep the denominator unchanged. For example, 1/4 + 2/4 = 3/4.",
+    "Add two or more fractions that share a denominator.",
+    "25",
+  ],
+];
+
+function csvCell(v: string): string {
+  return v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+function downloadSampleCsv() {
+  const csv = SAMPLE_CSV_ROWS.map(r => r.map(csvCell).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "lms-mass-import-sample.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const SAMPLE_MARKDOWN = `# Introduction to Fractions
+
+A fraction represents a part of a whole. The top number (numerator) shows how many parts we have; the bottom number (denominator) shows how many equal parts the whole is divided into.
+
+# Adding Fractions with the Same Denominator
+
+When two fractions share the same denominator, add the numerators and keep the denominator unchanged. For example, 1/4 + 2/4 = 3/4.
+
+# Adding Fractions with Different Denominators
+
+Find a common denominator first, convert each fraction, then add the numerators as before.
+`;
+
+function downloadSampleMarkdown() {
+  const blob = new Blob([SAMPLE_MARKDOWN], { type: "text/markdown" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "lms-mass-import-sample.md";
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export default function LmsMassImportPage() {
@@ -342,6 +396,15 @@ export default function LmsMassImportPage() {
               <li><strong>Plain text or Markdown</strong> notes → AI splits by heading/topic and drafts quizzes.</li>
               <li><strong>Paste anything</strong> from a curriculum PDF or teacher notes into the box below.</li>
             </ul>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <span className="font-semibold">Not sure how to format your file? Download a sample:</span>
+              <button type="button" onClick={downloadSampleCsv} className="text-blue-700 hover:text-blue-900 underline flex items-center gap-1">
+                <Download size={11} /> Sample .csv (structured)
+              </button>
+              <button type="button" onClick={downloadSampleMarkdown} className="text-blue-700 hover:text-blue-900 underline flex items-center gap-1">
+                <Download size={11} /> Sample .md (headings)
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

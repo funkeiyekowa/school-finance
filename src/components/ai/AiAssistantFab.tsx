@@ -10,16 +10,22 @@
  * pretending to have live data access.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { Sparkles, X, Loader2, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { generateWithAi } from "@/lib/ai/client";
+import { askAssistant } from "@/lib/ai/client";
+import { useBranding } from "@/lib/hooks/useBranding";
 
 interface Turn { role: "user" | "ai"; text: string; }
 
 export function AiAssistantFab() {
   const pathname = usePathname();
+  const branding = useBranding();
+  const assistantName = useMemo(() => {
+    const school = branding?.schoolName?.trim();
+    return school ? `${school} Help` : "School Help";
+  }, [branding]);
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,14 +38,9 @@ export function AiAssistantFab() {
     setQ("");
     setBusy(true);
     try {
-      const result = await generateWithAi({
-        kind: "free_form",
-        input:
-          "You are a friendly platform assistant for a Nigerian K-12 school-management app. " +
-          "Answer briefly and practically. If the user asks 'how do I…', point to the correct dashboard section and steps. " +
-          "You do not have access to live school data — if they ask about a specific number, tell them where to look for it. " +
-          "Use British English.\n\n" +
-          `Current page: ${pathname ?? "/"}\n\nUSER QUESTION:\n${question}`,
+      const result = await askAssistant({
+        input: question,
+        page: pathname ?? "/",
         source: "ai_fab",
       });
       setTurns(t => [...t, { role: "ai", text: result.output }]);
@@ -58,7 +59,7 @@ export function AiAssistantFab() {
           "no-print fixed bottom-5 right-5 z-40 w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105",
           open ? "bg-gray-800 text-white" : "bg-gradient-to-br from-[#C9A227] to-[#e6bf39] text-[#0F2A47]"
         )}
-        title="Ask the platform assistant"
+        title={`Ask ${assistantName}`}
       >
         {open ? <X size={18} /> : <Sparkles size={18} />}
       </button>
@@ -67,7 +68,7 @@ export function AiAssistantFab() {
         <div className="no-print fixed bottom-20 right-5 z-40 w-80 max-w-[calc(100vw-2.5rem)] rounded-xl shadow-2xl bg-white border border-gray-200 flex flex-col overflow-hidden">
           <div className="px-3 py-2 flex items-center gap-2 text-xs" style={{ background: "#0F2A47", color: "#fff" }}>
             <Sparkles size={12} className="text-[#C9A227]" />
-            <span className="font-bold uppercase tracking-wider">Platform assistant</span>
+            <span className="font-bold uppercase tracking-wider">{assistantName}</span>
             <button onClick={() => setOpen(false)} className="ml-auto opacity-60 hover:opacity-100"><X size={12} /></button>
           </div>
           <div className="p-3 h-64 overflow-y-auto space-y-2 bg-gray-50">

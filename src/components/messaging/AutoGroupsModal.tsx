@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Modal } from "@/components/ui/Modal";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
 import { Users, BookOpen, Building2 } from "lucide-react";
+import { useToast } from "@/lib/hooks/useToast";
 
 interface Props {
   open: boolean;
@@ -27,6 +28,7 @@ export function AutoGroupsModal({ open, onClose, onOpened }: Props) {
   const [departments, setDepartments] = useState<DeptRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const { notify, ToastHost } = useToast();
 
   useEffect(() => {
     if (!open) return;
@@ -45,11 +47,13 @@ export function AutoGroupsModal({ open, onClose, onOpened }: Props) {
     setBusyKey(key);
     const { data, error } = await supabase.rpc("sync_auto_group", { p_kind: kind, ...params });
     setBusyKey(null);
-    if (!error && data) { onClose(); onOpened(data as string); }
+    if (error) { notify(error.message, "error"); return; }
+    if (data) { onClose(); onOpened(data as string); }
   }
 
   return (
     <Modal open={open} onClose={onClose} title="School groups" size="md">
+      <ToastHost />
       {loading ? <LoadingSpinner /> : (
         <div className="space-y-4 max-h-96 overflow-y-auto">
           <div>

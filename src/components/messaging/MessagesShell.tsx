@@ -17,6 +17,7 @@ import { AutoGroupsModal } from "@/components/messaging/AutoGroupsModal";
 import { SetupHero } from "@/components/ui/SetupHero";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
 import { Modal } from "@/components/ui/Modal";
+import { useToast } from "@/lib/hooks/useToast";
 import type { Message } from "@/lib/messaging/types";
 import { MessageSquare, Users, ShieldAlert, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -34,6 +35,7 @@ export function MessagesShell({ activeConversationId }: Props) {
   const myRole = membership?.role ?? "";
   const isStaff = STAFF_ROLES.has(myRole);
 
+  const { notify, ToastHost } = useToast();
   const { policy, loading: policyLoading, configured } = useMessagingPolicy();
   const { items, loading: listLoading, refresh: refreshList } = useConversationList();
   const { messages, loading: msgLoading, loadingMore, hasMore, loadMore, refresh: refreshMessages, typingUsers, setTyping } =
@@ -74,26 +76,30 @@ export function MessagesShell({ activeConversationId }: Props) {
 
   const handleSaveEdit = useCallback(async (body: string) => {
     if (!editing) return;
-    await supabase.rpc("edit_message", { p_message_id: editing.id, p_body: body });
+    const { error } = await supabase.rpc("edit_message", { p_message_id: editing.id, p_body: body });
+    if (error) throw new Error(error.message);
     setEditing(null);
     refreshMessages();
   }, [supabase, editing, refreshMessages]);
 
   const handleDelete = useCallback(async (m: Message) => {
     if (!confirm("Delete this message?")) return;
-    await supabase.rpc("delete_message", { p_message_id: m.id });
+    const { error } = await supabase.rpc("delete_message", { p_message_id: m.id });
+    if (error) { notify(error.message, "error"); return; }
     refreshMessages();
-  }, [supabase, refreshMessages]);
+  }, [supabase, refreshMessages, notify]);
 
   const handleReact = useCallback(async (m: Message, emoji: string) => {
-    await supabase.rpc("react_to_message", { p_message_id: m.id, p_emoji: emoji });
+    const { error } = await supabase.rpc("react_to_message", { p_message_id: m.id, p_emoji: emoji });
+    if (error) { notify(error.message, "error"); return; }
     refreshMessages();
-  }, [supabase, refreshMessages]);
+  }, [supabase, refreshMessages, notify]);
 
   const handlePin = useCallback(async (m: Message, pinned: boolean) => {
-    await supabase.rpc("pin_message", { p_message_id: m.id, p_pinned: pinned });
+    const { error } = await supabase.rpc("pin_message", { p_message_id: m.id, p_pinned: pinned });
+    if (error) { notify(error.message, "error"); return; }
     refreshMessages();
-  }, [supabase, refreshMessages]);
+  }, [supabase, refreshMessages, notify]);
 
   const handleOpenAttachment = useCallback(async (path: string, fileName: string) => {
     const url = await getAttachmentSignedUrl(path);
@@ -249,6 +255,7 @@ export function MessagesShell({ activeConversationId }: Props) {
           <p className="text-sm text-gray-700 whitespace-pre-wrap">{summary}</p>
         </Modal>
       )}
+      <ToastHost />
     </div>
   );
 }

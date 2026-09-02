@@ -5,10 +5,32 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { AlertCircle, CheckCircle2, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, Upload, Download } from "lucide-react";
 
 interface ImportStudentsModalProps {
   onCloseAction: () => void;
+}
+
+const TEMPLATE_HEADERS = [
+  "student_code", "first_name", "last_name", "middle_name", "grade",
+  "gender", "status", "guardian_name", "guardian_phone", "guardian_email",
+  "date_of_birth", "admission_date", "academic_year", "address", "notes",
+];
+const TEMPLATE_SAMPLE_ROW = [
+  "STU-0001", "Adaeze", "Okafor", "", "JSS 1",
+  "female", "active", "Mrs C. Okafor", "08012345678", "c.okafor@example.com",
+  "2013-04-12", "2026-09-01", "2026/2027", "12 Ogui Road, Enugu", "",
+];
+
+function downloadStudentImportTemplate() {
+  const csv = TEMPLATE_HEADERS.join(",") + "\n" + TEMPLATE_SAMPLE_ROW.join(",");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "student-import-template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function ImportStudentsModal({ onCloseAction }: ImportStudentsModalProps) {
@@ -165,12 +187,19 @@ export function ImportStudentsModal({ onCloseAction }: ImportStudentsModalProps)
           </div>
         </div>
 
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
           <p className="text-xs text-blue-700">
             <strong>Tip:</strong> Use these column headers in your file:
             student_code, first_name, last_name, grade, gender, status,
             guardian_name, guardian_phone, guardian_email
           </p>
+          <button
+            type="button"
+            onClick={downloadStudentImportTemplate}
+            className="text-blue-700 hover:text-blue-900 underline text-xs flex items-center gap-1"
+          >
+            <Download size={11} /> Download CSV template
+          </button>
         </div>
 
         <div className="flex justify-end gap-3">

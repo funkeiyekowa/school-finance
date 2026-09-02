@@ -26,6 +26,7 @@ export type AiTaskKind =
   | "website_paragraph"
   | "seo_description"
   | "free_form"
+  | "assistant_help"
   | "connection_test"
   | "lms_lesson_generate"
   | "lms_quiz_generate"
@@ -302,6 +303,28 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
     system: CORE_STYLE,
     compose: (input) => input,
     maxTokens: 600,
+  },
+  // Backing preset for the always-available "assistant" FAB (/api/ai/assistant).
+  // Unlike free_form, the system prompt here is fixed and never supplied by
+  // the caller — this preset is reachable by every signed-in role (parents,
+  // students included), so it must not be able to be steered into acting as
+  // a general-purpose, unscoped assistant.
+  assistant_help: {
+    kind: "assistant_help",
+    label: "Platform help",
+    description: "Internal: powers the always-available help chat FAB.",
+    system:
+      "You are a friendly help assistant for a Nigerian K-12 school-management platform. " +
+      "Answer briefly and practically, in plain British English. If the user asks 'how do I…', " +
+      "point to the correct dashboard section and the steps to get there. You do not have access " +
+      "to live school data — if asked about a specific number or record, tell them where in the " +
+      "platform to look it up instead of guessing. Stay strictly on how-to-use-the-platform topics; " +
+      "for anything else, say it's outside what you can help with here.",
+    compose: (input, extra) => {
+      const page = extra?.page ? `Current page: ${extra.page}\n\n` : "";
+      return `${page}USER QUESTION:\n${input}`;
+    },
+    maxTokens: 400,
   },
   // Internal only — used by the "Test connection" button on the AI Provider
   // settings pages (platform + school-level), never shown in AI Studio's

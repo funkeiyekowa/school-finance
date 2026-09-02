@@ -62,8 +62,16 @@ export function Composer({
   async function submit() {
     if (editing) {
       if (!activeBody.trim()) return;
-      await onSaveEdit(activeBody.trim());
-      setBody("");
+      setSending(true);
+      setError(null);
+      try {
+        await onSaveEdit(activeBody.trim());
+        setBody("");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not save edit");
+      } finally {
+        setSending(false);
+      }
       return;
     }
     if (!activeBody.trim() && files.length === 0) return;

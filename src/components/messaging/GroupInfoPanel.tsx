@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/messaging/Avatar";
 import type { Conversation } from "@/lib/messaging/types";
 import { UserPlus, Shield, Archive, LogOut } from "lucide-react";
+import { useToast } from "@/lib/hooks/useToast";
 
 interface MemberRow { user_id: string; full_name: string; role: string; member_role: string; }
 
@@ -25,9 +26,11 @@ export function GroupInfoPanel({ open, onClose, conversation, myUserId, isAdminH
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const { notify, ToastHost } = useToast();
 
   const load = async () => {
-    const { data } = await supabase.rpc("get_conversation_members", { p_conversation_id: conversation.id });
+    const { data, error } = await supabase.rpc("get_conversation_members", { p_conversation_id: conversation.id });
+    if (error) { notify(error.message, "error"); return; }
     setMembers((data as MemberRow[]) ?? []);
   };
 
@@ -35,29 +38,33 @@ export function GroupInfoPanel({ open, onClose, conversation, myUserId, isAdminH
 
   async function removeMember(userId: string) {
     setBusy(true);
-    await supabase.rpc("remove_group_member", { p_conversation_id: conversation.id, p_user_id: userId });
+    const { error } = await supabase.rpc("remove_group_member", { p_conversation_id: conversation.id, p_user_id: userId });
     setBusy(false);
+    if (error) { notify(error.message, "error"); return; }
     load();
   }
 
   async function promote(userId: string, role: string) {
     setBusy(true);
-    await supabase.rpc("set_group_member_role", { p_conversation_id: conversation.id, p_user_id: userId, p_role: role });
+    const { error } = await supabase.rpc("set_group_member_role", { p_conversation_id: conversation.id, p_user_id: userId, p_role: role });
     setBusy(false);
+    if (error) { notify(error.message, "error"); return; }
     load();
   }
 
   async function archive() {
     setBusy(true);
-    await supabase.rpc("archive_conversation", { p_conversation_id: conversation.id, p_archived: true });
+    const { error } = await supabase.rpc("archive_conversation", { p_conversation_id: conversation.id, p_archived: true });
     setBusy(false);
+    if (error) { notify(error.message, "error"); return; }
     onArchived();
   }
 
   async function leave() {
     setBusy(true);
-    await supabase.rpc("remove_group_member", { p_conversation_id: conversation.id, p_user_id: myUserId });
+    const { error } = await supabase.rpc("remove_group_member", { p_conversation_id: conversation.id, p_user_id: myUserId });
     setBusy(false);
+    if (error) { notify(error.message, "error"); return; }
     onLeft();
   }
 
@@ -122,6 +129,7 @@ export function GroupInfoPanel({ open, onClose, conversation, myUserId, isAdminH
           <AddMembersInline conversationId={conversation.id} onAdded={() => { setAddOpen(false); load(); }} />
         </Modal>
       )}
+      <ToastHost />
     </>
   );
 }
@@ -131,6 +139,7 @@ function AddMembersInline({ conversationId, onAdded }: { conversationId: string;
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<{ user_id: string; full_name: string; subtitle: string }[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(async () => {
@@ -142,8 +151,10 @@ function AddMembersInline({ conversationId, onAdded }: { conversationId: string;
 
   async function add(userId: string) {
     setBusy(userId);
-    await supabase.rpc("add_group_member", { p_conversation_id: conversationId, p_user_id: userId });
+    setError(null);
+    const { error } = await supabase.rpc("add_group_member", { p_conversation_id: conversationId, p_user_id: userId });
     setBusy(null);
+    if (error) { setError(error.message); return; }
     onAdded();
   }
 
@@ -151,6 +162,7 @@ function AddMembersInline({ conversationId, onAdded }: { conversationId: string;
     <div className="space-y-2">
       <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search people…"
         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" autoFocus />
+      {error && <div className="text-xs text-red-600">{error}</div>}
       <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
         {results.map((u) => (
           <button key={u.user_id} disabled={busy === u.user_id} onClick={() => add(u.user_id)}
