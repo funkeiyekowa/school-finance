@@ -33,7 +33,8 @@ export type AiTaskKind =
   | "lms_course_outline"
   | "lms_bulk_parse"
   | "student_term_summary"
-  | "analytics_digest";
+  | "analytics_digest"
+  | "student_brief";
 
 export interface AiPreset {
   kind: AiTaskKind;
@@ -205,6 +206,14 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
       return `Assignment instructions:\n${instructions}\n\nMax score: ${maxScore}\n\nStudent's response:\n${input}\n\nSuggest a score and feedback as the specified JSON.`;
     },
     maxTokens: 400,
+  },
+  student_brief: {
+    kind: "student_brief",
+    label: "Brief me on this student",
+    description: "One-paragraph overview drawn from the student's profile — for a teacher meeting a class for the first time.",
+    system: `${CORE_STYLE} You are giving a Nigerian K-12 teacher a quick briefing on one student before class. Write 3-5 sentences: who they are, key context (guardian, contact), any noted allergies/medical concerns if provided, and one specific thing the teacher should keep in mind. NEVER invent details — if a field is missing, do not mention it. Keep it warm and professional. Return only the paragraph.`,
+    compose: (input) => `Student profile facts (raw):\n${input}\n\nWrite the briefing paragraph.`,
+    maxTokens: 250,
   },
   analytics_digest: {
     kind: "analytics_digest",

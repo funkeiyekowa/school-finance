@@ -5,12 +5,13 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useToast } from "@/lib/hooks/useToast";
 import { fmtMoney, cn } from "@/lib/utils";
+import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, Save, Package, Search, TrendingUp, TrendingDown, Printer } from "lucide-react";
+import { Plus, Save, Package, Search, TrendingUp, TrendingDown, Printer, UploadCloud } from "lucide-react";
 
 interface ItemRow { id: string; name: string; item_code: string | null; category: string | null; unit: string; quantity_on_hand: number; reorder_level: number; unit_cost: number | null; location: string | null; }
 
@@ -33,6 +34,7 @@ export default function InventoryPage() {
   const [savingMove, setSavingMove] = useState(false);
   const [moveItem, setMoveItem] = useState<ItemRow | null>(null);
   const [moveForm, setMoveForm] = useState({ movement_type: "stock_in", quantity: "", reference: "", reason: "" });
+  const [showBulk, setShowBulk] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("inventory_items").select("*").eq("active", true).order("name");
@@ -118,6 +120,7 @@ export default function InventoryPage() {
         >
           <Printer size={14} /> Stock-take sheet
         </Button>
+        {canEdit && <Button variant="secondary" onClick={() => setShowBulk(true)}><UploadCloud size={14} /> Bulk import</Button>}
         {canEdit && <Button variant="gold" onClick={() => openItemForm()}><Plus size={14} /> Add Item</Button>}
       </PageHeader>
 
@@ -228,6 +231,51 @@ export default function InventoryPage() {
         </Modal>
       )}
       <ToastHost />
+    
+      <BulkImportModal
+        open={showBulk}
+        onClose={() => setShowBulk(false)}
+        title="Bulk import inventory items"
+        columns={[
+          { key: "name", label: "Item name", required: true },
+          { key: "item_code", label: "Item code" },
+          { key: "category", label: "Category" },
+          { key: "unit", label: "Unit", hint: "pcs / box / kg / …" },
+          { key: "quantity_on_hand", label: "Opening qty", transform: (raw) => Number(raw) || 0 },
+          { key: "reorder_level", label: "Reorder level", transform: (raw) => Number(raw) || 0 },
+          { key: "unit_cost", label: "Unit cost", transform: (raw) => raw === "" ? null : Number(raw) },
+          { key: "location", label: "Location" },
+        ]}
+        example={{
+          name: "A4 Paper",
+          item_code: "STA-001",
+          category: "Stationery",
+          unit: "ream",
+          quantity_on_hand: "20",
+          reorder_level: "5",
+          unit_cost: "2500",
+          location: "Store 1",
+        }}
+        onImport={async (rows) => {
+          if (!orgId) return { ok: false, message: "No org context" };
+          const payload = rows.map(r => ({
+            organization_id: orgId,
+            name: r.name,
+            item_code: r.item_code || null,
+            category: r.category || null,
+            unit: r.unit || "pcs",
+            quantity_on_hand: r.quantity_on_hand ?? 0,
+            reorder_level: r.reorder_level ?? 0,
+            unit_cost: r.unit_cost,
+            location: r.location || null,
+            active: true,
+          }));
+          const { error } = await supabase.from("inventory_items").insert(payload);
+          if (error) return { ok: false, message: error.message };
+          load();
+          return { ok: true, message: `Imported ${payload.length} item(s).` };
+        }}
+      />
     </div>
   );
 }

@@ -28,6 +28,7 @@ import { useAuth } from "@/lib/context/AuthContext";
 import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtDate, fmtMoney, cn, generateCode } from "@/lib/utils";
+import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState, KpiCard } from "@/components/ui/PageHeader";
 import { Tabs, TabDef } from "@/components/ui/Tabs";
 import { SetupHero } from "@/components/ui/SetupHero";
@@ -36,7 +37,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { BookOpen, Plus, Search, Users, Layers, AlertTriangle, CheckCircle2, Bookmark, ArrowLeftRight, Trash2, Pencil, Download, Printer } from "lucide-react";
+import { BookOpen, Plus, Search, Users, Layers, AlertTriangle, CheckCircle2, Bookmark, ArrowLeftRight, Trash2, Pencil, Download, Printer, UploadCloud } from "lucide-react";
 
 interface BookRow {
   id: string; isbn: string | null; title: string; author: string | null; publisher: string | null;
@@ -134,6 +135,7 @@ export default function LibraryPage() {
   /* ---------------- Books & copies ---------------- */
   const [showBookForm, setShowBookForm] = useState(false);
   const [editingBook, setEditingBook] = useState<BookRow | null>(null);
+  const [showBulk, setShowBulk] = useState(false);
   const emptyBookForm = { isbn: "", title: "", author: "", publisher: "", category: "", description: "", cover_color: "#0F2A47" };
   const [bookForm, setBookForm] = useState(emptyBookForm);
   const [savingBook, setSavingBook] = useState(false);
@@ -397,7 +399,10 @@ export default function LibraryPage() {
           ])}><Download size={14} /> Export</Button>
         )}
         {canEdit && tab === "catalogue" && (
-          <Button variant="gold" onClick={() => openBookForm()}><Plus size={16} /> Add Book</Button>
+          <>
+            <Button variant="secondary" onClick={() => setShowBulk(true)}><UploadCloud size={16} /> Bulk import</Button>
+            <Button variant="gold" onClick={() => openBookForm()}><Plus size={16} /> Add Book</Button>
+          </>
         )}
       </PageHeader>
 
@@ -733,6 +738,68 @@ export default function LibraryPage() {
       </Modal>
 
       <ToastHost />
+    
+      <BulkImportModal
+        open={showBulk}
+        onClose={() => setShowBulk(false)}
+        title="Bulk import books"
+        columns={[
+          { key: "title", label: "Title", required: true },
+          { key: "author", label: "Author" },
+          { key: "isbn", label: "ISBN" },
+          { key: "publisher", label: "Publisher" },
+          { key: "category", label: "Category" },
+          { key: "total_copies", label: "Copies to create", required: true, transform: (raw) => Math.max(1, Number(raw) || 1) },
+          { key: "shelf_location", label: "Shelf" },
+          { key: "description", label: "Description" },
+        ]}
+        example={{
+          title: "Things Fall Apart",
+          author: "Chinua Achebe",
+          isbn: "9780435905255",
+          publisher: "Heinemann",
+          category: "African Literature",
+          total_copies: "3",
+          shelf_location: "A-12",
+          description: "",
+        }}
+        onImport={async (rows) => {
+          if (!orgId) return { ok: false, message: "No org context" };
+          const errs: string[] = [];
+          let booksCreated = 0;
+          let copiesCreated = 0;
+          for (const r of rows) {
+            const { data: book, error } = await supabase.from("library_books").insert({
+              organization_id: orgId,
+              title: r.title,
+              author: r.author || null,
+              isbn: r.isbn || null,
+              publisher: r.publisher || null,
+              category: r.category || null,
+              description: r.description || null,
+              shelf_location: r.shelf_location || null,
+            }).select("id").single();
+            if (error || !book) { errs.push(`${r.title}: ${error?.message ?? "insert failed"}`); continue; }
+            const nCopies = Math.max(1, Number(r.total_copies) || 1);
+            const copies: Record<string, unknown>[] = [];
+            for (let i = 1; i <= nCopies; i++) {
+              copies.push({
+                organization_id: orgId,
+                book_id: (book as { id: string }).id,
+                copy_code: `${String(r.title).slice(0, 3).toUpperCase().replace(/[^A-Z]/g, "")}-${String(booksCreated + 1).padStart(3, "0")}-${i}`,
+                status: "available",
+              });
+            }
+            const { error: cErr } = await supabase.from("library_copies").insert(copies);
+            if (cErr) { errs.push(`${r.title} copies: ${cErr.message}`); continue; }
+            booksCreated++;
+            copiesCreated += nCopies;
+          }
+          if (errs.length > 0) return { ok: false, errors: errs.slice(0, 20) };
+          load();
+          return { ok: true, message: `Added ${booksCreated} book(s) with ${copiesCreated} copy record(s).` };
+        }}
+      />
     </div>
   );
 }

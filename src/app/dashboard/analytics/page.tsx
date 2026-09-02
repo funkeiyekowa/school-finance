@@ -8,7 +8,7 @@ import { fmtMoney, cn } from "@/lib/utils";
 import { PageHeader, KpiCard, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { TrendingUp, TrendingDown, Users, GraduationCap, Award, DollarSign, ChevronDown, ChevronRight, BarChart3, PieChart as PieIcon, Activity, Clock, BookOpen, FileBarChart, Sparkles } from "lucide-react";
+import { TrendingUp, TrendingDown, Users, GraduationCap, Award, DollarSign, ChevronDown, ChevronRight, BarChart3, PieChart as PieIcon, Activity, Clock, BookOpen, FileBarChart, Sparkles, Printer } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, PieChart, Pie, Cell, Legend, AreaChart, Area } from "@/components/charts/LazyRecharts";
 
 interface Student { id: string; full_name: string; grade: string | null; status: string; gender: string | null; }
@@ -207,6 +207,9 @@ export default function AnalyticsPage() {
       >
         <Button size="sm" variant="secondary" onClick={generateDigest}>
           <Sparkles size={13} /> AI digest
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => window.open("/dashboard/analytics/print", "_blank")}>
+          <Printer size={13} /> Executive summary
         </Button>
       </PageHeader>
 

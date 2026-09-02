@@ -11,7 +11,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { StatusBadge } from "@/components/ui/Badge";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
-import { ChevronLeft, Phone, Mail, MapPin, Key, Printer, Copy, CheckCircle2, Pencil, UserPlus } from "lucide-react";
+import { ChevronLeft, Phone, Mail, MapPin, Key, Printer, Copy, CheckCircle2, Pencil, UserPlus, Sparkles } from "lucide-react";
 import Link from "next/link";
 import type { Student, IncomeEntry, FeeSchedule } from "@/lib/types";
 
@@ -35,6 +35,8 @@ export default function StudentDetailPage() {
   const supabase = createClient();
   const { isAdmin } = useAuth();
   const [student, setStudent] = useState<Student | null>(null);
+  const [aiBrief, setAiBrief] = useState<string | null>(null);
+  const [briefOpen, setBriefOpen] = useState(false);
   const [history, setHistory] = useState<IncomeEntry[]>([]);
   const [fees, setFees] = useState<FeeSchedule[]>([]);
   const [enrollments, setEnrollments] = useState<EnrollmentWithDetails[]>([]);
@@ -247,7 +249,53 @@ h1{font-size:18px;margin-bottom:4px;}
         >
           <Printer size={13} /> Admission letter
         </button>
+        <button
+          onClick={async () => {
+            setBriefOpen(true);
+            setAiBrief(null);
+            try {
+              const { generateWithAi } = await import("@/lib/ai/client");
+              const facts = [
+                `Name: ${student.full_name}`,
+                `Admission number: ${student.student_code}`,
+                student.grade && `Class/Grade: ${student.grade}`,
+                student.gender && `Gender: ${student.gender}`,
+                student.date_of_birth && `DOB: ${student.date_of_birth}`,
+                student.guardian_name && `Guardian: ${student.guardian_name}`,
+                student.guardian_phone && `Guardian phone: ${student.guardian_phone}`,
+                student.guardian_email && `Guardian email: ${student.guardian_email}`,
+                student.address && `Address: ${student.address}`,
+                student.notes && `Notes: ${student.notes}`,
+              ].filter(Boolean).join("\n");
+              const result = await generateWithAi({ kind: "student_brief", input: facts, source: "student_brief" });
+              setAiBrief(result.output);
+            } catch (err) {
+              setAiBrief(err instanceof Error ? err.message : "AI brief failed.");
+            }
+          }}
+          className="flex items-center gap-1.5 text-xs font-semibold text-purple-700 hover:text-purple-900 border border-purple-200 hover:border-purple-500 px-3 py-1.5 rounded-lg"
+          title="One-paragraph AI briefing on this student for a teacher meeting the class"
+        >
+          <Sparkles size={13} /> AI brief
+        </button>
       </div>
+
+      {briefOpen && (
+        <div className="rounded-lg border-2 border-purple-200 bg-purple-50 p-4 relative">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Sparkles size={13} className="text-purple-600" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-purple-900">Teacher briefing</h3>
+            </div>
+            <button onClick={() => setBriefOpen(false)} className="text-purple-400 hover:text-purple-700 text-xs">Close</button>
+          </div>
+          {aiBrief == null ? (
+            <p className="text-xs text-gray-500 italic">Preparing briefing…</p>
+          ) : (
+            <p className="text-sm text-gray-800 leading-relaxed">{aiBrief}</p>
+          )}
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-5">
         {/* Student info */}
