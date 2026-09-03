@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState, useMemo } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useBranding } from "@/lib/hooks/useBranding";
 import { fmtMoney, fmtDateTime } from "@/lib/utils";
@@ -37,8 +37,12 @@ const MONTHS = [
 export default function BulkPayslipsPrintPage() {
   const params = useParams<{ runId: string }>();
   const runId = params.runId;
+  const searchParams = useSearchParams();
+  const singleSlipId = searchParams.get("slip");
+  const autoPrint = searchParams.get("auto") === "1";
   const supabase = useMemo(() => createClient(), []);
   const branding = useBranding();
+  const [hasAutoPrinted, setHasAutoPrinted] = useState(false);
 
   const [run, setRun] = useState<RunRow | null>(null);
   const [payslips, setPayslips] = useState<PayslipRow[]>([]);
@@ -51,13 +55,26 @@ export default function BulkPayslipsPrintPage() {
         supabase.from("payroll_payslips").select("*").eq("run_id", runId).order("staff_name"),
       ]);
       setRun((runRes.data as RunRow) ?? null);
-      setPayslips((psRes.data as PayslipRow[]) ?? []);
+      const allSlips = (psRes.data as PayslipRow[]) ?? [];
+      setPayslips(singleSlipId ? allSlips.filter((s) => s.id === singleSlipId) : allSlips);
       setLoading(false);
     })();
-  }, [supabase, runId]);
+  }, [supabase, runId, singleSlipId]);
+
+  useEffect(() => {
+    if (!autoPrint || hasAutoPrinted || loading || !branding || payslips.length === 0) return;
+    setHasAutoPrinted(true);
+    // Small delay so the letterhead/logo image + layout settle before the
+    // print dialog opens (matches the manual "Print / Save as PDF" flow).
+    const t = setTimeout(() => window.print(), 400);
+    return () => clearTimeout(t);
+  }, [autoPrint, hasAutoPrinted, loading, branding, payslips]);
 
   if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (!run) return <div className="p-8 text-center text-gray-500">Run not found.</div>;
+  if (singleSlipId && payslips.length === 0) {
+    return <div className="p-8 text-center text-gray-500">Payslip not found.</div>;
+  }
 
   const periodLabel = `${MONTHS[run.period_month - 1]} ${run.period_year}`;
 
@@ -66,8 +83,14 @@ export default function BulkPayslipsPrintPage() {
       {/* Toolbar — hidden on print */}
       <div className="no-print sticky top-0 z-10 bg-[#0F2A47] text-white px-6 py-3 flex items-center justify-between shadow-md">
         <div>
-          <p className="text-xs uppercase tracking-wider text-[#C9A227] font-bold">Bulk Payslips · {branding.schoolName}</p>
-          <p className="text-sm font-medium">{run.label || `${periodLabel} payroll`} — {payslips.length} payslip{payslips.length === 1 ? "" : "s"}</p>
+          <p className="text-xs uppercase tracking-wider text-[#C9A227] font-bold">
+            {singleSlipId ? "Payslip" : "Bulk Payslips"} · {branding.schoolName}
+          </p>
+          <p className="text-sm font-medium">
+            {singleSlipId && payslips[0]
+              ? `${payslips[0].staff_name} — ${run.label || `${periodLabel} payroll`}`
+              : `${run.label || `${periodLabel} payroll`} — ${payslips.length} payslip${payslips.length === 1 ? "" : "s"}`}
+          </p>
         </div>
         <button
           onClick={() => window.print()}

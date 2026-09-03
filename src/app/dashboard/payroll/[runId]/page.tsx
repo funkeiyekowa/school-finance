@@ -30,7 +30,7 @@ import { Modal } from "@/components/ui/Modal";
 import { PrintableLetterhead, PrintableFooter } from "@/components/print/PrintableLetterhead";
 import {
   ArrowLeft, Sparkles, CheckCircle2, Wallet, FileText,
-  Loader2, Users, DollarSign, ArrowUpCircle, ArrowDownCircle, Printer,
+  Loader2, Users, DollarSign, ArrowUpCircle, ArrowDownCircle, Printer, FileDown,
 } from "lucide-react";
 
 interface RunRow {
@@ -402,10 +402,11 @@ export default function PayrollRunPage() {
 
             <div className="flex items-center justify-between gap-2">
               <button
-                onClick={() => window.print()}
+                onClick={() => window.open(`/dashboard/payroll/${runId}/payslips-print?slip=${viewingSlip.id}&auto=1`, "_blank")}
                 className="text-xs text-[#0F2A47] hover:text-[#C9A227] flex items-center gap-1"
+                title="Opens a clean, printable payslip in a new tab and prompts to print or save as PDF"
               >
-                <Printer size={12} /> Print
+                <FileDown size={12} /> Print / Download PDF
               </button>
 
               {canEdit && viewingSlip.payment_status === "unpaid" && run.status !== "draft" && (
