@@ -3,30 +3,35 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useToast } from "@/lib/hooks/useToast";
+import { uploadProfilePhoto } from "@/lib/photos/storage";
 import { fmtMoney, fmtDate, cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Users, Receipt, FileBarChart } from "lucide-react";
+import { Users, Receipt, FileBarChart, Camera, Clock } from "lucide-react";
 
-interface StudentRow { id: string; student_code: string; full_name: string; grade: string | null; status: string; }
+interface StudentRow { id: string; student_code: string; full_name: string; grade: string | null; status: string; photo_url: string | null; }
 interface FeeRow { id: string; name: string; amount: number; grade: string | null; }
 interface PaymentRow { id: string; receipt_no: string; date: string; amount: number; category: string; }
 interface AttendanceRow { status_code: string; }
 
 export default function MyChildrenPage() {
-  const { user } = useAuth();
+  const { user, orgId } = useAuth();
   const supabase = createClient();
+  const { notify, ToastHost } = useToast();
   const [loading, setLoading] = useState(true);
   const [children, setChildren] = useState<StudentRow[]>([]);
   const [fees, setFees] = useState<FeeRow[]>([]);
   const [payments, setPayments] = useState<Record<string, PaymentRow[]>>({});
   const [attendance, setAttendance] = useState<Record<string, AttendanceRow[]>>({});
   const [selectedChild, setSelectedChild] = useState<string | null>(null);
+  const [pendingPhoto, setPendingPhoto] = useState<Record<string, boolean>>({});
+  const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
 
   const loadChildData = useCallback(async (stuList: StudentRow[]) => {
     const ids = stuList.map((s) => s.id);
-    // 3 queries in parallel — the old for-of loop did 2 * children serially.
-    const [feesRes, paysRes, attRes] = await Promise.all([
+    // 4 queries in parallel — the old for-of loop did 2 * children serially.
+    const [feesRes, paysRes, attRes, pendingRes] = await Promise.all([
       supabase.from("fee_schedules").select("id, name, amount, grade").eq("active", true),
       ids.length
         ? supabase
@@ -38,8 +43,16 @@ export default function MyChildrenPage() {
       ids.length
         ? supabase.from("attendance_records").select("status_code, student_id").in("student_id", ids)
         : Promise.resolve({ data: [] }),
+      ids.length
+        ? supabase.from("student_photo_submissions").select("student_id").in("student_id", ids).eq("status", "pending")
+        : Promise.resolve({ data: [] }),
     ]);
     setFees((feesRes.data as FeeRow[]) ?? []);
+    const pendingMap: Record<string, boolean> = {};
+    for (const row of ((pendingRes.data as { student_id: string }[] | null) ?? [])) {
+      pendingMap[row.student_id] = true;
+    }
+    setPendingPhoto(pendingMap);
 
     const payMap: Record<string, PaymentRow[]> = {};
     const attMap: Record<string, AttendanceRow[]> = {};
@@ -58,6 +71,22 @@ export default function MyChildrenPage() {
     setPayments(payMap);
     setAttendance(attMap);
   }, [supabase]);
+
+  async function handlePhotoUpload(studentId: string, file: File) {
+    if (!orgId) return;
+    setUploadingPhoto(studentId);
+    try {
+      const photoUrl = await uploadProfilePhoto(orgId, "students", studentId, file);
+      const { error } = await supabase.rpc("submit_student_photo", { p_student_id: studentId, p_photo_url: photoUrl });
+      if (error) throw new Error(error.message);
+      notify("Photo submitted — an admin will review it shortly.");
+      setPendingPhoto((prev) => ({ ...prev, [studentId]: true }));
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Could not submit photo.", "error");
+    } finally {
+      setUploadingPhoto(null);
+    }
+  }
 
   const load = useCallback(async () => {
     if (!user) { setLoading(false); return; }
@@ -135,6 +164,7 @@ export default function MyChildrenPage() {
       <PageHeader
         icon={<Users size={24} />}
         gradient="emerald" title="My Children" subtitle="View your children's fees, payments, attendance, and results" />
+      <ToastHost />
 
       {/* Child selector */}
       {children.length > 1 && (
@@ -155,9 +185,34 @@ export default function MyChildrenPage() {
       {/* Child info + balance */}
       <div className="grid sm:grid-cols-4 gap-3">
         <Card>
-          <CardContent className="py-4 text-center">
+          <CardContent className="py-4 flex flex-col items-center text-center gap-2">
+            {activeChild.photo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={activeChild.photo_url} alt={activeChild.full_name} className="h-14 w-14 rounded-full object-cover border-2 border-[#C9A227]" />
+            ) : (
+              <div className="h-14 w-14 rounded-full flex items-center justify-center text-lg font-bold text-white bg-gradient-to-br from-[#0F2A47] to-[#C9A227]">
+                {activeChild.full_name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}
+              </div>
+            )}
             <div className="text-lg font-bold text-[#0F2A47]">{activeChild.full_name}</div>
             <div className="text-xs text-gray-500">{activeChild.student_code} · {activeChild.grade || "—"}</div>
+            {pendingPhoto[activeChild.id] ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-amber-600 font-medium">
+                <Clock size={11} /> Photo pending review
+              </span>
+            ) : (
+              <label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => e.target.files?.[0] && handlePhotoUpload(activeChild.id, e.target.files[0])}
+                />
+                <span className="inline-flex items-center gap-1 text-[11px] text-[#0F2A47] hover:text-[#C9A227] cursor-pointer font-medium">
+                  <Camera size={12} /> {uploadingPhoto === activeChild.id ? "Uploading…" : activeChild.photo_url ? "Change photo" : "Upload photo"}
+                </span>
+              </label>
+            )}
           </CardContent>
         </Card>
         <Card>

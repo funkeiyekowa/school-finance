@@ -21,6 +21,7 @@ interface Student {
   id: string; full_name: string; student_code: string;
   grade: string | null; date_of_birth: string | null;
   guardian_phone: string | null; guardian_name: string | null;
+  photo_url: string | null;
 }
 
 export default function StudentIdCardsPage() {
@@ -46,7 +47,7 @@ function Inner() {
     if (!orgId) return;
     (async () => {
       let q = supabase.from("students")
-        .select("id, full_name, student_code, grade, date_of_birth, guardian_phone, guardian_name")
+        .select("id, full_name, student_code, grade, date_of_birth, guardian_phone, guardian_name, photo_url")
         .eq("status", "active");
       if (ids.length > 0) q = q.in("id", ids);
       else if (grade) q = q.eq("grade", grade);
@@ -105,12 +106,22 @@ function Inner() {
                 </div>
 
                 <div className="p-4 flex gap-3">
-                  <div
-                    className="h-24 w-20 rounded-md flex items-center justify-center shrink-0 text-2xl font-bold text-white"
-                    style={{ background: `linear-gradient(135deg, ${branding.primaryColor}, ${branding.accentColor})`, border: `2px solid ${branding.accentColor}` }}
-                  >
-                    {monogram || "S"}
-                  </div>
+                  {s.photo_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={s.photo_url}
+                      alt={s.full_name}
+                      className="h-24 w-20 rounded-md object-cover shrink-0"
+                      style={{ border: `2px solid ${branding.accentColor}` }}
+                    />
+                  ) : (
+                    <div
+                      className="h-24 w-20 rounded-md flex items-center justify-center shrink-0 text-2xl font-bold text-white"
+                      style={{ background: `linear-gradient(135deg, ${branding.primaryColor}, ${branding.accentColor})`, border: `2px solid ${branding.accentColor}` }}
+                    >
+                      {monogram || "S"}
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0 text-xs">
                     <p className="font-bold text-sm truncate" style={{ color: branding.primaryColor }}>{s.full_name}</p>
                     <p className="text-gray-500 truncate">{s.grade ?? "—"}</p>

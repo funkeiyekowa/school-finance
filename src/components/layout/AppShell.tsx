@@ -17,7 +17,7 @@ import { AiAssistantFab } from "@/components/ai/AiAssistantFab";
 import { CommandPalette, useNavCommandItems } from "@/components/ui/CommandPalette";
 import { useUnreadMessagesBadge } from "@/lib/messaging/hooks";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, DollarSign, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock } from "lucide-react";
+import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, DollarSign, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock, Camera, FileCheck2 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /* Navigation configuration                                           */
@@ -113,6 +113,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/students/overview", label: "Overview", icon: <LayoutDashboard size={17} />, module: "academics" },
       { href: "/dashboard/students", label: "Students", icon: <GraduationCap size={17} />, feature: "students", module: "students" },
+      { href: "/dashboard/students/photos", label: "Student Photos", icon: <Camera size={17} />, feature: "students", module: "students" },
+      { href: "/dashboard/students/photo-approvals", label: "Photo Approvals", icon: <FileCheck2 size={17} />, feature: "students", module: "students" },
       { href: "/dashboard/attendance", label: "Attendance", icon: <Clock size={17} />, module: "attendance" },
       { href: "/dashboard/timetable", label: "Timetable", icon: <Clock size={17} />, module: "timetable" },
       { href: "/dashboard/calendar", label: "Calendar", icon: <CalendarClock size={17} /> },
@@ -145,6 +147,7 @@ const NAV_GROUPS: NavGroup[] = [
     icon: <Briefcase size={16} />,
     items: [
       { href: "/dashboard/staff", label: "Staff", icon: <Users size={17} />, module: "hr" },
+      { href: "/dashboard/staff/photos", label: "Staff Photos", icon: <Camera size={17} />, module: "hr" },
       { href: "/dashboard/payroll", label: "Payroll", icon: <Wallet size={17} />, module: "payroll" },
       { href: "/dashboard/payroll/salary-management", label: "Salary Management", icon: <DollarSign size={17} />, module: "payroll" },
       { href: "/dashboard/parents", label: "Parents", icon: <Users size={17} />, adminOnly: true },
@@ -375,19 +378,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* User card */}
         <div className="border-t border-[#1B3E63] p-4">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-[#1B3E63] flex items-center justify-center shrink-0">
+            <Link
+              href="/dashboard/my-profile"
+              title="My Profile — update your photo"
+              className="w-8 h-8 rounded-full bg-[#1B3E63] flex items-center justify-center shrink-0 hover:ring-2 hover:ring-[#C9A227] transition-shadow"
+            >
               <span className="text-[#C9A227] text-sm font-bold">
                 {(profile?.full_name || profile?.email || "?")[0].toUpperCase()}
               </span>
-            </div>
-            <div className="flex-1 min-w-0">
+            </Link>
+            <Link href="/dashboard/my-profile" className="flex-1 min-w-0">
               <div className="text-white text-sm font-medium truncate">
                 {profile?.full_name || profile?.email?.split("@")[0]}
               </div>
               <div className="text-[#C9A227] text-xs uppercase tracking-wide font-semibold">
                 {membership?.role?.replace("_", " ") || profile?.role}
               </div>
-            </div>
+            </Link>
             <button onClick={handleSignOut} title="Sign out"
               className="text-[#7A9EC0] hover:text-white transition-colors p-1 rounded">
               <LogOut size={16} />
