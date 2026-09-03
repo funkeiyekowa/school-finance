@@ -417,15 +417,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <ForcePasswordChange />
     <CommandPalette items={commandItems} />
     <AiAssistantFab />
-    <div className="flex h-screen overflow-hidden bg-[#F7F5F0]">
+    <div className="flex h-screen overflow-hidden bg-[#F7F5F0] print:h-auto print:overflow-visible print:block">
       {/* Desktop sidebar */}
-      <div className="hidden lg:flex shrink-0">
+      <div className="hidden lg:flex shrink-0 print:hidden">
         <Sidebar />
       </div>
 
       {/* Mobile overlay */}
       {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex">
+        <div className="lg:hidden fixed inset-0 z-50 flex print:hidden">
           <div className="w-72 shadow-2xl">
             <Sidebar mobile />
           </div>
@@ -434,9 +434,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden print:overflow-visible print:block">
         {/* Mobile topbar */}
-        <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-[#0F2A47] text-white shrink-0">
+        <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-[#0F2A47] text-white shrink-0 print:hidden">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-7 h-7 rounded-lg bg-[#C9A227] flex items-center justify-center shrink-0">
               <svg viewBox="0 0 24 24" className="w-4 h-4 text-[#0F2A47]" fill="currentColor">
@@ -454,7 +454,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Support-access warning */}
         {isSupportSession && org && (
-          <div role="status" className="shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-100 border-b border-amber-300 text-amber-900 text-xs font-medium">
+          <div role="status" className="shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-100 border-b border-amber-300 text-amber-900 text-xs font-medium print:hidden">
             <LifeBuoy size={14} className="shrink-0" />
             <span>
               Support session — you are viewing <strong>{org.name}</strong> as a platform
@@ -463,11 +463,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        {/* Persistent school-brand header — makes the current school context obvious on every page. */}
-        <SchoolBrandBar />
+        {/* Persistent school-brand header — makes the current school context obvious on every page.
+            Hidden on print: every printable page (payslips, certificates, ID cards, letters, etc.)
+            renders its own letterhead/branding, so this would otherwise duplicate as a second,
+            unstyled header above the actual document on every printout. */}
+        <div className="print:hidden">
+          <SchoolBrandBar />
+        </div>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto print:overflow-visible print:h-auto">
           {children}
         </main>
       </div>
