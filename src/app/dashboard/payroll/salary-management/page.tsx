@@ -21,7 +21,7 @@ interface StaffSalary {
 
 export default function SalaryManagementPage() {
   const supabase = useMemo(() => createClient(), []);
-  const { canEdit, isAdmin, membership } = useAuth();
+  const { isAdmin, membership, loading: authLoading } = useAuth();
   const { notify, ToastHost } = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -33,16 +33,13 @@ export default function SalaryManagementPage() {
   const [isBursary, setIsBursary] = useState(false);
 
   const load = useCallback(async () => {
+    if (authLoading) return; // wait for AuthContext to resolve membership/role first
     setLoading(true);
     try {
-      // Check if current user is bursary staff
-      const { data: staffData, error: staffError } = await supabase
-        .from("staff_members")
-        .select("role")
-        .maybeSingle();
-      
-      const hasRole = staffData?.role === "bursary" || staffData?.role === "admin";
-      setIsBursary(hasRole && (canEdit || isAdmin));
+      // Access control: bursar role or org admin/super admin (membership.role,
+      // not staff_type -- see AuthContext for the canonical role list).
+      const hasRole = isAdmin || membership?.role === "bursar";
+      setIsBursary(hasRole);
 
       if (!hasRole) {
         setLoading(false);
@@ -63,7 +60,7 @@ export default function SalaryManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [supabase, canEdit, isAdmin, notify]);
+  }, [supabase, isAdmin, membership, authLoading, notify]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -96,6 +93,14 @@ export default function SalaryManagementPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-8 flex items-center justify-center">
+        <LoadingSpinner />
+      </div>
+    );
   }
 
   if (!isBursary) {
