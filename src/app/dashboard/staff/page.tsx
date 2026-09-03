@@ -14,8 +14,20 @@ import { Pagination } from "@/components/ui/Pagination";
 import { usePaginatedData } from "@/lib/hooks/usePaginatedData";
 import { Plus, Save, Users, Search, Trash2, IdCard, UploadCloud, Printer } from "lucide-react";
 
+interface StaffRow {
+  id: string;
+  staff_code: string;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  job_title: string | null;
+  staff_type: string;
+  department_id: string | null;
+  date_joined: string | null;
+  status: string;
+}
+
 interface DeptRow { id: string; name: string; }
-interface StaffRow { id: string; staff_code: string; full_name: string; email: string | null; phone: string | null; job_title: string | null; staff_type: string; department_id: string | null; status: string; date_joined: string | null; salary: number | null; }
 
 interface StaffRowWithTotal extends StaffRow {
   total_count?: number;
@@ -37,7 +49,7 @@ export default function StaffPage() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<StaffRow | null>(null);
-  const [form, setForm] = useState({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active", salary: "" });
+  const [form, setForm] = useState({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active" });
   const [credNotice, setCredNotice] = useState<{ email: string; name: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [stats, setStats] = useState<StaffStats>({
@@ -115,7 +127,6 @@ export default function StaffPage() {
   async function openForm(s?: StaffRow) {
     if (s) {
       setEditing(s);
-      setForm({ staff_code: s.staff_code, full_name: s.full_name, email: s.email || "", phone: s.phone || "", job_title: s.job_title || "", staff_type: s.staff_type, department_id: s.department_id || "", date_joined: s.date_joined || "", status: s.status, salary: s.salary != null ? String(s.salary) : "" });
     } else {
       setEditing(null);
       // Auto-generate the next staff code
@@ -126,7 +137,7 @@ export default function StaffPage() {
           if (typeof data === "string") nextCode = data;
         }
       } catch { /* fall back to blank */ }
-      setForm({ staff_code: nextCode, full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active", salary: "" });
+      setForm({ staff_code: nextCode, full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active" });
     }
     setSaveError(null);
     setShowForm(true);
@@ -177,7 +188,6 @@ export default function StaffPage() {
       department_id: form.department_id || null,
       date_joined: form.date_joined || null,
       status: form.status,
-      salary: form.salary.trim() === "" ? null : Number(form.salary),
       organization_id: orgId,
       updated_at: new Date().toISOString(),
     };
@@ -349,16 +359,6 @@ export default function StaffPage() {
               <Input label="Email *" required type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@school.com" />
               <Input label="Phone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="0801..." />
               <Input label="Job Title" value={form.job_title} onChange={e => setForm(f => ({ ...f, job_title: e.target.value }))} placeholder="Mathematics Teacher" />
-              <Input
-                label="Basic Salary (monthly, ₦)"
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.salary}
-                onChange={e => setForm(f => ({ ...f, salary: e.target.value }))}
-                placeholder="0.00"
-                helpText="Drives Payroll's PAYE/pension % deductions — leave blank only if this staff member is not on payroll."
-              />
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Staff Type</label>
                 <select value={form.staff_type} onChange={e => setForm(f => ({ ...f, staff_type: e.target.value }))} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white">
@@ -413,7 +413,6 @@ export default function StaffPage() {
           { key: "staff_type", label: "Staff type", hint: "teaching or non_teaching" },
           { key: "date_joined", label: "Date joined", hint: "YYYY-MM-DD" },
           { key: "status", label: "Status", hint: "active/inactive" },
-          { key: "salary", label: "Basic salary", hint: "Monthly ₦ — drives Payroll deductions" },
         ]}
         example={{
           staff_code: "STF001",
@@ -424,7 +423,6 @@ export default function StaffPage() {
           staff_type: "teaching",
           date_joined: "2025-01-15",
           status: "active",
-          salary: "150000",
         }}
         onImport={async (rows) => {
           if (!orgId) return { ok: false, message: "No org context" };
@@ -438,7 +436,6 @@ export default function StaffPage() {
             staff_type: r.staff_type || "teaching",
             date_joined: r.date_joined || null,
             status: r.status || "active",
-            salary: r.salary && String(r.salary).trim() !== "" ? Number(r.salary) : null,
           }));
           const { error } = await supabase.from("staff_members").insert(payload);
           if (error) return { ok: false, message: error.message };

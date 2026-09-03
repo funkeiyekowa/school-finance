@@ -17,7 +17,7 @@ import { AiAssistantFab } from "@/components/ai/AiAssistantFab";
 import { CommandPalette, useNavCommandItems } from "@/components/ui/CommandPalette";
 import { useUnreadMessagesBadge } from "@/lib/messaging/hooks";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock } from "lucide-react";
+import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, DollarSign, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /* Navigation configuration                                           */
@@ -146,6 +146,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/staff", label: "Staff", icon: <Users size={17} />, module: "hr" },
       { href: "/dashboard/payroll", label: "Payroll", icon: <Wallet size={17} />, module: "payroll" },
+      { href: "/dashboard/payroll/salary-management", label: "Salary Management", icon: <DollarSign size={17} />, module: "payroll" },
       { href: "/dashboard/parents", label: "Parents", icon: <Users size={17} />, adminOnly: true },
       { href: "/dashboard/team", label: "Team", icon: <Users size={17} />, feature: "team", adminOnly: true },
       { href: "/dashboard/roles", label: "Roles", icon: <Shield size={17} />, feature: "roles", adminOnly: true },
