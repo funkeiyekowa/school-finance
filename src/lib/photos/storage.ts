@@ -75,6 +75,33 @@ export async function uploadProfilePhoto(
   return body.url as string;
 }
 
+/**
+ * Compresses + uploads a letter signature image via /api/photos/upload
+ * (kind "signatures"), returning the public URL to store in
+ * letter_signatures.image_url. Same server-mediated path as
+ * uploadProfilePhoto and for the same reason -- signatures used the
+ * exact same direct-to-Storage call and hit the identical
+ * DatabaseInvalidObjectDefinition error. Org-admin-only server-side
+ * (see authorizeTarget in the route); no entityId, since a signature
+ * isn't tied to a staff/student record.
+ */
+export async function uploadSignatureImage(file: File): Promise<string> {
+  const compressed = await compressImage(file, 320, 0.9);
+
+  const form = new FormData();
+  form.append("file", new File([compressed], "signature.jpg", { type: "image/jpeg" }));
+  form.append("kind", "signatures");
+
+  const res = await fetch("/api/photos/upload", { method: "POST", body: form });
+  const body = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(body?.error || "Signature upload failed.");
+  }
+
+  return body.url as string;
+}
+
 export function isImageFile(file: File): boolean {
   return file.type.startsWith("image/");
 }

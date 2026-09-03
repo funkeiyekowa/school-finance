@@ -16,7 +16,13 @@
  *   - get_letter_signature(p_letter_type) / set_letter_signature_default(...)
  * Images are stored in the same "profile-photos" public bucket
  * already used for student/staff photos (org-prefix write, public
- * read) -- no new bucket needed.
+ * read) -- no new bucket needed. Uploaded via uploadSignatureImage()
+ * (src/lib/photos/storage.ts), which posts to /api/photos/upload --
+ * direct browser-to-Storage uploads here hit the same 503
+ * DatabaseInvalidObjectDefinition / "The database schema is invalid
+ * or incompatible." error that affected profile photos, since it's
+ * Supabase's own Storage API failing before our RLS policies even
+ * run, not anything fixable in our bucket/policies/schema.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -27,7 +33,7 @@ import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { compressImage } from "@/lib/photos/storage";
+import { uploadSignatureImage } from "@/lib/photos/storage";
 import { ArrowLeft, PenTool, Plus, Trash2, UploadCloud } from "lucide-react";
 
 interface SignatureRow {
@@ -47,8 +53,6 @@ const LETTER_TYPES: { key: string; label: string }[] = [
   { key: "welcome_pack", label: "Welcome Pack" },
   { key: "expense_voucher", label: "Expense Voucher" },
 ];
-
-const BUCKET = "profile-photos";
 
 export default function SignaturesSettingsPage() {
   const router = useRouter();
@@ -99,21 +103,14 @@ export default function SignaturesSettingsPage() {
     setSaving(true);
     setError(null);
     try {
-      const compressed = await compressImage(newFile, 320, 0.9);
-      const path = `${orgId}/signatures/${crypto.randomUUID()}.jpg`;
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, compressed, {
-        contentType: "image/jpeg",
-        upsert: false,
-      });
-      if (upErr) throw new Error(upErr.message);
-      const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      const imageUrl = await uploadSignatureImage(newFile);
 
       const { error: insErr } = await supabase.from("letter_signatures").insert({
         organization_id: orgId,
         label: newLabel.trim(),
         signatory_name: newSignatoryName.trim() || null,
         signatory_title: newSignatoryTitle.trim() || null,
-        image_url: urlData.publicUrl,
+        image_url: imageUrl,
       });
       if (insErr) throw new Error(insErr.message);
 

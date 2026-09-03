@@ -39,8 +39,9 @@ const STAFF_ROLES = new Set([
   "owner", "admin", "editor", "staff", "bursar", "accountant",
   "teacher", "developer", "super_admin",
 ]);
+const ORG_ADMIN_ROLES = new Set(["owner", "admin", "super_admin"]);
 
-type Kind = "staff" | "students";
+type Kind = "staff" | "students" | "signatures";
 
 export async function POST(request: Request) {
   const ip = callerKey(request);
@@ -67,10 +68,22 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   const orgId = (membership as { organization_id?: string } | null)?.organization_id;
-  const role = (membership as { role?: string } | null)?.role;
-  if (!orgId || !role) {
+  const membershipRole = (membership as { role?: string } | null)?.role;
+  if (!orgId || !membershipRole) {
     return NextResponse.json({ error: "No active organization for this account." }, { status: 403 });
   }
+
+  // Mirrors AuthContext's isOrgAdmin: an active profiles.role === "developer"
+  // counts as super-admin-equivalent even though it isn't an org_memberships
+  // role, so a developer can still manage signatures for this org.
+  const { data: profileRow } = await supabase
+    .from("profiles")
+    .select("role, active")
+    .eq("id", user.id)
+    .maybeSingle();
+  const isDeveloper = (profileRow as { role?: string; active?: boolean } | null)?.role === "developer"
+    && ((profileRow as { active?: boolean } | null)?.active ?? false);
+  const role = isDeveloper ? "super_admin" : membershipRole;
 
   let form: FormData;
   try {
@@ -86,10 +99,12 @@ export async function POST(request: Request) {
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "No file provided." }, { status: 400 });
   }
-  if (kind !== "staff" && kind !== "students") {
+  if (kind !== "staff" && kind !== "students" && kind !== "signatures") {
     return NextResponse.json({ error: "Invalid upload kind." }, { status: 400 });
   }
-  if (typeof entityId !== "string" || !entityId) {
+  // Signatures aren't per-entity (path is <org>/signatures/<uuid>, not tied
+  // to a staff/student record), so no entityId is expected for that kind.
+  if (kind !== "signatures" && (typeof entityId !== "string" || !entityId)) {
     return NextResponse.json({ error: "Missing entityId." }, { status: 400 });
   }
   if (!ALLOWED_TYPES.has(file.type)) {
@@ -100,12 +115,17 @@ export async function POST(request: Request) {
   }
 
   // Authorize: who is allowed to upload a photo for this specific entity?
-  const authError = await authorizeTarget(supabase, { userId: user.id, orgId, role, kind, entityId });
+  const authError = await authorizeTarget(supabase, {
+    userId: user.id, orgId, role, kind,
+    entityId: typeof entityId === "string" ? entityId : "",
+  });
   if (authError) return authError;
 
   const svc = createServiceClient();
   const ext = extensionFor(file.type);
-  const path = `${orgId}/${kind}/${entityId}/${crypto.randomUUID()}.${ext}`;
+  const path = kind === "signatures"
+    ? `${orgId}/signatures/${crypto.randomUUID()}.${ext}`
+    : `${orgId}/${kind}/${entityId}/${crypto.randomUUID()}.${ext}`;
   const bytes = new Uint8Array(await file.arrayBuffer());
 
   const { error: uploadError } = await svc.storage.from("profile-photos").upload(path, bytes, {
@@ -118,7 +138,7 @@ export async function POST(request: Request) {
       source: "photos-upload",
       severity: "error",
       message: `Storage upload failed: ${uploadError.message}`,
-      context: { orgId, kind, entityId, path },
+      context: { orgId, kind, entityId: entityId ?? null, path },
       ...requestContext(request),
     });
     return NextResponse.json(
@@ -154,6 +174,13 @@ async function authorizeTarget(
 ): Promise<Response | null> {
   const { userId, orgId, role, kind, entityId } = opts;
   const isStaffRole = STAFF_ROLES.has(role);
+
+  if (kind === "signatures") {
+    if (!ORG_ADMIN_ROLES.has(role)) {
+      return NextResponse.json({ error: "Only school administrators can manage letter signatures." }, { status: 403 });
+    }
+    return null;
+  }
 
   if (kind === "staff") {
     if (isStaffRole) {
