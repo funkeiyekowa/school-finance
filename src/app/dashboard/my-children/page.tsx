@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useToast } from "@/lib/hooks/useToast";
 import { uploadProfilePhoto } from "@/lib/photos/storage";
+import { SelfieCapture } from "@/components/photos/SelfieCapture";
 import { fmtMoney, fmtDate, cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -27,6 +28,7 @@ export default function MyChildrenPage() {
   const [selectedChild, setSelectedChild] = useState<string | null>(null);
   const [pendingPhoto, setPendingPhoto] = useState<Record<string, boolean>>({});
   const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
+  const [selfieOpenFor, setSelfieOpenFor] = useState<string | null>(null);
 
   const loadChildData = useCallback(async (stuList: StudentRow[]) => {
     const ids = stuList.map((s) => s.id);
@@ -201,17 +203,28 @@ export default function MyChildrenPage() {
                 <Clock size={11} /> Photo pending review
               </span>
             ) : (
-              <label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => e.target.files?.[0] && handlePhotoUpload(activeChild.id, e.target.files[0])}
-                />
-                <span className="inline-flex items-center gap-1 text-[11px] text-[#0F2A47] hover:text-[#C9A227] cursor-pointer font-medium">
-                  <Camera size={12} /> {uploadingPhoto === activeChild.id ? "Uploading…" : activeChild.photo_url ? "Change photo" : "Upload photo"}
-                </span>
-              </label>
+              <div className="flex items-center gap-2">
+                <label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => e.target.files?.[0] && handlePhotoUpload(activeChild.id, e.target.files[0])}
+                  />
+                  <span className="inline-flex items-center gap-1 text-[11px] text-[#0F2A47] hover:text-[#C9A227] cursor-pointer font-medium">
+                    <Camera size={12} /> {uploadingPhoto === activeChild.id ? "Uploading…" : activeChild.photo_url ? "Change photo" : "Upload photo"}
+                  </span>
+                </label>
+                <span className="text-gray-300 text-[11px]">·</span>
+                <button
+                  type="button"
+                  onClick={() => setSelfieOpenFor(activeChild.id)}
+                  disabled={uploadingPhoto === activeChild.id}
+                  className="text-[11px] text-[#0F2A47] hover:text-[#C9A227] font-medium disabled:opacity-50"
+                >
+                  Take a selfie
+                </button>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -283,6 +296,13 @@ export default function MyChildrenPage() {
           ))}
         </CardContent>
       </Card>
+
+      <SelfieCapture
+        open={!!selfieOpenFor}
+        onClose={() => setSelfieOpenFor(null)}
+        onCapture={(file) => { if (selfieOpenFor) handlePhotoUpload(selfieOpenFor, file); }}
+        fileName="child-selfie.jpg"
+      />
     </div>
   );
 }

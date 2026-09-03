@@ -13,6 +13,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
 import { usePaginatedData } from "@/lib/hooks/usePaginatedData";
 import { uploadProfilePhoto, isImageFile } from "@/lib/photos/storage";
+import { SelfieCapture } from "@/components/photos/SelfieCapture";
 import { Plus, Save, Users, Search, Trash2, IdCard, UploadCloud, Printer } from "lucide-react";
 
 interface StaffRow {
@@ -64,6 +65,7 @@ export default function StaffPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [selfieOpen, setSelfieOpen] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [stats, setStats] = useState<StaffStats>({
     total: 0,
@@ -298,10 +300,8 @@ export default function StaffPage() {
     await loadClassTeachers();
   }
 
-  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !editing) return;
+  async function handlePhotoFile(file: File) {
+    if (!editing) return;
     if (!isImageFile(file)) { setPhotoError("Please choose an image file."); return; }
     if (!orgId) { setPhotoError("No organization context."); return; }
     setPhotoError(null);
@@ -318,6 +318,12 @@ export default function StaffPage() {
     } finally {
       setUploadingPhoto(false);
     }
+  }
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) await handlePhotoFile(file);
   }
 
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
@@ -510,15 +516,26 @@ export default function StaffPage() {
                       className="hidden"
                       onChange={handlePhotoChange}
                     />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      loading={uploadingPhoto}
-                      onClick={() => photoInputRef.current?.click()}
-                    >
-                      {form.photo_url ? "Change photo" : "Upload photo"}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        loading={uploadingPhoto}
+                        onClick={() => photoInputRef.current?.click()}
+                      >
+                        {form.photo_url ? "Change photo" : "Upload photo"}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={uploadingPhoto}
+                        onClick={() => setSelfieOpen(true)}
+                      >
+                        Take a selfie
+                      </Button>
+                    </div>
                     {photoError && <p className="text-xs text-red-600 mt-1">{photoError}</p>}
                   </>
                 ) : (
@@ -625,7 +642,14 @@ export default function StaffPage() {
           </div>
         </Modal>
       )}
-    
+
+      <SelfieCapture
+        open={selfieOpen}
+        onClose={() => setSelfieOpen(false)}
+        onCapture={handlePhotoFile}
+        fileName="staff-selfie.jpg"
+      />
+
       <BulkImportModal
         open={showBulkImport}
         onClose={() => setShowBulkImport(false)}

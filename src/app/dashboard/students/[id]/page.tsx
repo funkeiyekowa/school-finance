@@ -15,6 +15,7 @@ import { ChevronLeft, Phone, Mail, MapPin, Key, Printer, Copy, CheckCircle2, Pen
 import Link from "next/link";
 import type { Student, IncomeEntry, FeeSchedule } from "@/lib/types";
 import { uploadProfilePhoto, isImageFile } from "@/lib/photos/storage";
+import { SelfieCapture } from "@/components/photos/SelfieCapture";
 
 interface EnrollmentWithDetails {
   id: string;
@@ -68,6 +69,7 @@ export default function StudentDetailPage() {
   const [guardianNotice, setGuardianNotice] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [selfieOpen, setSelfieOpen] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -100,10 +102,8 @@ export default function StudentDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !student || !orgId) return;
+  async function handlePhotoFile(file: File) {
+    if (!student || !orgId) return;
     if (!isImageFile(file)) { setPhotoError("Please choose an image file."); return; }
     setPhotoError(null);
     setUploadingPhoto(true);
@@ -117,6 +117,12 @@ export default function StudentDetailPage() {
     } finally {
       setUploadingPhoto(false);
     }
+  }
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) await handlePhotoFile(file);
   }
 
   async function resetLogin() {
@@ -362,14 +368,25 @@ h1{font-size:18px;margin-bottom:4px;}
                   className="hidden"
                   onChange={handlePhotoChange}
                 />
-                <button
-                  type="button"
-                  onClick={() => photoInputRef.current?.click()}
-                  disabled={uploadingPhoto}
-                  className="text-xs text-[#0F2A47] hover:text-[#C9A227] font-medium disabled:opacity-50"
-                >
-                  {uploadingPhoto ? "Uploading…" : student.photo_url ? "Change photo" : "Upload photo"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={uploadingPhoto}
+                    className="text-xs text-[#0F2A47] hover:text-[#C9A227] font-medium disabled:opacity-50"
+                  >
+                    {uploadingPhoto ? "Uploading…" : student.photo_url ? "Change photo" : "Upload photo"}
+                  </button>
+                  <span className="text-gray-300">·</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelfieOpen(true)}
+                    disabled={uploadingPhoto}
+                    className="text-xs text-[#0F2A47] hover:text-[#C9A227] font-medium disabled:opacity-50"
+                  >
+                    Take a selfie
+                  </button>
+                </div>
                 {photoError && <p className="text-xs text-red-600 mt-1">{photoError}</p>}
               </div>
             )}
@@ -695,6 +712,13 @@ h1{font-size:18px;margin-bottom:4px;}
           </div>
         </Modal>
       )}
+
+      <SelfieCapture
+        open={selfieOpen}
+        onClose={() => setSelfieOpen(false)}
+        onCapture={handlePhotoFile}
+        fileName="student-selfie.jpg"
+      />
     </div>
   );
 }
