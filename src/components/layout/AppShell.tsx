@@ -18,7 +18,7 @@ import { CommandPalette, useNavCommandItems } from "@/components/ui/CommandPalet
 import { useUnreadMessagesBadge } from "@/lib/messaging/hooks";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, DollarSign, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock, Camera, FileCheck2 } from "lucide-react";
+import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, DollarSign, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock, Camera, FileCheck2, PenTool } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /* Navigation configuration                                           */
@@ -196,6 +196,8 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/analytics", label: "Analytics", icon: <BarChart3 size={17} />, adminOnly: true },
       { href: "/dashboard/activity", label: "Activity", icon: <Activity size={17} />, feature: "activity", adminOnly: true },
       { href: "/dashboard/setup", label: "Setup", icon: <Settings size={17} />, feature: "setup" },
+      { href: "/dashboard/setup/signatures", label: "Letter Signatures", icon: <PenTool size={17} />, adminOnly: true },
+      { href: "/dashboard/setup/subject-teachers", label: "Subject Teachers", icon: <GraduationCap size={17} />, adminOnly: true },
     ],
   },
   {

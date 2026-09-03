@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
@@ -14,6 +14,7 @@ import { LoadingSpinner } from "@/components/ui/PageHeader";
 import { ChevronLeft, Phone, Mail, MapPin, Key, Printer, Copy, CheckCircle2, Pencil, UserPlus, Sparkles } from "lucide-react";
 import Link from "next/link";
 import type { Student, IncomeEntry, FeeSchedule } from "@/lib/types";
+import { uploadProfilePhoto, isImageFile } from "@/lib/photos/storage";
 
 interface EnrollmentWithDetails {
   id: string;
@@ -33,7 +34,7 @@ export default function StudentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const supabase = createClient();
-  const { isAdmin } = useAuth();
+  const { isAdmin, orgId } = useAuth();
   const [student, setStudent] = useState<Student | null>(null);
   const [aiBrief, setAiBrief] = useState<string | null>(null);
   const [briefOpen, setBriefOpen] = useState(false);
@@ -65,6 +66,9 @@ export default function StudentDetailPage() {
     status: "active",
   });
   const [guardianNotice, setGuardianNotice] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,6 +99,25 @@ export default function StudentDetailPage() {
   }, [id, supabase]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !student || !orgId) return;
+    if (!isImageFile(file)) { setPhotoError("Please choose an image file."); return; }
+    setPhotoError(null);
+    setUploadingPhoto(true);
+    try {
+      const newUrl = await uploadProfilePhoto(orgId, "students", student.id, file);
+      const { error } = await supabase.from("students").update({ photo_url: newUrl }).eq("id", student.id);
+      if (error) throw new Error(error.message);
+      setStudent(prev => prev ? { ...prev, photo_url: newUrl } : prev);
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : "Photo upload failed.");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
 
   async function resetLogin() {
     if (!student) return;
@@ -316,10 +339,40 @@ h1{font-size:18px;margin-bottom:4px;}
         <Card className="lg:col-span-1">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>{student.full_name}</CardTitle>
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-[#0F2A47] text-[#C9A227] flex items-center justify-center text-lg font-bold shrink-0 overflow-hidden">
+                  {student.photo_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={student.photo_url} alt={student.full_name} className="w-full h-full object-cover" />
+                  ) : (
+                    student.full_name.charAt(0).toUpperCase()
+                  )}
+                </div>
+                <CardTitle>{student.full_name}</CardTitle>
+              </div>
               <StatusBadge status={paymentStatus} />
             </div>
             <p className="text-xs text-gray-400 font-mono mt-1">{student.student_code}</p>
+            {isAdmin && (
+              <div className="mt-2">
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handlePhotoChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => photoInputRef.current?.click()}
+                  disabled={uploadingPhoto}
+                  className="text-xs text-[#0F2A47] hover:text-[#C9A227] font-medium disabled:opacity-50"
+                >
+                  {uploadingPhoto ? "Uploading…" : student.photo_url ? "Change photo" : "Upload photo"}
+                </button>
+                {photoError && <p className="text-xs text-red-600 mt-1">{photoError}</p>}
+              </div>
+            )}
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <Row label="Grade" value={student.grade} />

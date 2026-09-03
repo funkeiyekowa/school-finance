@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useBranding } from "@/lib/hooks/useBranding";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
 import { PrintableLetterhead, PrintableFooter } from "@/components/print/PrintableLetterhead";
+import { SignatureBlock } from "@/components/print/SignatureBlock";
 import { Printer } from "lucide-react";
 
 interface Card {
@@ -216,8 +217,7 @@ function Inner() {
                   <p>Class Teacher</p>
                 </div>
                 <div className="text-right">
-                  <p>_______________________________</p>
-                  <p>Principal</p>
+                  <SignatureBlock letterType="report_card" fallbackLabel="Principal" align="right" />
                 </div>
               </div>
               <PrintableFooter branding={branding} />

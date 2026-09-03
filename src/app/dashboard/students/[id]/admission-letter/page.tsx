@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/context/AuthContext";
 import { fmtDate } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
 import { PrintableLetterhead, PrintableFooter } from "@/components/print/PrintableLetterhead";
+import { useLetterSignature } from "@/components/print/SignatureBlock";
 import { Printer } from "lucide-react";
 
 interface Student {
@@ -31,6 +32,7 @@ export default function AdmissionLetterPage() {
   const supabase = useMemo(() => createClient(), []);
   const { profile } = useAuth();
   const branding = useBranding();
+  const signature = useLetterSignature("admission_letter");
   const [student, setStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -151,9 +153,15 @@ export default function AdmissionLetterPage() {
             <p className="mt-6">Yours faithfully,</p>
 
             <div className="mt-10">
+              {signature ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={signature.image_url} alt={signature.signatory_name ?? signature.label} className="h-10 object-contain mb-0.5" />
+                </>
+              ) : null}
               <p style={{ borderTop: `1px solid ${branding.primaryColor}`, width: "220px" }}></p>
               <p className="font-semibold text-sm mt-1" style={{ color: branding.primaryColor }}>
-                {profile?.full_name ?? "The Principal"}
+                {signature?.signatory_name || signature?.signatory_title || profile?.full_name || "The Principal"}
               </p>
               <p className="text-xs text-gray-500">{branding.schoolName}</p>
             </div>

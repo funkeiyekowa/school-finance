@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
 import { usePaginatedData } from "@/lib/hooks/usePaginatedData";
+import { uploadProfilePhoto, isImageFile } from "@/lib/photos/storage";
 import { Plus, Save, Users, Search, Trash2, IdCard, UploadCloud, Printer } from "lucide-react";
 
 interface StaffRow {
@@ -29,9 +30,11 @@ interface StaffRow {
    * (My Teaching, Attendance, Assessments, CBT) in addition to whatever
    * their normal staff/admin access already is. See AppShell.tsx. */
   dual_role: boolean;
+  photo_url: string | null;
 }
 
 interface DeptRow { id: string; name: string; }
+interface ClassRow { id: string; name: string; }
 
 interface StaffRowWithTotal extends StaffRow {
   total_count?: number;
@@ -49,13 +52,19 @@ export default function StaffPage() {
   const [showBulkImport, setShowBulkImport] = useState(false);
   const supabase = useMemo(() => createClient(), []);
   const [departments, setDepartments] = useState<DeptRow[]>([]);
+  const [classes, setClasses] = useState<ClassRow[]>([]);
+  // class_id -> staff_id of the current class teacher, from list_class_teachers()
+  const [classTeacherOf, setClassTeacherOf] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<StaffRow | null>(null);
-  const [form, setForm] = useState({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active", dual_role: false });
+  const [form, setForm] = useState({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active", dual_role: false, is_class_teacher: false, class_teacher_class_id: "", photo_url: "" as string | null });
   const [credNotice, setCredNotice] = useState<{ email: string; name: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const [stats, setStats] = useState<StaffStats>({
     total: 0,
     teaching: 0,
@@ -99,6 +108,25 @@ export default function StaffPage() {
     setDepartments((data as DeptRow[]) ?? []);
   }, [supabase]);
 
+  // Load classes (for the Class Teacher dropdown)
+  const loadClasses = useCallback(async () => {
+    const { data } = await supabase
+      .from("classes")
+      .select("id, name")
+      .eq("active", true)
+      .order("sequence");
+    setClasses((data as ClassRow[]) ?? []);
+  }, [supabase]);
+
+  // Load current class_id -> staff_id class-teacher assignments
+  const loadClassTeachers = useCallback(async () => {
+    const { data } = await supabase.rpc("list_class_teachers");
+    const rows = (data as { class_id: string; staff_id: string }[] | null) ?? [];
+    const map: Record<string, string> = {};
+    for (const r of rows) map[r.class_id] = r.staff_id;
+    setClassTeacherOf(map);
+  }, [supabase]);
+
   // Load stats
   const loadStats = useCallback(async () => {
     try {
@@ -121,7 +149,9 @@ export default function StaffPage() {
   useEffect(() => {
     loadDepartments();
     loadStats();
-  }, [loadDepartments, loadStats]);
+    loadClasses();
+    loadClassTeachers();
+  }, [loadDepartments, loadStats, loadClasses, loadClassTeachers]);
 
   // Reset pagination when search changes
   useEffect(() => {
@@ -131,6 +161,12 @@ export default function StaffPage() {
   async function openForm(s?: StaffRow) {
     if (s) {
       setEditing(s);
+      // Reverse-lookup: is this staff member (by id) currently the class
+      // teacher of any class? classTeacherOf maps class_id -> staff_id.
+      let assignedClassId = "";
+      for (const [classId, staffId] of Object.entries(classTeacherOf)) {
+        if (staffId === s.id) { assignedClassId = classId; break; }
+      }
       // Populate the form from the row being edited -- previously this
       // was missing entirely, so "Edit" silently opened a blank/default
       // form and saving would overwrite the person's real data.
@@ -145,6 +181,9 @@ export default function StaffPage() {
         date_joined: s.date_joined ?? "",
         status: s.status,
         dual_role: Boolean(s.dual_role),
+        is_class_teacher: Boolean(assignedClassId),
+        class_teacher_class_id: assignedClassId,
+        photo_url: s.photo_url ?? null,
       });
     } else {
       setEditing(null);
@@ -156,7 +195,7 @@ export default function StaffPage() {
           if (typeof data === "string") nextCode = data;
         }
       } catch { /* fall back to blank */ }
-      setForm({ staff_code: nextCode, full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active", dual_role: false });
+      setForm({ staff_code: nextCode, full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active", dual_role: false, is_class_teacher: false, class_teacher_class_id: "", photo_url: null });
     }
     setSaveError(null);
     setShowForm(true);
@@ -211,19 +250,74 @@ export default function StaffPage() {
       organization_id: orgId,
       updated_at: new Date().toISOString(),
     };
+    let staffId: string | null = editing?.id ?? null;
     if (editing) {
       const { error: upErr } = await supabase.from("staff_members").update(payload).eq("id", editing.id);
       if (upErr) { setSaveError(upErr.message); setSaving(false); return; }
     } else {
-      const { error: insErr } = await supabase.from("staff_members").insert(payload);
+      const { data: inserted, error: insErr } = await supabase.from("staff_members").insert(payload).select().single();
       if (insErr) { setSaveError(insErr.message); setSaving(false); return; }
+      staffId = (inserted as { id: string } | null)?.id ?? null;
       setCredNotice({ email, name: payload.full_name });
     }
+
+    // Reconcile the class-teacher assignment against what it was before
+    // (classTeacherOf, keyed class_id -> staff_id) and what the form now
+    // says. set_class_teacher(null, classId) only clears that one class,
+    // so if this staff member previously held a different class than the
+    // one now selected (or the checkbox was turned off), that old class
+    // must be cleared first -- otherwise they'd end up as class teacher
+    // of two classes at once.
+    if (staffId) {
+      let previousClassId = "";
+      for (const [classId, sid] of Object.entries(classTeacherOf)) {
+        if (sid === staffId) { previousClassId = classId; break; }
+      }
+      const nextClassId = form.is_class_teacher ? form.class_teacher_class_id : "";
+      try {
+        if (previousClassId && previousClassId !== nextClassId) {
+          const { error: clearErr } = await supabase.rpc("set_class_teacher", { p_staff_id: null, p_class_id: previousClassId });
+          if (clearErr) throw clearErr;
+        }
+        if (nextClassId) {
+          const { error: setErr } = await supabase.rpc("set_class_teacher", { p_staff_id: staffId, p_class_id: nextClassId });
+          if (setErr) throw setErr;
+        }
+      } catch (rpcErr) {
+        setSaveError(rpcErr instanceof Error ? rpcErr.message : "Failed to update class teacher assignment.");
+        setSaving(false);
+        return;
+      }
+    }
+
     setSaving(false);
     setShowForm(false);
     setEditing(null);
     await refetch();
     await loadStats();
+    await loadClassTeachers();
+  }
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !editing) return;
+    if (!isImageFile(file)) { setPhotoError("Please choose an image file."); return; }
+    if (!orgId) { setPhotoError("No organization context."); return; }
+    setPhotoError(null);
+    setUploadingPhoto(true);
+    try {
+      const newUrl = await uploadProfilePhoto(orgId, "staff", editing.id, file);
+      const { error } = await supabase.from("staff_members").update({ photo_url: newUrl }).eq("id", editing.id);
+      if (error) throw new Error(error.message);
+      setForm(f => ({ ...f, photo_url: newUrl }));
+      setEditing(prev => prev ? { ...prev, photo_url: newUrl } : prev);
+      await refetch();
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : "Photo upload failed.");
+    } finally {
+      setUploadingPhoto(false);
+    }
   }
 
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
@@ -315,6 +409,7 @@ export default function StaffPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-[#0F2A47] text-white">
+              <th className="px-4 py-3 text-xs font-semibold w-12" />
               <th className="text-left px-4 py-3 text-xs font-semibold">Code</th>
               <th className="text-left px-4 py-3 text-xs font-semibold">Name</th>
               <th className="text-left px-4 py-3 text-xs font-semibold">Title</th>
@@ -326,9 +421,19 @@ export default function StaffPage() {
             </tr></thead>
             <tbody>
               {staff.length === 0 ? (
-                <tr><td colSpan={8}><EmptyState message="No staff found." icon={<Users size={32} />} /></td></tr>
+                <tr><td colSpan={9}><EmptyState message="No staff found." icon={<Users size={32} />} /></td></tr>
               ) : staff.map(s => (
                 <tr key={s.id} className="border-b hover:bg-gray-50">
+                  <td className="px-4 py-2.5">
+                    <div className="w-8 h-8 rounded-full bg-[#0F2A47] text-[#C9A227] flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
+                      {s.photo_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={s.photo_url} alt={s.full_name} className="w-full h-full object-cover" />
+                      ) : (
+                        s.full_name.charAt(0).toUpperCase()
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{s.staff_code}</td>
                   <td className="px-4 py-2.5 font-medium">{s.full_name}</td>
                   <td className="px-4 py-2.5 text-gray-600">{s.job_title || "—"}</td>
@@ -385,6 +490,44 @@ export default function StaffPage() {
       {showForm && (
         <Modal open onClose={() => { setShowForm(false); setEditing(null); }} title={editing ? "Edit Staff" : "Add Staff"} size="lg">
           <div className="space-y-4">
+            {/* Photo */}
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-[#0F2A47] text-[#C9A227] flex items-center justify-center text-xl font-bold shrink-0 overflow-hidden">
+                {form.photo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={form.photo_url} alt={form.full_name || "Staff"} className="w-full h-full object-cover" />
+                ) : (
+                  (form.full_name || "?").charAt(0).toUpperCase()
+                )}
+              </div>
+              <div>
+                {editing ? (
+                  <>
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handlePhotoChange}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      loading={uploadingPhoto}
+                      onClick={() => photoInputRef.current?.click()}
+                    >
+                      {form.photo_url ? "Change photo" : "Upload photo"}
+                    </Button>
+                    {photoError && <p className="text-xs text-red-600 mt-1">{photoError}</p>}
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    Save this staff member first, then reopen to add a photo.
+                  </p>
+                )}
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <Input label="Staff Code *" required value={form.staff_code} onChange={e => setForm(f => ({ ...f, staff_code: e.target.value }))} placeholder="STF001" />
               <Input label="Full Name *" required value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Adewale Johnson" />
@@ -433,6 +576,39 @@ export default function StaffPage() {
                     </span>
                   </span>
                 </label>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={form.is_class_teacher}
+                    onChange={e => setForm(f => ({ ...f, is_class_teacher: e.target.checked }))}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#C9A227] focus:ring-[#C9A227]"
+                  />
+                  <span className="text-sm text-gray-700">
+                    <span className="font-medium">Class Teacher</span>
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      Makes this person the primary teacher of record for a class
+                      (homeroom teacher).
+                    </span>
+                  </span>
+                </label>
+                {form.is_class_teacher && (
+                  <div className="mt-2 ml-6.5 pl-0.5">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
+                    <select
+                      value={form.class_teacher_class_id}
+                      onChange={e => setForm(f => ({ ...f, class_teacher_class_id: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white"
+                    >
+                      <option value="">Select class...</option>
+                      {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      This person will be the primary teacher of record for this class.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
             {saveError && (

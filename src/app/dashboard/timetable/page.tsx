@@ -17,6 +17,7 @@ interface ClassRow { id: string; name: string; }
 interface SubjectRow { id: string; name: string; short_code: string; }
 interface PeriodRow { id: string; name: string; short_code: string; start_time: string; end_time: string; is_break: boolean; sort_order: number; }
 interface EntryRow { id: string; class_id: string; subject_id: string; period_id: string; teacher_name: string | null; day_of_week: number; room: string | null; }
+interface TeacherRow { id: string; full_name: string; }
 
 const DAYS = [
   { num: 1, label: "Monday", short: "Mon" },
@@ -36,6 +37,7 @@ export default function TimetablePage() {
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
   const [periods, setPeriods] = useState<PeriodRow[]>([]);
   const [entries, setEntries] = useState<EntryRow[]>([]);
+  const [teachers, setTeachers] = useState<TeacherRow[]>([]);
 
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [showModal, setShowModal] = useState(false);
@@ -46,16 +48,18 @@ export default function TimetablePage() {
   const [showBulk, setShowBulk] = useState(false);
 
   const load = useCallback(async () => {
-    const [clsRes, subRes, perRes, entRes] = await Promise.all([
+    const [clsRes, subRes, perRes, entRes, teachRes] = await Promise.all([
       supabase.from("classes").select("id, name").eq("active", true).order("sequence"),
       supabase.from("subjects").select("id, name, short_code").eq("active", true).order("name"),
       supabase.from("periods").select("*").eq("active", true).order("sort_order"),
       supabase.from("timetable_entries").select("*"),
+      supabase.from("staff_members").select("id, full_name").eq("staff_type", "teaching").eq("status", "active").order("full_name"),
     ]);
     setClasses(clsRes.data as ClassRow[] ?? []);
     setSubjects(subRes.data as SubjectRow[] ?? []);
     setPeriods(perRes.data as PeriodRow[] ?? []);
     setEntries(entRes.data as EntryRow[] ?? []);
+    setTeachers(teachRes.data as TeacherRow[] ?? []);
     setLoading(false);
   }, [supabase]);
 
@@ -309,7 +313,14 @@ export default function TimetablePage() {
               </select>
             </div>
 
-            <Input label="Teacher" value={form.teacher_name} onChange={e => { setForm(f => ({ ...f, teacher_name: e.target.value })); setConflict(null); }} placeholder="Mr. Adewale" />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Teacher</label>
+              <select value={form.teacher_name} onChange={e => { setForm(f => ({ ...f, teacher_name: e.target.value })); setConflict(null); }}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] bg-white">
+                <option value="">Select teacher...</option>
+                {teachers.map(t => <option key={t.id} value={t.full_name}>{t.full_name}</option>)}
+              </select>
+            </div>
             <Input label="Room (optional)" value={form.room} onChange={e => { setForm(f => ({ ...f, room: e.target.value })); setConflict(null); }} placeholder="Room 12" />
 
             <div className="grid grid-cols-2 gap-3">

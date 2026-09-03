@@ -31,7 +31,7 @@ export type Database = {
           admission_date: string | null; address: string | null;
           guardian_name: string | null; guardian_phone: string | null;
           guardian_email: string | null; status: string; notes: string | null;
-          organization_id: string | null;
+          organization_id: string | null; photo_url: string | null;
           created_at: string; updated_at: string;
         };
         Insert: {

@@ -16,6 +16,7 @@ import { useBranding } from "@/lib/hooks/useBranding";
 import { fmtMoney, fmtDateTime } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
 import { PrintableLetterhead, PrintableFooter } from "@/components/print/PrintableLetterhead";
+import { SignatureBlock } from "@/components/print/SignatureBlock";
 import { Printer } from "lucide-react";
 
 interface PayslipLine { name: string; code: string; type: string; amount: number; }
@@ -180,8 +181,7 @@ export default function BulkPayslipsPrintPage() {
                 )}
               </div>
               <div className="text-right">
-                <p>_______________________________</p>
-                <p>Authorised Signature</p>
+                <SignatureBlock letterType="payslip" fallbackLabel="Authorised Signature" align="right" />
               </div>
             </div>
             <PrintableFooter branding={branding} />
