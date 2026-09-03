@@ -1,9 +1,5 @@
 "use client";
 
-import { createClient } from "@/lib/supabase/client";
-
-const BUCKET = "profile-photos";
-
 /**
  * Downscales + re-encodes an image client-side before upload so a
  * multi-MB phone photo never reaches Supabase Storage as-is. Free-tier
@@ -38,11 +34,23 @@ export function compressImage(file: File, maxDim = 480, quality = 0.82): Promise
 }
 
 /**
- * Compresses + uploads a profile photo to the public profile-photos
- * bucket at <organization_id>/<kind>/<entityId>/<uuid>.jpg, matching
- * the bucket's storage RLS (org-prefix write, public read -- see
- * supabase/photo_uploads_module.sql). Returns the public URL, ready to
- * store directly in students.photo_url / staff_members.photo_url.
+ * Compresses + uploads a profile photo via /api/photos/upload, returning
+ * the public URL ready to store in students.photo_url / staff_members.photo_url.
+ *
+ * This used to call supabase.storage.from(BUCKET).upload(...) directly
+ * from the browser. That started failing for every role (staff, student,
+ * parent) with a 503 "DatabaseInvalidObjectDefinition" /
+ * "The database schema is invalid or incompatible." straight from
+ * Supabase's own Storage API -- confirmed via the browser Network tab,
+ * and confirmed (via direct SQL) that it wasn't our bucket, RLS
+ * policies, or storage.objects schema; the failure is in Supabase's
+ * authenticated Storage REST path itself, before our policies are even
+ * evaluated. Routing the actual write through our own server (which
+ * uploads with the service-role key, same pattern already used by
+ * src/app/api/email-webhook) sidesteps that broken path entirely, while
+ * the API route re-checks authorization server-side (own staff record /
+ * own student record / own linked child / in-org for staff-admin) so
+ * this is not a permission downgrade -- see src/app/api/photos/upload/route.ts.
  */
 export async function uploadProfilePhoto(
   orgId: string,
@@ -50,18 +58,21 @@ export async function uploadProfilePhoto(
   entityId: string,
   file: File
 ): Promise<string> {
-  const supabase = createClient();
   const compressed = await compressImage(file);
-  const path = `${orgId}/${kind}/${entityId}/${crypto.randomUUID()}.jpg`;
 
-  const { error } = await supabase.storage.from(BUCKET).upload(path, compressed, {
-    contentType: "image/jpeg",
-    upsert: false,
-  });
-  if (error) throw new Error(error.message);
+  const form = new FormData();
+  form.append("file", new File([compressed], "photo.jpg", { type: "image/jpeg" }));
+  form.append("kind", kind);
+  form.append("entityId", entityId);
 
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  return data.publicUrl;
+  const res = await fetch("/api/photos/upload", { method: "POST", body: form });
+  const body = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(body?.error || "Photo upload failed.");
+  }
+
+  return body.url as string;
 }
 
 export function isImageFile(file: File): boolean {
