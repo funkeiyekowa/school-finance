@@ -3,5 +3,9 @@
 import { MessagesShell } from "@/components/messaging/MessagesShell";
 
 export default function MessagesPage() {
-  return <MessagesShell activeConversationId={null} />;
+  return (
+    <div className="h-full">
+      <MessagesShell activeConversationId={null} />
+    </div>
+  );
 }

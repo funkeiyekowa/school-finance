@@ -19,6 +19,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useToast } from "@/lib/hooks/useToast";
+import { useBranding } from "@/lib/hooks/useBranding";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtMoney, fmtDateTime, cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
@@ -26,6 +27,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { PrintableLetterhead, PrintableFooter } from "@/components/print/PrintableLetterhead";
 import {
   ArrowLeft, Sparkles, CheckCircle2, Wallet, FileText,
   Loader2, Users, DollarSign, ArrowUpCircle, ArrowDownCircle, Printer,
@@ -51,6 +53,7 @@ export default function PayrollRunPage() {
   const { canEdit } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
+  const branding = useBranding();
 
   const [loading, setLoading] = useState(true);
   const [run, setRun] = useState<RunRow | null>(null);
@@ -276,18 +279,49 @@ export default function PayrollRunPage() {
         {viewingSlip && (
           <div className="space-y-4">
             {/* Printable header */}
-            <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-white" id="payslip-body">
-              <div className="flex items-start justify-between border-b border-gray-100 pb-2">
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-bold tracking-wide">Payslip</p>
-                  <p className="text-sm font-bold text-[#0F2A47]">{run.label || `${periodLabel} payroll`}</p>
-                  <p className="text-xs text-gray-500">{periodLabel}</p>
+            <div className="relative border border-gray-200 rounded-lg p-4 space-y-3 bg-white overflow-hidden" id="payslip-body">
+              {branding && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none select-none absolute inset-0 flex items-center justify-center overflow-hidden"
+                  style={{ zIndex: 0 }}
+                >
+                  <span
+                    className="whitespace-nowrap font-bold uppercase tracking-widest"
+                    style={{ fontSize: "2.75rem", color: branding.primaryColor, opacity: 0.05, transform: "rotate(-24deg)" }}
+                  >
+                    {branding.schoolName}
+                  </span>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-[#0F2A47]">{viewingSlip.staff_name}</p>
-                  <p className="text-xs text-gray-500">{viewingSlip.staff_code}</p>
+              )}
+              <div className="relative" style={{ zIndex: 1 }}>
+              {branding ? (
+                <PrintableLetterhead
+                  branding={branding}
+                  eyebrow="Payslip"
+                  accent="navy"
+                  right={
+                    <div>
+                      <p className="text-sm font-bold" style={{ color: branding.primaryColor }}>{viewingSlip.staff_name}</p>
+                      <p className="text-[11px] text-gray-500">Staff ID: {viewingSlip.staff_code}</p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">{run.label || `${periodLabel} payroll`}</p>
+                      <p className="text-[11px] text-gray-500">{periodLabel}</p>
+                    </div>
+                  }
+                />
+              ) : (
+                <div className="flex items-start justify-between border-b border-gray-100 pb-2">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wide">Payslip</p>
+                    <p className="text-sm font-bold text-[#0F2A47]">{run.label || `${periodLabel} payroll`}</p>
+                    <p className="text-xs text-gray-500">{periodLabel}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-[#0F2A47]">{viewingSlip.staff_name}</p>
+                    <p className="text-xs text-gray-500">{viewingSlip.staff_code}</p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between py-1 border-b border-gray-100">
@@ -344,6 +378,8 @@ export default function PayrollRunPage() {
                   {viewingSlip.payment_reference ? ` · ref ${viewingSlip.payment_reference}` : ""}
                 </p>
               )}
+              {branding && <PrintableFooter branding={branding} />}
+              </div>
             </div>
 
             <div className="flex items-center justify-between gap-2">

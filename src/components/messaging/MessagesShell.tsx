@@ -142,7 +142,7 @@ export function MessagesShell({ activeConversationId }: Props) {
   }
 
   return (
-    <div className="flex h-[calc(100vh-64px)] md:h-[calc(100vh-72px)] -m-6 bg-gray-50">
+    <div className="flex h-full bg-gray-50">
       <ConversationListPanel
         items={items}
         activeId={activeConversationId}

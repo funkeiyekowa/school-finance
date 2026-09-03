@@ -5,5 +5,9 @@ import { MessagesShell } from "@/components/messaging/MessagesShell";
 
 export default function MessageThreadPage() {
   const params = useParams<{ conversationId: string }>();
-  return <MessagesShell activeConversationId={params.conversationId} />;
+  return (
+    <div className="h-full">
+      <MessagesShell activeConversationId={params.conversationId} />
+    </div>
+  );
 }
