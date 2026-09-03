@@ -25,6 +25,10 @@ interface StaffRow {
   department_id: string | null;
   date_joined: string | null;
   status: string;
+  /** "Also a Teacher" -- grants this person the Teacher's Portal nav
+   * (My Teaching, Attendance, Assessments, CBT) in addition to whatever
+   * their normal staff/admin access already is. See AppShell.tsx. */
+  dual_role: boolean;
 }
 
 interface DeptRow { id: string; name: string; }
@@ -49,7 +53,7 @@ export default function StaffPage() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<StaffRow | null>(null);
-  const [form, setForm] = useState({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active" });
+  const [form, setForm] = useState({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active", dual_role: false });
   const [credNotice, setCredNotice] = useState<{ email: string; name: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [stats, setStats] = useState<StaffStats>({
@@ -127,6 +131,21 @@ export default function StaffPage() {
   async function openForm(s?: StaffRow) {
     if (s) {
       setEditing(s);
+      // Populate the form from the row being edited -- previously this
+      // was missing entirely, so "Edit" silently opened a blank/default
+      // form and saving would overwrite the person's real data.
+      setForm({
+        staff_code: s.staff_code,
+        full_name: s.full_name,
+        email: s.email,
+        phone: s.phone ?? "",
+        job_title: s.job_title ?? "",
+        staff_type: s.staff_type || "teaching",
+        department_id: s.department_id ?? "",
+        date_joined: s.date_joined ?? "",
+        status: s.status,
+        dual_role: Boolean(s.dual_role),
+      });
     } else {
       setEditing(null);
       // Auto-generate the next staff code
@@ -137,7 +156,7 @@ export default function StaffPage() {
           if (typeof data === "string") nextCode = data;
         }
       } catch { /* fall back to blank */ }
-      setForm({ staff_code: nextCode, full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active" });
+      setForm({ staff_code: nextCode, full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active", dual_role: false });
     }
     setSaveError(null);
     setShowForm(true);
@@ -188,6 +207,7 @@ export default function StaffPage() {
       department_id: form.department_id || null,
       date_joined: form.date_joined || null,
       status: form.status,
+      dual_role: form.dual_role,
       organization_id: orgId,
       updated_at: new Date().toISOString(),
     };
@@ -313,7 +333,19 @@ export default function StaffPage() {
                   <td className="px-4 py-2.5 font-medium">{s.full_name}</td>
                   <td className="px-4 py-2.5 text-gray-600">{s.job_title || "—"}</td>
                   <td className="px-4 py-2.5 text-gray-600">{departments.find(d => d.id === s.department_id)?.name || "—"}</td>
-                  <td className="px-4 py-2.5"><span className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase", s.staff_type === "teaching" ? "bg-green-100 text-green-700" : s.staff_type === "admin" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700")}>{s.staff_type.replace("_", " ")}</span></td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase", s.staff_type === "teaching" ? "bg-green-100 text-green-700" : s.staff_type === "admin" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700")}>{s.staff_type.replace("_", " ")}</span>
+                      {s.dual_role && (
+                        <span
+                          title="Also has access to the Teacher's Portal"
+                          className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-700"
+                        >
+                          +Teacher
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-2.5 text-gray-500">{s.phone || "—"}</td>
                   <td className="px-4 py-2.5"><span className={cn("px-2 py-0.5 rounded text-[10px] font-bold", s.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>{s.status}</span></td>
                   <td className="px-4 py-2.5 text-right">
@@ -383,6 +415,24 @@ export default function StaffPage() {
                   <option value="resigned">Resigned</option>
                   <option value="terminated">Terminated</option>
                 </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={form.dual_role}
+                    onChange={e => setForm(f => ({ ...f, dual_role: e.target.checked }))}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#C9A227] focus:ring-[#C9A227]"
+                  />
+                  <span className="text-sm text-gray-700">
+                    <span className="font-medium">Also a Teacher</span>
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      Gives this person the Teacher&apos;s Portal (My Teaching, Attendance,
+                      Assessments, CBT/Exams) in addition to their staff access, so an
+                      admin who also teaches can use both without a separate login.
+                    </span>
+                  </span>
+                </label>
               </div>
             </div>
             {saveError && (

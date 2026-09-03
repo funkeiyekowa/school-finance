@@ -16,6 +16,7 @@ import ForcePasswordChange from "@/components/auth/ForcePasswordChange";
 import { AiAssistantFab } from "@/components/ai/AiAssistantFab";
 import { CommandPalette, useNavCommandItems } from "@/components/ui/CommandPalette";
 import { useUnreadMessagesBadge } from "@/lib/messaging/hooks";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, DollarSign, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock, Camera, FileCheck2 } from "lucide-react";
 
@@ -115,11 +116,10 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/students", label: "Students", icon: <GraduationCap size={17} />, feature: "students", module: "students" },
       { href: "/dashboard/students/photos", label: "Student Photos", icon: <Camera size={17} />, feature: "students", module: "students" },
       { href: "/dashboard/students/photo-approvals", label: "Photo Approvals", icon: <FileCheck2 size={17} />, feature: "students", module: "students" },
-      { href: "/dashboard/attendance", label: "Attendance", icon: <Clock size={17} />, module: "attendance" },
       { href: "/dashboard/timetable", label: "Timetable", icon: <Clock size={17} />, module: "timetable" },
       { href: "/dashboard/calendar", label: "Calendar", icon: <CalendarClock size={17} /> },
-      { href: "/dashboard/assessments", label: "Assessments", icon: <FileBarChart size={17} />, module: "assessments" },
-      { href: "/dashboard/cbt", label: "CBT / Exams", icon: <BookOpen size={17} />, module: "cbt" },
+      // Attendance, Assessments and CBT/Exams live in the Teacher's
+      // Portal group above -- intentionally not duplicated here.
       { href: "/dashboard/report-cards", label: "Report Cards", icon: <FileBarChart size={17} />, module: "academics" },
       { href: "/dashboard/lms", label: "Learning Management", icon: <Trophy size={17} />, module: "lms" },
       { href: "/dashboard/students/promotion", label: "Promotion", icon: <ArrowLeftRight size={17} />, feature: "students", module: "academics", adminOnly: true },
@@ -228,12 +228,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const {
-    profile, signOut, hasFeature, hasModule, isAdmin, isSuperAdmin,
+    user, profile, signOut, hasFeature, hasModule, isAdmin, isSuperAdmin,
     org, availableOrgs, isSupportSession, membership,
   } = useAuth();
   const unreadMessages = useUnreadMessagesBadge();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  // Dual-role staff: an admin/bursar/etc. who is ALSO flagged as teaching
+  // (staff_members.dual_role, set from the "Also a Teacher" checkbox on
+  // Staff setup) additionally gets the Teacher's Portal nav group. This is
+  // a nav-visibility grant only -- their underlying org_memberships.role
+  // is unchanged, and every page/table under Teacher's Portal already
+  // grants full, unrestricted access to every admin-ish role (only a
+  // literal 'teacher' role gets scoped to their own assigned classes), so
+  // no RLS changes are needed for this direction.
+  const [isDualRoleTeacher, setIsDualRoleTeacher] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (!user?.email) { setIsDualRoleTeacher(false); return; }
+    const supabase = createClient();
+    supabase
+      .from("staff_members")
+      .select("dual_role")
+      .ilike("email", user.email)
+      .eq("active", true)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setIsDualRoleTeacher(Boolean((data as { dual_role?: boolean } | null)?.dual_role));
+      });
+    return () => { cancelled = true; };
+  }, [user]);
 
   // Determine which item is active (longest prefix match)
   const allItems = NAV_GROUPS.flatMap(g => g.items);
@@ -261,6 +286,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const activeRoles = new Set<string>();
   if (membership?.role) activeRoles.add(membership.role);
   if (isSuperAdmin) activeRoles.add("super_admin");
+  if (isDualRoleTeacher) activeRoles.add("teacher");
 
   function isRoleAllowed(allowed?: string[]): boolean {
     if (!allowed || allowed.length === 0) return true;

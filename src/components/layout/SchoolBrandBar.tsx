@@ -16,6 +16,7 @@
 
 import { useAuth } from "@/lib/context/AuthContext";
 import { School } from "lucide-react";
+import { ProfileMenu } from "@/components/layout/ProfileMenu";
 
 export function SchoolBrandBar() {
   const { org } = useAuth();
@@ -47,6 +48,9 @@ export function SchoolBrandBar() {
           </div>
         )}
       </div>
+      {/* Standard top-right account menu -- present on every role,
+          not just staff (see ProfileMenu doc comment). */}
+      <ProfileMenu />
     </div>
   );
 }
