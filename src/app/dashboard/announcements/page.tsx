@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { AiAssistButton } from "@/components/ai/AiAssistButton";
-import { Plus, Save, Send, Bell, Printer, Sparkles } from "lucide-react";
+import { Plus, Save, Send, Bell, Printer, Sparkles, Inbox, MessageCircle, MessageSquareText, Mail, Settings, CheckCircle2 } from "lucide-react";
 
 interface ClassRow { id: string; name: string; }
 interface AnnRow { id: string; title: string; body: string; target: string; target_class_id: string | null; priority: string; published: boolean; published_at: string | null; created_by: string | null; created_at: string; }
@@ -25,6 +25,7 @@ export default function AnnouncementsPage() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ title: "", body: "", target: "all", target_class_id: "", priority: "normal" });
+  const [broadcasting, setBroadcasting] = useState<AnnRow | null>(null);
 
   const load = useCallback(async () => {
     const [annRes, clsRes] = await Promise.all([
@@ -170,16 +171,9 @@ export default function AnnouncementsPage() {
                         <Printer size={11} /> Print
                       </button>
                       <button
-                        onClick={() => {
-                          const params = new URLSearchParams({
-                            title: ann.title,
-                            body: ann.body,
-                            target: ann.target,
-                          });
-                          window.open(`/dashboard/parents/notify?${params.toString()}`, "_blank");
-                        }}
+                        onClick={() => setBroadcasting(ann)}
                         className="text-xs text-[#0F2A47] hover:text-[#C9A227] flex items-center gap-1 border border-gray-200 hover:border-[#C9A227] px-2 py-1 rounded"
-                        title="Send this announcement to every relevant parent via SMS / WhatsApp / email"
+                        title="Broadcast this announcement -- in-app inbox, WhatsApp, SMS, or email"
                       >
                         <Send size={11} /> Broadcast
                       </button>
@@ -261,6 +255,128 @@ export default function AnnouncementsPage() {
           </div>
         </Modal>
       )}
+
+      {/* Broadcast Modal */}
+      {broadcasting && (
+        <BroadcastModal
+          announcement={broadcasting}
+          onClose={() => setBroadcasting(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function BroadcastModal({ announcement, onClose }: { announcement: AnnRow; onClose: () => void }) {
+  const supabase = createClient();
+  const [sendingInbox, setSendingInbox] = useState(false);
+  const [inboxResult, setInboxResult] = useState<{ recipients: number } | null>(null);
+  const [inboxError, setInboxError] = useState<string | null>(null);
+
+  async function sendToInbox() {
+    setSendingInbox(true);
+    setInboxError(null);
+    const { data, error } = await supabase.rpc("broadcast_announcement_to_inbox", {
+      p_title: announcement.title,
+      p_body: announcement.body,
+      p_scope: announcement.target,
+      p_class_id: announcement.target === "class" ? announcement.target_class_id : null,
+    });
+    setSendingInbox(false);
+    if (error) { setInboxError(error.message); return; }
+    const row = Array.isArray(data) ? data[0] : data;
+    setInboxResult({ recipients: row?.recipients_added ?? 0 });
+  }
+
+  function openManual(path: string) {
+    const params = new URLSearchParams({
+      title: announcement.title,
+      body: announcement.body,
+      target: announcement.target,
+    });
+    window.open(`${path}?${params.toString()}`, "_blank");
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Broadcast this announcement" size="lg">
+      <div className="space-y-3">
+        <p className="text-xs text-gray-500">
+          Choose how to send &quot;{announcement.title}&quot;. You can use more than one channel.
+        </p>
+
+        {/* In-app inbox -- fully working today */}
+        <div className="p-3 rounded-lg border border-gray-200 flex items-start gap-3">
+          <div className="mt-0.5 text-[#0F2A47]"><Inbox size={18} /></div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-[#0F2A47]">In-App Inbox</div>
+            <div className="text-xs text-gray-500 mb-2">
+              Delivers instantly into every recipient&apos;s Messages inbox in the app. No setup needed.
+            </div>
+            {inboxResult ? (
+              <div className="text-xs text-green-700 flex items-center gap-1 font-medium">
+                <CheckCircle2 size={13} /> Sent to {inboxResult.recipients} recipient{inboxResult.recipients === 1 ? "" : "s"}.
+              </div>
+            ) : (
+              <Button size="sm" onClick={sendToInbox} loading={sendingInbox}>
+                {sendingInbox ? "Sending..." : "Send to inbox"}
+              </Button>
+            )}
+            {inboxError && <div className="text-xs text-red-600 mt-1">{inboxError}</div>}
+          </div>
+        </div>
+
+        {/* WhatsApp -- manual assist, existing tool */}
+        <div className="p-3 rounded-lg border border-gray-200 flex items-start gap-3">
+          <div className="mt-0.5 text-green-600"><MessageCircle size={18} /></div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-[#0F2A47]">WhatsApp</div>
+            <div className="text-xs text-gray-500 mb-2">
+              Opens a helper page with parent phone numbers, a CSV export, and a WhatsApp Web link pre-filled with your message.
+            </div>
+            <Button size="sm" variant="secondary" onClick={() => openManual("/dashboard/parents/notify")}>
+              Open WhatsApp / CSV tool
+            </Button>
+          </div>
+        </div>
+
+        {/* SMS -- needs provider */}
+        <div className="p-3 rounded-lg border border-gray-200 flex items-start gap-3">
+          <div className="mt-0.5 text-[#0F2A47]"><MessageSquareText size={18} /></div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-[#0F2A47]">SMS</div>
+            <div className="text-xs text-gray-500 mb-2">
+              Sends a text message directly to parents&apos; phones. Needs your school&apos;s own SMS provider account (Termii, Africa&apos;s Talking, Twilio, or a webhook).
+            </div>
+            <a
+              href="/dashboard/announcements/broadcast-settings"
+              className="inline-flex items-center gap-1 text-xs text-[#0F2A47] hover:text-[#C9A227] border border-gray-200 hover:border-[#C9A227] px-2 py-1 rounded"
+            >
+              <Settings size={12} /> Set up SMS provider
+            </a>
+          </div>
+        </div>
+
+        {/* Email -- needs provider */}
+        <div className="p-3 rounded-lg border border-gray-200 flex items-start gap-3">
+          <div className="mt-0.5 text-[#0F2A47]"><Mail size={18} /></div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-[#0F2A47]">Email</div>
+            <div className="text-xs text-gray-500 mb-2">
+              Sends the announcement by email. Needs your school&apos;s own email provider account (Resend, SendGrid, or SMTP).
+            </div>
+            <a
+              href="/dashboard/announcements/broadcast-settings"
+              className="inline-flex items-center gap-1 text-xs text-[#0F2A47] hover:text-[#C9A227] border border-gray-200 hover:border-[#C9A227] px-2 py-1 rounded"
+            >
+              <Settings size={12} /> Set up email provider
+            </a>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+        </div>
+      </div>
+    </Modal>
   );
 }

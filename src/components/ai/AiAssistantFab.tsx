@@ -12,7 +12,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { usePathname } from "next/navigation";
-import { Sparkles, X, Loader2, Send } from "lucide-react";
+import { Sparkles, X, Loader2, Send, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { askAssistant } from "@/lib/ai/client";
 import { useBranding } from "@/lib/hooks/useBranding";
@@ -69,30 +69,21 @@ export function AiAssistantFab() {
           <div className="px-3 py-2 flex items-center gap-2 text-xs" style={{ background: "#0F2A47", color: "#fff" }}>
             <Sparkles size={12} className="text-[#C9A227]" />
             <span className="font-bold uppercase tracking-wider">{assistantName}</span>
-            <button onClick={() => setOpen(false)} className="ml-auto opacity-60 hover:opacity-100"><X size={12} /></button>
+            {turns.length > 0 && (
+              <button
+                onClick={() => setTurns([])}
+                className="ml-auto opacity-60 hover:opacity-100"
+                title="Clear chat"
+                aria-label="Clear chat"
+              >
+                <RotateCcw size={12} />
+              </button>
+            )}
+            <button onClick={() => setOpen(false)} className={cn("opacity-60 hover:opacity-100", turns.length === 0 && "ml-auto")}><X size={12} /></button>
           </div>
           <div className="p-3 h-64 overflow-y-auto space-y-2 bg-gray-50">
             {turns.length === 0 && (
-              <div className="space-y-2">
-                <p className="text-xs text-gray-500 italic">Try one of these — or type your own question.</p>
-                <div className="flex flex-col gap-1.5">
-                  {[
-                    "How do I print all payslips at once?",
-                    "Where can I bulk-import students?",
-                    "How does the AI course outline work?",
-                    "What's on the Print Center?",
-                    "How do I broadcast an announcement to parents?",
-                  ].map(q => (
-                    <button
-                      key={q}
-                      onClick={() => { setQ(q); setTimeout(() => ask(), 30); }}
-                      className="text-left text-xs px-2 py-1.5 rounded-lg bg-white border border-gray-200 hover:border-[#C9A227] hover:bg-[#FBF6E8]"
-                    >
-                      {q}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <p className="text-xs text-gray-500 italic">Type your question below to get started.</p>
             )}
             {turns.map((t, i) => (
               <div key={i} className={cn("rounded-lg px-2.5 py-1.5 text-xs whitespace-pre-wrap", t.role === "user" ? "bg-[#0F2A47] text-white ml-6" : "bg-white border border-gray-200 mr-6")}>
