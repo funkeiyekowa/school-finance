@@ -2438,15 +2438,29 @@ function MediaTab({
 
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return;
+
+    // Defensive guard: if this ever runs before the active org has
+    // resolved (e.g. a stale render during an org switch), every upload
+    // below would write to a path/row that the RLS policies reject --
+    // and silently, unless we catch it here first.
+    if (!orgId) {
+      setError("No active school selected -- reload the page and try again.");
+      return;
+    }
+
     setUploading(true);
+    let succeeded = 0;
+    let failed = 0;
 
     for (const file of Array.from(files)) {
       if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
         setError(`${file.name} was skipped: only images and PDFs are accepted.`);
+        failed++;
         continue;
       }
       if (file.size > 10 * 1024 * 1024) {
         setError(`${file.name} was skipped: files must be under 10 MB.`);
+        failed++;
         continue;
       }
 
@@ -2464,12 +2478,17 @@ function MediaTab({
             ? "The website-media storage bucket is missing. Run supabase/website_module.sql."
             : `${file.name}: ${upErr.message}`
         );
+        failed++;
         continue;
       }
 
       const { data: pub } = supabase.storage.from("website-media").getPublicUrl(path);
 
-      await supabase.from("website_media").insert({
+      // This insert failing used to be invisible: the file would sit
+      // in storage with no library row, and the UI still said "Upload
+      // complete." Check and surface it, and clean up the orphaned
+      // storage object so a retry doesn't collide with it.
+      const { error: insErr } = await supabase.from("website_media").insert({
         organization_id: orgId,
         folder,
         file_name: file.name,
@@ -2478,10 +2497,24 @@ function MediaTab({
         mime_type: file.type,
         size_bytes: file.size,
       });
+
+      if (insErr) {
+        await supabase.storage.from("website-media").remove([path]);
+        setError(`${file.name} uploaded but could not be saved to the media library: ${insErr.message}`);
+        failed++;
+        continue;
+      }
+
+      succeeded++;
     }
 
     setUploading(false);
-    flash("Upload complete.");
+    // Every failure path above already called setError with the specific
+    // reason, so success only gets a flash when at least one file made it
+    // all the way into the library -- no more blanket "Upload complete."
+    if (succeeded > 0) {
+      flash(`Uploaded ${succeeded} file${succeeded === 1 ? "" : "s"}.` + (failed > 0 ? ` ${failed} failed -- see above.` : ""));
+    }
     await reload();
   }
 
