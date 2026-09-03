@@ -15,22 +15,32 @@ export interface UploadedAttachment {
 
 /**
  * Uploads one file into the private message-attachments bucket at
- * <organization_id>/<conversation_id>/<uuid>-<filename>, matching the
- * path shape the bucket's storage RLS policies check against
- * (see supabase/20260902180000_communication_module.sql, section 19).
+ * <organization_id>/<conversation_id>/<uuid>-<filename> via
+ * /api/storage/upload, which does the actual Storage write server-side
+ * with the service-role key after checking the caller is an active
+ * member of this conversation.
+ *
+ * This used to call supabase.storage.from(BUCKET).upload(...) directly
+ * from the browser -- the same call shape that started failing for
+ * profile photos and letter signatures with a 503
+ * DatabaseInvalidObjectDefinition / "The database schema is invalid or
+ * incompatible." straight from Supabase's own Storage API. Fixed
+ * proactively here before it got reported broken for messaging too --
+ * see src/app/api/storage/upload/route.ts.
  */
 export async function uploadMessageAttachment(
   orgId: string, conversationId: string, file: File
 ): Promise<UploadedAttachment> {
-  const supabase = createClient();
-  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-  const path = `${orgId}/${conversationId}/${crypto.randomUUID()}-${safeName}`;
+  const form = new FormData();
+  form.append("file", file);
+  form.append("bucket", BUCKET);
+  form.append("conversationId", conversationId);
 
-  const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
-    contentType: file.type || "application/octet-stream",
-    upsert: false,
-  });
-  if (error) throw new Error(error.message);
+  const res = await fetch("/api/storage/upload", { method: "POST", body: form });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || "Attachment upload failed.");
+
+  const path = body.path as string;
 
   let width: number | undefined, height: number | undefined;
   if (file.type.startsWith("image/")) {

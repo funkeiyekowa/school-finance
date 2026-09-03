@@ -28,6 +28,7 @@ import {
 } from "@/components/website/sections";
 import type { WebsiteTheme } from "@/lib/website/types";
 import { motifBackground, motifSize } from "@/lib/website/theme";
+import { uploadWebsiteMedia } from "@/lib/website/upload";
 import { ThemeGallery } from "@/components/website/ThemeGallery";
 import {
   Globe, Palette, FileText, Newspaper, CalendarDays, Image as ImageIcon,
@@ -862,27 +863,15 @@ function OverviewTab({
       return;
     }
     setUploadingLogo(true);
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-    const path = `${orgId}/logo-${Date.now()}-${safeName}`;
-
-    const { error: upErr } = await supabase.storage
-      .from("website-media")
-      .upload(path, file, { cacheControl: "31536000", upsert: false });
-
-    if (upErr) {
+    try {
+      const { url } = await uploadWebsiteMedia(file, "logo");
+      setLogoUrlDraft(url);
+      await onPatch({ logo_url: url });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Logo upload failed.");
+    } finally {
       setUploadingLogo(false);
-      alert(
-        upErr.message.includes("Bucket not found")
-          ? "The website-media storage bucket is missing. Run supabase/website_module.sql."
-          : upErr.message
-      );
-      return;
     }
-
-    const { data: pub } = supabase.storage.from("website-media").getPublicUrl(path);
-    setLogoUrlDraft(pub.publicUrl);
-    await onPatch({ logo_url: pub.publicUrl });
-    setUploadingLogo(false);
   }
 
   const checklist = [
@@ -2464,25 +2453,17 @@ function MediaTab({
         continue;
       }
 
-      // Path is prefixed with the org id, which the storage policy checks.
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-      const path = `${orgId}/${Date.now()}-${safeName}`;
-
-      const { error: upErr } = await supabase.storage
-        .from("website-media")
-        .upload(path, file, { cacheControl: "31536000", upsert: false });
-
-      if (upErr) {
-        setError(
-          upErr.message.includes("Bucket not found")
-            ? "The website-media storage bucket is missing. Run supabase/website_module.sql."
-            : `${file.name}: ${upErr.message}`
-        );
+      let publicUrl: string;
+      let path: string;
+      try {
+        const uploaded = await uploadWebsiteMedia(file);
+        publicUrl = uploaded.url;
+        path = uploaded.path;
+      } catch (err) {
+        setError(`${file.name}: ${err instanceof Error ? err.message : "upload failed"}`);
         failed++;
         continue;
       }
-
-      const { data: pub } = supabase.storage.from("website-media").getPublicUrl(path);
 
       // This insert failing used to be invisible: the file would sit
       // in storage with no library row, and the UI still said "Upload
@@ -2492,7 +2473,7 @@ function MediaTab({
         organization_id: orgId,
         folder,
         file_name: file.name,
-        url: pub.publicUrl,
+        url: publicUrl,
         storage_path: path,
         mime_type: file.type,
         size_bytes: file.size,
