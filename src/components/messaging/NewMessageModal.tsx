@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/lib/hooks/useToast";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Avatar } from "@/components/messaging/Avatar";
@@ -17,6 +18,7 @@ interface Props {
 
 export function NewMessageModal({ open, onClose, onStarted }: Props) {
   const supabase = createClient();
+  const { notify } = useToast();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MessageableUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -27,10 +29,16 @@ export function NewMessageModal({ open, onClose, onStarted }: Props) {
     if (!open) { setQuery(""); setResults([]); setError(null); return; }
     let cancelled = false;
     setLoading(true);
+    setError(null);
     const t = setTimeout(async () => {
       const { data, error } = await supabase.rpc("search_messageable_users", { p_query: query, p_limit: 25 });
       if (!cancelled) {
-        if (!error) setResults((data as MessageableUser[]) ?? []);
+        if (error) {
+          setError(`Search failed: ${error.message}`);
+          setResults([]);
+        } else {
+          setResults((data as MessageableUser[]) ?? []);
+        }
         setLoading(false);
       }
     }, 250);
@@ -42,7 +50,16 @@ export function NewMessageModal({ open, onClose, onStarted }: Props) {
     setError(null);
     const { data, error } = await supabase.rpc("create_direct_conversation", { p_other: user.user_id });
     setStarting(null);
-    if (error) { setError(error.message); return; }
+    if (error) { 
+      setError(`Failed to start: ${error.message}`);
+      notify(`Failed to start conversation: ${error.message}`, "error");
+      return; 
+    }
+    if (!data) {
+      setError("No conversation ID returned");
+      notify("Failed to create conversation", "error");
+      return;
+    }
     onClose();
     onStarted(data as string);
   }
@@ -60,7 +77,7 @@ export function NewMessageModal({ open, onClose, onStarted }: Props) {
             className="pl-9"
           />
         </div>
-        {error && <div className="text-xs text-red-600">{error}</div>}
+        {error && <div className="text-xs text-red-600 bg-red-50 p-2 rounded">{error}</div>}
         <div className="max-h-80 overflow-y-auto -mx-1">
           {loading ? (
             <div className="py-6"><LoadingSpinner /></div>

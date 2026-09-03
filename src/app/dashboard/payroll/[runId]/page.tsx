@@ -77,6 +77,7 @@ export default function PayrollRunPage() {
   const [generating, setGenerating] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function generateRun() {
     if (!run) return;
@@ -137,6 +138,20 @@ export default function PayrollRunPage() {
     load();
   }
 
+  async function deleteRun() {
+    if (!confirm("Delete this payroll run? This cannot be undone.")) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase.from("payroll_runs").delete().eq("id", runId);
+      if (error) throw error;
+      notify("Payroll run deleted.");
+      window.location.href = "/dashboard/payroll";
+    } catch (err) {
+      notify(extractErrorMessage(err, "Delete failed."), "error");
+      setDeleting(false);
+    }
+  }
+
   /* ---------------- Payslip viewer ---------------- */
   const [viewingSlip, setViewingSlip] = useState<PayslipRow | null>(null);
   const [payReference, setPayReference] = useState("");
@@ -190,6 +205,9 @@ export default function PayrollRunPage() {
                       <CheckCircle2 size={14} /> Finalize
                     </Button>
                   )}
+                  <Button variant="danger" size="sm" onClick={deleteRun} loading={deleting}>
+                    Delete Run
+                  </Button>
                 </>
               )}
               {run.status === "finalized" && (
