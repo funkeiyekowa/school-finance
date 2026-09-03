@@ -21,7 +21,7 @@ interface StaffSalary {
 
 export default function SalaryManagementPage() {
   const supabase = useMemo(() => createClient(), []);
-  const { canEdit, isAdmin } = useAuth();
+  const { canEdit, isAdmin, membership } = useAuth();
   const { notify, ToastHost } = useToast();
 
   const [loading, setLoading] = useState(true);
