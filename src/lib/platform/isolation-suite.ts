@@ -451,16 +451,22 @@ export async function runIsolationSuite(opts: {
 
     // T-027 — verify_student_code resolves ONLY within the given org.
     {
-      // orgA has sharedStudentCode? No — T-014 inserted it into orgB only.
-      // So verify in orgB should exist, and in orgA should NOT (no cross-tenant).
-      const { data: inB } = await admin.rpc("verify_student_code", { p_code: sharedStudentCode, p_org: orgB });
-      const { data: inA } = await admin.rpc("verify_student_code", { p_code: sharedStudentCode, p_org: orgA });
-      const vB = inB as { exists?: boolean } | null;
+      // Use a code that exists in EXACTLY ONE org. `${sharedStudentCode}-B`
+      // was seeded only into orgB (Bob B); sharedStudentCode itself now lives
+      // in BOTH orgs (seeded in A, and T-014 added it to B), so it is NOT a
+      // valid cross-tenant probe. Verify the orgB-only code: it must resolve
+      // in orgB, must NOT resolve in orgA, and orgB's returned login_email
+      // must carry orgB's id (never orgA's).
+      const codeOnlyInB = `${sharedStudentCode}-B`;
+      const { data: inB } = await admin.rpc("verify_student_code", { p_code: codeOnlyInB, p_org: orgB });
+      const { data: inA } = await admin.rpc("verify_student_code", { p_code: codeOnlyInB, p_org: orgA });
+      const vB = inB as { exists?: boolean; login_email?: string } | null;
       const vA = inA as { exists?: boolean } | null;
-      if (vB?.exists === true && vA?.exists === false) {
+      const emailScopedToB = !vB?.login_email || (vB.login_email.includes(orgB) && !vB.login_email.includes(orgA));
+      if (vB?.exists === true && vA?.exists === false && emailScopedToB) {
         pass("T-027", "Code lookup cannot cross tenants",
           "verify_student_code(code, org) matches only that org", "critical",
-          `orgB exists=true, orgA exists=false`);
+          `orgB exists=true (email scoped to orgB), orgA exists=false`);
       } else {
         fail("T-027", "Code lookup cannot cross tenants",
           "verify_student_code(code, org) matches only that org", "critical",
