@@ -20,6 +20,8 @@ import { LoadingSpinner } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { CheckCircle2, Clock, Flag, ChevronLeft, ChevronRight, AlertTriangle, Lock, Maximize } from "lucide-react";
+import { useExamRecording } from "@/lib/proctoring/useExamRecording";
+import { ProctoringConsent } from "@/components/cbt/ProctoringConsent";
 
 interface OptionRow { id: string; text: string; is_correct: boolean; }
 interface MatchingPair { left: string; right: string; }
@@ -94,6 +96,27 @@ export default function TakeExamPage() {
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const autoSubmittingRef = useRef(false);
 
+  // Proctoring recording config (from exam.settings, hydrated in init)
+  const [cameraRequired, setCameraRequired] = useState(false);
+  const [screenRequired, setScreenRequired] = useState(false);
+  const [blockOnDenial, setBlockOnDenial] = useState(true);
+  const [guardianConsentRequired, setGuardianConsentRequired] = useState(false);
+  const [guardianConsentGiven, setGuardianConsentGiven] = useState(false);
+  const [showConsent, setShowConsent] = useState(false);
+  const [consentAccepted, setConsentAccepted] = useState(false);
+
+  // The unified registerViolation callback; defined first so the recording
+  // hook can use it. The actual body is below in the proctoring effect.
+  const registerViolationRef = useRef<(kind: string) => void>(() => {});
+
+  // Camera/screen recording hook
+  const recording = useExamRecording({
+    attemptId: attempt?.id ?? null,
+    cameraRequired: cameraRequired && consentAccepted,
+    screenRequired: screenRequired && consentAccepted,
+    onViolation: (kind) => registerViolationRef.current(kind),
+  });
+
   const requestFullscreen = useCallback(() => {
     // Best-effort. Browsers may refuse fullscreen without a fresh user
     // gesture, and the user can always exit it — fullscreen is a deterrent
@@ -115,14 +138,22 @@ export default function TakeExamPage() {
     // update + autoSubmittingRef guard guarantee that a burst of events from
     // a single action can only ever produce ONE forced submission.
     function registerViolation(kind: string) {
+      if (autoSubmittingRef.current) return; // already forcing submission
       setViolations(prev => {
         const next = prev + 1;
+        // Log the violation server-side
+        void supabase.rpc("log_proctoring_event", {
+          p_attempt: attempt?.id,
+          p_event_type: kind.replace(/ /g, "_"),
+          p_event_data: { kind },
+          p_violation: true,
+          p_strike_number: next,
+        }).then(() => {}, () => {}); // best-effort, don't crash the exam
+
         if (next >= maxViolations) {
           if (!autoSubmittingRef.current) {
             autoSubmittingRef.current = true;
             alert("You have exceeded the allowed number of proctoring violations. Your exam will be submitted.");
-            // Auto-submit (reason tab_switch_limit) and, per config, sign the
-            // student out of the app entirely so they cannot resume/return.
             void submitExam(true, true, "tab_switch_limit", signOutOnViolation);
           }
         } else {
@@ -132,6 +163,7 @@ export default function TakeExamPage() {
         return next;
       });
     }
+    registerViolationRef.current = registerViolation;
 
     function handleVisibility() {
       if (document.hidden && !autoSubmittingRef.current) registerViolation("you left the exam");
@@ -241,6 +273,37 @@ export default function TakeExamPage() {
     setFullscreenRequired(s.fullscreen_required === true || isProctored);
     setMaxViolations(typeof s.max_violations === "number" && s.max_violations > 0 ? s.max_violations : 3);
     setSignOutOnViolation(s.sign_out_on_violation !== false); // default true
+
+    // Recording config — merge exam-level with school-level defaults.
+    // School settings may override if the exam doesn't specify.
+    const needsCamera = s.camera_required === true;
+    const needsScreen = s.screen_required === true;
+    setCameraRequired(needsCamera);
+    setScreenRequired(needsScreen);
+    setBlockOnDenial(s.block_on_denial !== false); // default true
+
+    // Check guardian consent if recording is needed
+    if (isProctored && (needsCamera || needsScreen)) {
+      const { data: stuRow } = await supabase
+        .from("students")
+        .select("guardian_consent_proctoring")
+        .eq("profile_id", user!.id)
+        .maybeSingle();
+      const hasConsent = (stuRow as { guardian_consent_proctoring?: boolean } | null)?.guardian_consent_proctoring === true;
+      setGuardianConsentGiven(hasConsent);
+
+      // Check if school requires guardian consent
+      const { data: schoolSettings } = await supabase
+        .from("school_settings")
+        .select("proctoring_guardian_consent_required")
+        .limit(1)
+        .maybeSingle();
+      const needsGuardian = (schoolSettings as { proctoring_guardian_consent_required?: boolean } | null)?.proctoring_guardian_consent_required === true;
+      setGuardianConsentRequired(needsGuardian);
+
+      // Show consent screen before starting recording
+      setShowConsent(true);
+    }
 
     let questionList: QuestionData[] = qData.map(q => {
       const rawOpts = q.options;
@@ -500,8 +563,62 @@ export default function TakeExamPage() {
     }
   }
 
+  // Stop recording on submit
+  useEffect(() => {
+    if (submitted) recording.stopAll();
+  }, [submitted]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ---------- Rendering ---------- */
   if (loading) return <div className="flex items-center justify-center min-h-screen"><LoadingSpinner /></div>;
+
+  // Consent screen — shown after init loads but before the exam UI renders,
+  // when the exam requires camera/screen recording. Must be accepted before
+  // the exam timer and proctoring engage. Never recording silently.
+  if (showConsent && !consentAccepted && !submitted && exam) {
+    return (
+      <ProctoringConsent
+        examTitle={exam.title}
+        cameraRequired={cameraRequired}
+        screenRequired={screenRequired}
+        blockOnDenial={blockOnDenial}
+        guardianConsentGiven={guardianConsentGiven}
+        guardianConsentRequired={guardianConsentRequired}
+        onAccept={async () => {
+          setConsentAccepted(true);
+          setShowConsent(false);
+          // Log consent accepted
+          if (attempt?.id) {
+            await supabase.rpc("log_proctoring_event", {
+              p_attempt: attempt.id,
+              p_event_type: "consent_accepted",
+              p_event_data: { camera: cameraRequired, screen: screenRequired },
+            }).then(() => {}, () => {});
+          }
+          // Start recordings — the hook's opts will pick up consentAccepted=true
+          // on the next render, but let's be explicit:
+          if (cameraRequired) await recording.startCamera();
+          if (screenRequired) await recording.startScreen();
+        }}
+        onDecline={() => {
+          // Log consent declined
+          if (attempt?.id) {
+            supabase.rpc("log_proctoring_event", {
+              p_attempt: attempt.id,
+              p_event_type: "consent_declined",
+              p_event_data: { camera: cameraRequired, screen: screenRequired },
+            }).then(() => {}, () => {});
+          }
+          if (blockOnDenial) {
+            // Can't start without recording — show error
+            setError("Recording is required for this exam. Please contact your teacher.");
+          } else {
+            // Proceed without recording
+            setShowConsent(false);
+          }
+        }}
+      />
+    );
+  }
 
   if (error) return (
     <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center p-6">
@@ -609,6 +726,8 @@ export default function TakeExamPage() {
               <button onClick={requestFullscreen} className="underline hover:text-white">Re-enter</button>
             )}
             <span className={saveWarning ? "text-amber-300" : "text-green-300"}>{saveWarning ? "Save issue" : "Saved"}</span>
+            {cameraRequired && <span className={recording.cameraActive ? "text-green-300" : "text-red-300"}>{recording.cameraActive ? "📷 Recording" : "📷 Off"}</span>}
+            {screenRequired && <span className={recording.screenActive ? "text-green-300" : "text-red-300"}>{recording.screenActive ? "🖥 Screen" : "🖥 Off"}</span>}
             <span className="text-white/80">Violations {violations}/{maxViolations}</span>
           </span>
         </div>

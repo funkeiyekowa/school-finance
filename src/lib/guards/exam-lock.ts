@@ -33,6 +33,7 @@ const EXAM_LOCKED_PAGE_PATTERNS = [
 /** API paths allowed during exam lock. */
 const EXAM_LOCKED_API_PATTERNS = [
   /^\/api\/ai\/ask$/,                       // AI ask — will be blocked by the interlock anyway, but allow the request through so the 403 message is clear
+  /^\/api\/proctoring\//,                   // Upload URLs + proctoring events during active exam
   // Auth / session endpoints that must never be blocked
   /^\/api\/auth\//,
 ];
@@ -50,6 +51,8 @@ export const EXAM_ALLOWED_RPCS = [
   "submit_exam_attempt",
   "has_active_exam_attempt",
   "get_active_exam_lock",
+  "log_proctoring_event",
+  "register_proctoring_chunk",
 ];
 
 export type ExamLockResult =

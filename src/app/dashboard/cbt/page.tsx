@@ -146,7 +146,7 @@ export default function CbtPage() {
   const [showExamForm, setShowExamForm] = useState(false);
   const [savingExam, setSavingExam] = useState(false);
   const [editingExam, setEditingExam] = useState<ExamRow | null>(null);
-  const [examForm, setExamForm] = useState({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, fullscreen_required: false, sign_out_on_violation: true, max_violations: "3", starts_at: "", ends_at: "" });
+  const [examForm, setExamForm] = useState({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, fullscreen_required: false, sign_out_on_violation: true, max_violations: "3", camera_required: false, screen_required: false, block_on_denial: true, starts_at: "", ends_at: "" });
 
   // Exam questions panel
   const [selectedExam, setSelectedExam] = useState<ExamRow | null>(null);
@@ -395,10 +395,10 @@ export default function CbtPage() {
     if (exam) {
       setEditingExam(exam);
       const s = (exam.settings || {}) as Record<string, unknown>;
-      setExamForm({ title: exam.title, exam_type: exam.exam_type, subject_id: exam.subject_id || "", class_id: exam.class_id || "", duration_minutes: String(exam.duration_minutes), max_attempts: String(exam.max_attempts), pass_mark: String(exam.pass_mark || 0), shuffle_questions: exam.shuffle_questions, shuffle_options: exam.shuffle_options, show_results: exam.show_results, show_answers: exam.show_answers, proctored: s.proctored === true, fullscreen_required: s.fullscreen_required === true, sign_out_on_violation: s.sign_out_on_violation !== false, max_violations: String((s.max_violations as number) || 3), starts_at: (exam as unknown as { starts_at?: string | null }).starts_at ? (exam as unknown as { starts_at?: string | null }).starts_at!.slice(0, 16) : "", ends_at: (exam as unknown as { ends_at?: string | null }).ends_at ? (exam as unknown as { ends_at?: string | null }).ends_at!.slice(0, 16) : "" });
+      setExamForm({ title: exam.title, exam_type: exam.exam_type, subject_id: exam.subject_id || "", class_id: exam.class_id || "", duration_minutes: String(exam.duration_minutes), max_attempts: String(exam.max_attempts), pass_mark: String(exam.pass_mark || 0), shuffle_questions: exam.shuffle_questions, shuffle_options: exam.shuffle_options, show_results: exam.show_results, show_answers: exam.show_answers, proctored: s.proctored === true, fullscreen_required: s.fullscreen_required === true, sign_out_on_violation: s.sign_out_on_violation !== false, max_violations: String((s.max_violations as number) || 3), camera_required: s.camera_required === true, screen_required: s.screen_required === true, block_on_denial: s.block_on_denial !== false, starts_at: (exam as unknown as { starts_at?: string | null }).starts_at ? (exam as unknown as { starts_at?: string | null }).starts_at!.slice(0, 16) : "", ends_at: (exam as unknown as { ends_at?: string | null }).ends_at ? (exam as unknown as { ends_at?: string | null }).ends_at!.slice(0, 16) : "" });
     } else {
       setEditingExam(null);
-      setExamForm({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, fullscreen_required: false, sign_out_on_violation: true, max_violations: "3", starts_at: "", ends_at: "" });
+      setExamForm({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, fullscreen_required: false, sign_out_on_violation: true, max_violations: "3", camera_required: false, screen_required: false, block_on_denial: true, starts_at: "", ends_at: "" });
     }
     setShowExamForm(true);
   }
@@ -422,6 +422,9 @@ export default function CbtPage() {
         fullscreen_required: examForm.fullscreen_required,
         sign_out_on_violation: examForm.sign_out_on_violation,
         max_violations: parseInt(examForm.max_violations) || 3,
+        camera_required: examForm.camera_required,
+        screen_required: examForm.screen_required,
+        block_on_denial: examForm.block_on_denial,
       },
       starts_at: examForm.starts_at ? new Date(examForm.starts_at).toISOString() : null,
       ends_at: examForm.ends_at ? new Date(examForm.ends_at).toISOString() : null,
@@ -811,6 +814,9 @@ export default function CbtPage() {
                 <div className="flex flex-wrap gap-4">
                   <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.fullscreen_required} onChange={e => setExamForm(f => ({ ...f, fullscreen_required: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Require fullscreen</label>
                   <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.sign_out_on_violation} onChange={e => setExamForm(f => ({ ...f, sign_out_on_violation: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Sign out after forced submission</label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.camera_required} onChange={e => setExamForm(f => ({ ...f, camera_required: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Record camera</label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.screen_required} onChange={e => setExamForm(f => ({ ...f, screen_required: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Record screen</label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.block_on_denial} onChange={e => setExamForm(f => ({ ...f, block_on_denial: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Block exam if recording denied</label>
                 </div>
                 <div className="w-40">
                   <Input label="Max violations" type="number" min="1" max="10" value={examForm.max_violations} onChange={e => setExamForm(f => ({ ...f, max_violations: e.target.value }))} />
