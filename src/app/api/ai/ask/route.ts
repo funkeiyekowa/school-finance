@@ -104,17 +104,30 @@ export async function POST(request: Request) {
 
   const supabase = await createClient();
 
-  // CBT interlock — enforced server-side, never on a client flag. If the
-  // caller has a CBT attempt still in progress, the AI Assistant is blocked
-  // so it can't be used to answer live exam questions. This holds until the
-  // attempt is submitted / auto-submitted / timed out (status leaves
-  // 'in_progress'). Checked before anything else AI-related runs.
-  const { data: hasActiveExam } = await supabase.rpc("has_active_exam_attempt");
-  if (hasActiveExam === true) {
-    return NextResponse.json(
-      { error: "AI Assistant is unavailable while you are taking an exam." },
-      { status: 403 },
-    );
+  // Platform super-admin bypass. The super admin runs the whole SaaS and
+  // manages every school, so none of the per-school AI restrictions (exam
+  // interlock, enabled toggle, allowed_roles, length cap, student-safe mode,
+  // a school's house rules / banned topics) apply to them. Determined
+  // server-side via the same gate the DB uses — never trusted from the
+  // client. The core content-safety floor still applies (see the base
+  // system prompt below); "no restriction" means no school-scoped gating,
+  // not disabling platform safety.
+  const { data: isSuperAdmin } = await supabase.rpc("_is_platform_super_admin");
+  const superAdmin = isSuperAdmin === true;
+
+  if (!superAdmin) {
+    // CBT interlock — enforced server-side, never on a client flag. If the
+    // caller has a CBT attempt still in progress, the AI Assistant is blocked
+    // so it can't be used to answer live exam questions. This holds until the
+    // attempt is submitted / auto-submitted / timed out (status leaves
+    // 'in_progress').
+    const { data: hasActiveExam } = await supabase.rpc("has_active_exam_attempt");
+    if (hasActiveExam === true) {
+      return NextResponse.json(
+        { error: "AI Assistant is unavailable while you are taking an exam." },
+        { status: 403 },
+      );
+    }
   }
 
   // Load this school's assistant configuration.
@@ -122,7 +135,7 @@ export async function POST(request: Request) {
     .rpc("get_org_assistant_config", { p_org: session.organizationId })
     .maybeSingle();
 
-  if (cfgErr) {
+  if (cfgErr && !superAdmin) {
     return NextResponse.json({ error: "Could not load the assistant configuration." }, { status: 500 });
   }
 
@@ -135,36 +148,43 @@ export async function POST(request: Request) {
     student_safe_mode: true,
   }) as AssistantConfig;
 
-  if (!cfg.enabled) {
-    return NextResponse.json(
-      { error: "The AI assistant is turned off for your school. Ask an administrator to enable it." },
-      { status: 403 },
-    );
+  if (!superAdmin) {
+    if (!cfg.enabled) {
+      return NextResponse.json(
+        { error: "The AI assistant is turned off for your school. Ask an administrator to enable it." },
+        { status: 403 },
+      );
+    }
+
+    if (!cfg.allowed_roles.includes(session.role)) {
+      return NextResponse.json(
+        { error: "Your account type does not have access to the AI assistant." },
+        { status: 403 },
+      );
+    }
+
+    if (input.length > cfg.max_input_chars) {
+      return NextResponse.json(
+        { error: `Your question is too long (max ${cfg.max_input_chars} characters). Please shorten it.` },
+        { status: 400 },
+      );
+    }
   }
 
-  if (!cfg.allowed_roles.includes(session.role)) {
-    return NextResponse.json(
-      { error: "Your account type does not have access to the AI assistant." },
-      { status: 403 },
-    );
-  }
-
-  if (input.length > cfg.max_input_chars) {
-    return NextResponse.json(
-      { error: `Your question is too long (max ${cfg.max_input_chars} characters). Please shorten it.` },
-      { status: 400 },
-    );
-  }
+  // For a super admin, use the plain baseline learning-assistant preset
+  // (no school house rules, banned topics or safe-mode narrowing). Everyone
+  // else gets the school-configured system prompt.
+  const systemOverride = superAdmin ? undefined : buildSystemPrompt(cfg);
 
   const result = await runAiCompletion({
     kind: "learning_assistant",
     input,
-    extra: { role: session.role },
+    extra: { role: superAdmin ? "platform super admin" : session.role },
     source: body.source || "ai_ask",
     orgId: session.organizationId,
     userId: session.user.id,
     request,
-    systemOverride: buildSystemPrompt(cfg),
+    systemOverride,
   });
 
   if (result.error) {

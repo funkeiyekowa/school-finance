@@ -27,7 +27,7 @@ interface AssistantConfig {
 }
 
 export default function AiAssistantPage() {
-  const { orgId, membership } = useAuth();
+  const { orgId, membership, isSuperAdmin } = useAuth();
   const supabase = createClient();
   const role = membership?.role ?? "";
 
@@ -58,9 +58,11 @@ export default function AiAssistantPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [turns, asking]);
 
+  // The platform super admin is never restricted (matches the server, which
+  // bypasses all per-school AI gates for super admins in /api/ai/ask).
   const roleAllowed = config?.enabled && (config.allowed_roles.length === 0 || config.allowed_roles.includes(role));
-  const allowed = roleAllowed && !examLock;
-  const maxChars = config?.max_input_chars ?? 2000;
+  const allowed = isSuperAdmin || (roleAllowed && !examLock);
+  const maxChars = isSuperAdmin ? 8000 : (config?.max_input_chars ?? 2000);
 
   async function ask() {
     const q = input.trim();

@@ -70,7 +70,7 @@ type AnswerValue = {
 export default function TakeExamPage() {
   const { examId } = useParams<{ examId: string }>();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
@@ -105,9 +105,9 @@ export default function TakeExamPage() {
             if (!autoSubmittingRef.current) {
               autoSubmittingRef.current = true;
               alert("You have switched tabs too many times. Your exam will be submitted.");
-              // Auto-submit AND leave the exam screen (redirect to My Exams),
-              // recording tab_switch_limit as the termination reason.
-              void submitExam(true, true, "tab_switch_limit");
+              // Integrity violation: auto-submit (reason tab_switch_limit),
+              // then sign the student out of the app entirely.
+              void submitExam(true, true, "tab_switch_limit", true);
             }
           } else {
             alert(`Warning ${next}/${MAX_TAB_WARNINGS}: Switching tabs during a proctored exam is not allowed. Your exam will be auto-submitted after ${MAX_TAB_WARNINGS} warnings.`);
@@ -382,7 +382,7 @@ export default function TakeExamPage() {
     await Promise.all(entries.map(([qid, val]) => persistAnswer(qid, val)));
   }
 
-  async function submitExam(timedOut = false, autoRedirect = false, reason?: string) {
+  async function submitExam(timedOut = false, autoRedirect = false, reason?: string, signOutAfter = false) {
     if (!attempt) return;
     setSubmitting(true);
     if (timerRef.current) clearInterval(timerRef.current);
@@ -423,11 +423,26 @@ export default function TakeExamPage() {
     setSubmitted(true);
     setSubmitting(false);
 
-    // Auto-submits (tab-switch limit hit, or time expired) leave the exam
-    // screen automatically so the student can't keep interacting with it.
-    // A normal manual submit stays on the in-page results/summary card.
+    try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
+
+    // A CBT integrity violation (tab-switch limit exceeded) submits the paper
+    // AND signs the student out of the app entirely, so they cannot resume,
+    // reopen, or navigate anywhere in the session after cheating was detected.
+    if (signOutAfter) {
+      try {
+        alert("Your exam has been submitted and you are being signed out due to repeated tab switching.");
+        await signOut();
+      } finally {
+        // signOut redirects on its own, but guarantee we leave the exam page.
+        router.push("/login");
+      }
+      return;
+    }
+
+    // Other auto-submits (time expired) leave the exam screen automatically so
+    // the student can't keep interacting with it. A normal manual submit stays
+    // on the in-page results/summary card.
     if (autoRedirect) {
-      try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
       router.push("/dashboard/my-exams");
     }
   }
