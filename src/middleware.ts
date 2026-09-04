@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { updateSession, resolveExamLock } from "@/lib/supabase/middleware";
+import { updateSession, resolveExamLock, type ExamLockState } from "@/lib/supabase/middleware";
+import { isExamAllowedPath } from "@/lib/guards/exam-lock";
 
 /**
  * Minimal edge middleware.
@@ -85,12 +86,6 @@ function withTimeoutT<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   ]);
 }
 
-/** True when the pathname is the take page for the given exam (the one route
- *  a locked student is allowed to see). */
-function isActiveExamTakePath(pathname: string, examId: string): boolean {
-  return pathname === `/dashboard/cbt/${examId}/take`;
-}
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "";
@@ -149,23 +144,77 @@ export async function middleware(request: NextRequest) {
 
     const refreshed = await withTimeout(updateSession(request), 3000);
 
-    // ---- EXAM LOCK (server-authoritative) ----
-    // On a real document load into /dashboard/*, if the signed-in user is a
-    // student with an in-progress CBT attempt, they may ONLY be on that
-    // exam's take page. Any other dashboard URL (typed, new tab, back/forward,
-    // a stale link) is redirected straight to the active exam — the requested
-    // page is never rendered. The check is one indexed, cookie-authed RPC,
-    // hard-capped at 2s and fail-open (a slow/absent RPC never locks anyone
-    // out; the client-side shell guard is the backstop).
-    const lockedExamId = await withTimeoutT(resolveExamLock(request), 2000, null);
-    if (lockedExamId && !isActiveExamTakePath(pathname, lockedExamId)) {
-      const url = request.nextUrl.clone();
-      url.pathname = `/dashboard/cbt/${lockedExamId}/take`;
-      url.search = "";
-      return NextResponse.redirect(url);
+    // ---- EXAM LOCK (server-authoritative, FAIL-CLOSED) ----
+    // On a real document load into /dashboard/*, resolve whether the
+    // signed-in user has an active CBT attempt. Three outcomes:
+    //   LOCKED  → redirect to the exam's take page (no other page rendered)
+    //   UNLOCKED → normal access
+    //   ERROR   → fail-CLOSED: block access with a retry page, rather than
+    //             silently falling through (which would disable the lock)
+    //
+    // Hard-capped at 2s. Login/logout/session ops are carved out of the
+    // error-block so a student mid-exam isn't kicked by a transient DB blip.
+    const LOCK_SENTINEL = { status: "error" as const, reason: "timeout" };
+    const lockResult: ExamLockState = await withTimeoutT(
+      resolveExamLock(request),
+      2000,
+      LOCK_SENTINEL,
+    );
+
+    if (lockResult.status === "locked") {
+      if (!isExamAllowedPath(pathname, "page", lockResult.examId)) {
+        const url = request.nextUrl.clone();
+        url.pathname = `/dashboard/cbt/${lockResult.examId}/take`;
+        url.search = "";
+        return NextResponse.redirect(url);
+      }
+    } else if (lockResult.status === "error") {
+      // Fail-closed: if we can't verify exam status, don't grant normal
+      // dashboard access. Carve out the exam take route (so a student
+      // already in an exam isn't kicked mid-exam by a transient blip) and
+      // login/session operations.
+      const isTakePage = /^\/dashboard\/cbt\/[^/]+\/take$/.test(pathname);
+      if (!isTakePage && !isExamAllowedPath(pathname, "page")) {
+        // Return an inline HTML page that auto-retries, rather than a
+        // naked error. This is temporary (a few seconds at most) and clears
+        // as soon as the DB responds.
+        return new NextResponse(
+          `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Verifying session…</title>
+<style>body{font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#F7F5F0;color:#0F2A47}
+.box{text-align:center;padding:2rem}.spinner{margin:1rem auto;width:24px;height:24px;border:3px solid #C9A227;border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}</style>
+</head><body><div class="box"><div class="spinner"></div><p>Verifying your exam session…</p><p style="font-size:12px;color:#888">This will retry automatically.</p></div>
+<script>setTimeout(()=>location.reload(),3000)</script></body></html>`,
+          {
+            status: 200,
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+              "cache-control": "no-store",
+            },
+          },
+        );
+      }
     }
 
     return refreshed ?? NextResponse.next();
+  }
+
+  // /api/* — exam lock for API routes. Student-reachable API endpoints
+  // (messages, profile, calendar, etc.) must be rejected while an exam is
+  // in progress, just like dashboard pages. Exam-specific APIs and auth ops
+  // are on the allowlist. Only check if there's a session cookie (unauthenticated
+  // webhook endpoints skip this). Fail-open for APIs so a DB blip doesn't
+  // break webhooks or other infra — the RPCs enforce ownership anyway.
+  if (pathname.startsWith("/api/") && hasSupabaseSession(request)) {
+    const apiLock = await withTimeoutT(resolveExamLock(request), 2000, { status: "unlocked" as const });
+    if (apiLock.status === "locked" && !isExamAllowedPath(pathname, "api")) {
+      return NextResponse.json(
+        { error: "This action is not available while you are taking an exam." },
+        { status: 403 },
+      );
+    }
   }
 
   // Everything else: no Supabase touch, no timeout, no risk.

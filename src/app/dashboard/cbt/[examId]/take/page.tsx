@@ -167,6 +167,21 @@ export default function TakeExamPage() {
   const init = useCallback(async () => {
     if (!user) return;
 
+    // DEFENSE IN DEPTH: independently verify that (1) the authenticated user
+    // is a student with a linked profile, (2) if they have an active attempt
+    // it belongs to THIS exam — not a different one, and (3) the attempt is
+    // in_progress. The middleware and AppShell guard handle most navigation
+    // cases, but this page must not trust that either ran.
+    const { data: lockData } = await supabase.rpc("get_active_exam_lock");
+    const lockRow = Array.isArray(lockData) ? lockData?.[0] : lockData;
+    const lockedExamId = (lockRow as { exam_id?: string } | undefined)?.exam_id;
+
+    // If the student has an active attempt for a DIFFERENT exam, redirect.
+    if (lockedExamId && lockedExamId !== examId) {
+      router.replace(`/dashboard/cbt/${lockedExamId}/take`);
+      return;
+    }
+
     // Start (or resume) the attempt via the server. The RPC validates
     // status='published', starts_at/ends_at window, cbt_exam_assignments
     // membership, and max_attempts. Any denial is surfaced verbatim.
@@ -304,7 +319,7 @@ export default function TakeExamPage() {
     setTimeLeft(Math.max(0, (examData.duration_minutes * 60) - elapsed));
 
     setLoading(false);
-  }, [examId, user, supabase]);
+  }, [examId, user, supabase, router]);
 
   useEffect(() => { init(); }, [init]);
 

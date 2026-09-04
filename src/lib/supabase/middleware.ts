@@ -70,16 +70,28 @@ export async function updateSession(request: NextRequest) {
 /**
  * EXAM LOCK — the authoritative, server-side signal.
  *
- * Returns the exam_id the calling student is currently locked to (their own
- * in-progress CBT attempt), or null. Backed by get_active_exam_lock()
- * (supabase/cbt_exam_lock.sql), which is SECURITY DEFINER and resolves the
- * caller from auth.uid(), so the client cannot fake or suppress it.
+ * Returns a three-state result:
+ *   { status: "locked",   examId, attemptId } — student has an active attempt
+ *   { status: "unlocked" }                    — no active attempt
+ *   { status: "error",   reason }             — lock resolution failed
  *
- * Read-only, uses the request's session cookies. Any error (including the
- * RPC not being deployed yet) resolves to null so the request is never
- * blocked by an infra hiccup — the client-side shell guard is the backstop.
+ * The fail-CLOSED design: on error/timeout, we do NOT assume "unlocked."
+ * The middleware blocks access to protected routes when status is "error"
+ * (showing a retry page), rather than silently falling through. This closes
+ * the gap where a slow DB could disable the entire lock.
+ *
+ * Carve-outs that keep working even during an error state:
+ *   - login / logout / session refresh
+ *   - the exam's own read/write operations (for a student already confirmed
+ *     in-exam, the client keeps its last-known lock state)
+ *   - static assets / _next internals
  */
-export async function resolveExamLock(request: NextRequest): Promise<string | null> {
+export type ExamLockState =
+  | { status: "unlocked" }
+  | { status: "locked"; examId: string; attemptId: string }
+  | { status: "error"; reason: string };
+
+export async function resolveExamLock(request: NextRequest): Promise<ExamLockState> {
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -88,7 +100,6 @@ export async function resolveExamLock(request: NextRequest): Promise<string | nu
         getAll() {
           return request.cookies.getAll();
         },
-        // No-op: this is a read-only check, we never mutate cookies here.
         setAll() {},
       },
     },
@@ -96,10 +107,21 @@ export async function resolveExamLock(request: NextRequest): Promise<string | nu
 
   try {
     const { data, error } = await supabase.rpc("get_active_exam_lock");
-    if (error || !data || (Array.isArray(data) && data.length === 0)) return null;
+    if (error) {
+      // PGRST202 = RPC doesn't exist (migration not applied) — treat as unlocked
+      // rather than error, so the lock doesn't break pre-migration.
+      if (error.code === "PGRST202") return { status: "unlocked" };
+      return { status: "error", reason: error.message };
+    }
+    if (!data || (Array.isArray(data) && data.length === 0)) {
+      return { status: "unlocked" };
+    }
     const row = Array.isArray(data) ? data[0] : data;
-    return (row as { exam_id?: string })?.exam_id ?? null;
-  } catch {
-    return null;
+    const examId = (row as { exam_id?: string })?.exam_id;
+    const attemptId = (row as { attempt_id?: string })?.attempt_id;
+    if (!examId) return { status: "unlocked" };
+    return { status: "locked", examId, attemptId: attemptId ?? "" };
+  } catch (err) {
+    return { status: "error", reason: err instanceof Error ? err.message : "Lock resolution failed" };
   }
 }
