@@ -29,7 +29,7 @@ interface Bucket {
   count: number;
 }
 
-type LimiterName = "sms-webhook" | "email-webhook" | "alert-test" | "ai-generate" | "ai-test" | "client-error" | "lms-study-help" | "ai-assistant" | "photos-upload" | "storage-upload";
+type LimiterName = "sms-webhook" | "email-webhook" | "alert-test" | "ai-generate" | "ai-test" | "client-error" | "lms-study-help" | "ai-assistant" | "ai-ask" | "photos-upload" | "storage-upload";
 
 const store = new Map<string, Bucket>();
 

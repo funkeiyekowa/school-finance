@@ -13,7 +13,7 @@ import { Plus, BookOpen, FileText, Save, Trash2, Upload, Link2, Copy, Pencil, Sp
 
 interface SubjectRow { id: string; name: string; short_code: string; }
 interface ClassRow { id: string; name: string; }
-interface QuestionRow { id: string; question_text: string; question_type: string; difficulty: string; marks: number; subject_id: string | null; topic: string | null; options: unknown; }
+interface QuestionRow { id: string; question_text: string; question_type: string; difficulty: string; marks: number; subject_id: string | null; topic: string | null; options: unknown; answer_text?: string | null; }
 interface ExamRow { id: string; title: string; exam_type: string; status: string; duration_minutes: number; total_marks: number; pass_mark: number; max_attempts: number; class_id: string | null; subject_id: string | null; shuffle_questions: boolean; shuffle_options: boolean; show_results: boolean; show_answers: boolean; settings: Record<string, unknown>; created_at: string; }
 interface ExamQuestionRow { id: string; exam_id: string; question_id: string; sort_order: number; }
 interface StudentRow { id: string; full_name: string; student_code: string; grade: string | null; }
@@ -62,6 +62,7 @@ export default function CbtPage() {
   // Question form
   const [showQForm, setShowQForm] = useState(false);
   const [savingQ, setSavingQ] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState<QuestionRow | null>(null);
   const [qForm, setQForm] = useState({ question_text: "", question_type: "multiple_choice", subject_id: "", topic: "", difficulty: "medium", marks: "1", answer_text: "", options: [{ id: "A", text: "", is_correct: true }, { id: "B", text: "", is_correct: false }, { id: "C", text: "", is_correct: false }, { id: "D", text: "", is_correct: false }] });
 
   // Bulk upload
@@ -183,13 +184,58 @@ export default function CbtPage() {
   useEffect(() => { load(); }, [load]);
 
   // --- Question CRUD ---
+  const EMPTY_QFORM = { question_text: "", question_type: "multiple_choice", subject_id: "", topic: "", difficulty: "medium", marks: "1", answer_text: "", options: [{ id: "A", text: "", is_correct: true }, { id: "B", text: "", is_correct: false }, { id: "C", text: "", is_correct: false }, { id: "D", text: "", is_correct: false }] };
+
+  // Open the question form for a NEW question, or hydrate it from an
+  // existing one so its options and correct answer can be reviewed/edited
+  // after saving.
+  function openQForm(q?: QuestionRow) {
+    if (q) {
+      const rawOpts = Array.isArray(q.options) ? (q.options as { id: string; text: string; is_correct?: boolean }[]) : [];
+      // Normalise to the 4-slot A–D shape the editor expects, preserving the
+      // stored ids/text/correct flag. If a question has fewer/more options we
+      // keep whatever is there rather than forcing exactly four.
+      const options = rawOpts.length > 0
+        ? rawOpts.map((o, i) => ({ id: o.id ?? ["A", "B", "C", "D"][i] ?? String(i + 1), text: o.text ?? "", is_correct: o.is_correct === true }))
+        : EMPTY_QFORM.options.map(o => ({ ...o }));
+      setEditingQuestion(q);
+      setQForm({
+        question_text: q.question_text,
+        question_type: q.question_type,
+        subject_id: q.subject_id || "",
+        topic: q.topic || "",
+        difficulty: q.difficulty || "medium",
+        marks: String(q.marks ?? 1),
+        answer_text: q.answer_text || "",
+        options,
+      });
+    } else {
+      setEditingQuestion(null);
+      setQForm({ ...EMPTY_QFORM, options: EMPTY_QFORM.options.map(o => ({ ...o })) });
+    }
+    setShowQForm(true);
+  }
+
   async function saveQuestion() {
     if (!orgId) {
       alert("No active organization. Please refresh or switch organization and try again.");
       return;
     }
     setSavingQ(true);
-    const { error } = await supabase.from("questions").insert({ question_text: qForm.question_text.trim(), question_type: qForm.question_type, subject_id: qForm.subject_id || null, topic: qForm.topic.trim() || null, difficulty: qForm.difficulty, marks: parseFloat(qForm.marks) || 1, options: qForm.options, answer_text: qForm.answer_text || null, organization_id: orgId, created_by: profile?.full_name });
+    const payload = {
+      question_text: qForm.question_text.trim(),
+      question_type: qForm.question_type,
+      subject_id: qForm.subject_id || null,
+      topic: qForm.topic.trim() || null,
+      difficulty: qForm.difficulty,
+      marks: parseFloat(qForm.marks) || 1,
+      options: qForm.options,
+      answer_text: qForm.answer_text || null,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = editingQuestion
+      ? await supabase.from("questions").update(payload).eq("id", editingQuestion.id)
+      : await supabase.from("questions").insert({ ...payload, organization_id: orgId, created_by: profile?.full_name });
     setSavingQ(false);
     if (error) {
       alert(`Failed to save question: ${error.message}${error.hint ? "\nHint: " + error.hint : ""}`);
@@ -197,7 +243,8 @@ export default function CbtPage() {
       return;
     }
     setShowQForm(false);
-    setQForm({ question_text: "", question_type: "multiple_choice", subject_id: "", topic: "", difficulty: "medium", marks: "1", answer_text: "", options: [{ id: "A", text: "", is_correct: true }, { id: "B", text: "", is_correct: false }, { id: "C", text: "", is_correct: false }, { id: "D", text: "", is_correct: false }] });
+    setEditingQuestion(null);
+    setQForm({ ...EMPTY_QFORM, options: EMPTY_QFORM.options.map(o => ({ ...o })) });
     load();
   }
 
@@ -611,13 +658,16 @@ export default function CbtPage() {
               <CardTitle>Question Bank</CardTitle>
               <div className="flex gap-2">
                 {canEdit && <Button size="sm" variant="secondary" onClick={() => setShowBulkForm(true)}><Upload size={14} /> Bulk Upload</Button>}
-                {canEdit && <Button size="sm" variant="gold" onClick={() => setShowQForm(true)}><Plus size={14} /> Add Question</Button>}
+                {canEdit && <Button size="sm" variant="gold" onClick={() => openQForm()}><Plus size={14} /> Add Question</Button>}
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 max-h-[500px] overflow-y-auto">
-              {questions.map((q, i) => (
+              {questions.map((q, i) => {
+                const opts = Array.isArray(q.options) ? (q.options as { id: string; text: string; is_correct?: boolean }[]) : [];
+                const isChoice = q.question_type === "multiple_choice" || q.question_type === "true_false" || q.question_type === "multi_answer";
+                return (
                 <div key={q.id} className="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50">
                   <span className="shrink-0 w-6 h-6 rounded-full bg-[#0F2A47] text-white flex items-center justify-center text-[10px] font-bold mt-0.5">{i + 1}</span>
                   <div className="flex-1 min-w-0">
@@ -628,12 +678,34 @@ export default function CbtPage() {
                       <span>{q.marks}mk</span>
                       {q.topic && <span>· {q.topic}</span>}
                     </div>
+                    {/* Answer preview so the saved answer key is visible without opening the editor. */}
+                    {isChoice && opts.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {opts.map(o => (
+                          <span key={o.id} className={cn(
+                            "px-1.5 py-0.5 rounded text-[10px] border",
+                            o.is_correct ? "bg-green-50 border-green-300 text-green-700 font-semibold" : "bg-gray-50 border-gray-200 text-gray-500"
+                          )}>
+                            {o.id}. {o.text || "—"}{o.is_correct ? " ✓" : ""}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {!isChoice && q.answer_text && (
+                      <div className="mt-1.5 text-[10px] text-green-700">Answer: <span className="font-semibold">{q.answer_text}</span> ✓</div>
+                    )}
                   </div>
-                  {selectedExam && !examQuestions.find(eq => eq.question_id === q.id) && (
-                    <Button size="sm" variant="secondary" onClick={() => addQuestionToExam(q.id)}>+ Add</Button>
-                  )}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {canEdit && (
+                      <Button size="sm" variant="ghost" onClick={() => openQForm(q)} title="Edit question & answers"><Pencil size={13} /></Button>
+                    )}
+                    {selectedExam && !examQuestions.find(eq => eq.question_id === q.id) && (
+                      <Button size="sm" variant="secondary" onClick={() => addQuestionToExam(q.id)}>+ Add</Button>
+                    )}
+                  </div>
                 </div>
-              ))}
+                );
+              })}
               {questions.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">No questions yet.</p>}
             </div>
           </CardContent>
@@ -652,9 +724,9 @@ export default function CbtPage() {
         </Card>
       )}
 
-      {/* ADD QUESTION MODAL */}
+      {/* ADD / EDIT QUESTION MODAL */}
       {showQForm && (
-        <Modal open onClose={() => setShowQForm(false)} title="Add Question" size="lg">
+        <Modal open onClose={() => { setShowQForm(false); setEditingQuestion(null); }} title={editingQuestion ? "Edit Question" : "Add Question"} size="lg">
           <div className="space-y-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Question</label><textarea rows={3} value={qForm.question_text} onChange={e => setQForm(f => ({ ...f, question_text: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]" placeholder="Enter question..." /></div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

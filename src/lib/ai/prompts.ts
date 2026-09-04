@@ -27,6 +27,7 @@ export type AiTaskKind =
   | "seo_description"
   | "free_form"
   | "assistant_help"
+  | "learning_assistant"
   | "connection_test"
   | "lms_lesson_generate"
   | "lms_quiz_generate"
@@ -325,6 +326,31 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
       return `${page}USER QUESTION:\n${input}`;
     },
     maxTokens: 400,
+  },
+  // Admin-configurable "ask anything" learning assistant, reachable by
+  // teachers, students and (optionally) parents via /api/ai/ask. Unlike
+  // assistant_help (platform how-to only), this is a general study/teaching
+  // helper. The route builds the final system prompt at request time from
+  // the school's org_assistant_config (house rules, banned topics, safe
+  // mode) and passes it as systemOverride, so the `system` here is only the
+  // baseline used if a school sets no rules. The base rules below are always
+  // present as a floor the admin rules add to — they can tighten, not loosen.
+  learning_assistant: {
+    kind: "learning_assistant",
+    label: "Learning assistant",
+    description: "Ask-anything study & teaching helper, configurable per school.",
+    system:
+      "You are a helpful learning assistant for a school. Be clear, patient and encouraging, " +
+      "and use plain British English. Explain concepts step by step at a level appropriate to the " +
+      "person asking. Prefer teaching the method over just giving a final answer, especially for " +
+      "homework-style questions. Never produce disallowed, unsafe, adult, violent or hateful content. " +
+      "If a request falls outside what a school assistant should answer, politely decline and suggest " +
+      "asking a teacher.",
+    compose: (input, extra) => {
+      const who = extra?.role ? `The person asking is a ${extra.role}.\n` : "";
+      return `${who}QUESTION:\n${input}`;
+    },
+    maxTokens: 900,
   },
   // Internal only — used by the "Test connection" button on the AI Provider
   // settings pages (platform + school-level), never shown in AI Studio's

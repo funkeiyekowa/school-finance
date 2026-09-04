@@ -58,6 +58,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={17} /> },
       { href: "/dashboard/messages", label: "Messages", icon: <MessageSquare size={17} />, module: "communication" },
+      { href: "/dashboard/ai-assistant", label: "AI Assistant", icon: <Sparkles size={17} /> },
     ],
   },
   {
@@ -198,6 +199,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/setup", label: "Setup", icon: <Settings size={17} />, feature: "setup" },
       { href: "/dashboard/setup/signatures", label: "Letter Signatures", icon: <PenTool size={17} />, adminOnly: true },
       { href: "/dashboard/setup/subject-teachers", label: "Subject Teachers", icon: <GraduationCap size={17} />, adminOnly: true },
+      { href: "/dashboard/ai-assistant-settings", label: "AI Assistant Settings", icon: <Sparkles size={17} />, adminOnly: true },
     ],
   },
   {

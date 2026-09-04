@@ -67,3 +67,22 @@ export async function askAssistant(opts: AskAssistantOptions): Promise<GenerateR
   }
   return payload as GenerateResult;
 }
+
+/**
+ * Client for /api/ai/ask — the admin-configurable AI Learning Assistant
+ * available to every role. The server enforces the school's rules,
+ * allowed roles, banned topics and length limits; here we just send the
+ * question.
+ */
+export async function askLearningAssistant(input: string, source = "ai_assistant_page"): Promise<GenerateResult> {
+  const resp = await fetch("/api/ai/ask", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ input, source }),
+  });
+  const payload = await resp.json().catch(() => ({} as { error?: string }));
+  if (!resp.ok) {
+    throw new Error((payload as { error?: string }).error || `AI request failed (${resp.status})`);
+  }
+  return payload as GenerateResult;
+}

@@ -87,6 +87,8 @@ export default function TakeExamPage() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const [tabWarnings, setTabWarnings] = useState(0);
   const [proctored, setProctored] = useState(false);
+  const [saveWarning, setSaveWarning] = useState<string | null>(null);
+  const autoSubmittingRef = useRef(false);
   const MAX_TAB_WARNINGS = 3;
 
   /* ---------- Proctoring ---------- */
@@ -98,8 +100,14 @@ export default function TakeExamPage() {
         setTabWarnings(prev => {
           const next = prev + 1;
           if (next >= MAX_TAB_WARNINGS) {
-            alert("You have switched tabs too many times. Your exam will be submitted.");
-            submitExam(true);
+            // Guard against re-entry: a burst of visibilitychange events
+            // must trigger exactly one auto-submit + redirect.
+            if (!autoSubmittingRef.current) {
+              autoSubmittingRef.current = true;
+              alert("You have switched tabs too many times. Your exam will be submitted.");
+              // Auto-submit AND leave the exam screen (redirect to My Exams).
+              void submitExam(true, true);
+            }
           } else {
             alert(`Warning ${next}/${MAX_TAB_WARNINGS}: Switching tabs during a proctored exam is not allowed. Your exam will be auto-submitted after ${MAX_TAB_WARNINGS} warnings.`);
           }
@@ -277,7 +285,10 @@ export default function TakeExamPage() {
         if (prev <= 1) {
           clearInterval(timerRef.current!);
           timerRef.current = null;
-          submitExam(true);
+          if (!autoSubmittingRef.current) {
+            autoSubmittingRef.current = true;
+            void submitExam(true, true);
+          }
           return 0;
         }
         return prev - 1;
@@ -312,13 +323,30 @@ export default function TakeExamPage() {
     } else {
       selected_option = (typeof value.selected === "string" ? value.selected : null) ?? null;
     }
-    await supabase.from("exam_answers").upsert({
-      attempt_id: attempt.id,
-      question_id: questionId,
-      selected_option,
-      answer_text,
-      flagged: flag ?? flagged.has(questionId),
-    }, { onConflict: "attempt_id,question_id" });
+    // Persist via a SECURITY DEFINER RPC rather than a direct table upsert.
+    // The direct upsert was silently rejected by RLS (the row carried no
+    // organization_id, which tenant_exam_answers_all's WITH CHECK requires),
+    // so answers were never saved and every paper graded 0. The RPC verifies
+    // ownership + in_progress and stamps organization_id server-side.
+    const { data, error } = await supabase.rpc("save_exam_answer", {
+      p_attempt: attempt.id,
+      p_question: questionId,
+      p_selected_option: selected_option,
+      p_answer_text: answer_text,
+      p_flagged: flag ?? flagged.has(questionId),
+    });
+    const res = (data ?? {}) as { ok?: boolean; reason?: string };
+    if (error || !res.ok) {
+      // Surface the problem instead of losing the answer silently. Keep the
+      // exam usable — the student can retry by re-selecting — but make it
+      // visible so a save outage never again hides behind a 0 score.
+      setSaveWarning(
+        "We couldn't save your last answer. Check your connection; your answer will be re-saved when you change it again."
+      );
+      return false;
+    }
+    setSaveWarning(null);
+    return true;
   }
 
   function updateAnswer(questionId: string, patch: AnswerValue) {
@@ -343,10 +371,23 @@ export default function TakeExamPage() {
   }
 
   /* ---------- Submit ---------- */
-  async function submitExam(timedOut = false) {
+  // Flush every answer currently in state through the save RPC before we
+  // grade, so a fast manual submit or an auto-submit (timeout / tab-switch)
+  // can never grade a paper that's missing its last few answers. Awaited,
+  // unlike the per-keystroke autosave.
+  async function flushAllAnswers() {
+    if (!attempt) return;
+    const entries = Object.entries(answers);
+    await Promise.all(entries.map(([qid, val]) => persistAnswer(qid, val)));
+  }
+
+  async function submitExam(timedOut = false, autoRedirect = false) {
     if (!attempt) return;
     setSubmitting(true);
     if (timerRef.current) clearInterval(timerRef.current);
+
+    // Make sure nothing the student picked is left unsaved before grading.
+    await flushAllAnswers();
 
     const { data, error: err } = await supabase.rpc("submit_exam_attempt", {
       p_attempt: attempt.id,
@@ -366,6 +407,14 @@ export default function TakeExamPage() {
     } : null);
     setSubmitted(true);
     setSubmitting(false);
+
+    // Auto-submits (tab-switch limit hit, or time expired) leave the exam
+    // screen automatically so the student can't keep interacting with it.
+    // A normal manual submit stays on the in-page results/summary card.
+    if (autoRedirect) {
+      try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
+      router.push("/dashboard/my-exams");
+    }
   }
 
   /* ---------- Rendering ---------- */
@@ -464,6 +513,12 @@ export default function TakeExamPage() {
           </Button>
         </div>
       </div>
+
+      {saveWarning && (
+        <div className="bg-amber-100 border-b border-amber-300 text-amber-900 px-4 py-2 text-xs flex items-center gap-2 shrink-0">
+          <AlertTriangle size={14} className="shrink-0" /> {saveWarning}
+        </div>
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         <div className="w-16 sm:w-20 bg-white border-r shrink-0 overflow-y-auto p-2 space-y-1">

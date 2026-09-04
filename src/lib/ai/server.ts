@@ -20,6 +20,14 @@ export interface RunAiCompletionArgs {
   orgId: string | null;
   userId: string | null;
   request: Request;
+  /**
+   * Optional replacement for the preset's fixed system prompt. Used only by
+   * trusted server routes that build a system prompt at request time (e.g.
+   * /api/ai/ask, which injects a school's configured assistant rules). The
+   * client-facing /api/ai/generate route never sets this, so a caller can
+   * never smuggle in their own system prompt.
+   */
+  systemOverride?: string;
 }
 
 export interface RunAiCompletionResult {
@@ -32,7 +40,7 @@ export interface RunAiCompletionResult {
 }
 
 export async function runAiCompletion({
-  kind, input, extra, source, orgId, userId, request,
+  kind, input, extra, source, orgId, userId, request, systemOverride,
 }: RunAiCompletionArgs): Promise<RunAiCompletionResult> {
   const started = Date.now();
   const supabase = await createClient();
@@ -50,6 +58,7 @@ export async function runAiCompletion({
 
   const preset = AI_PRESETS[kind];
   const userTurn = preset.compose(input, extra);
+  const systemPrompt = systemOverride ?? preset.system;
   const maxTokens = preset.maxTokens ?? 400;
 
   let output = "";
@@ -70,7 +79,7 @@ export async function runAiCompletion({
         temperature: 0.6,
         max_tokens: maxTokens,
         messages: [
-          { role: "system", content: preset.system },
+          { role: "system", content: systemPrompt },
           { role: "user", content: userTurn },
         ],
       }),
