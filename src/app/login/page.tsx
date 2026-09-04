@@ -37,23 +37,28 @@ export default function LegacyLoginPage() {
     //     their own org server-side.
     // Only a genuinely anonymous visitor sees the school chooser.
     let cancelled = false;
+    // Hard safety net: if the session check hangs for any reason, fall back
+    // to the chooser rather than an infinite "Loading…".
+    const failSafe = setTimeout(() => { if (!cancelled) setChecking(false); }, 4000);
+
     (async () => {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (cancelled) return;
-      if (!user) { setChecking(false); return; }
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (cancelled) return;
+        if (!session?.user) { setChecking(false); return; }
 
-      const [{ data: prof }, { data: mem }] = await Promise.all([
-        supabase.from("profiles").select("role, active").eq("id", user.id).maybeSingle(),
-        supabase.from("org_memberships").select("role").eq("user_id", user.id).eq("role", "super_admin").eq("active", true).limit(1),
-      ]);
-      if (cancelled) return;
-      const p = prof as { role?: string; active?: boolean } | null;
-      const isSuperAdmin = ((mem ?? []).length > 0) || (p?.role === "developer" && !!p.active);
-
-      router.replace(isSuperAdmin ? "/dashboard/platform" : "/dashboard");
+        // Any authenticated session leaves the chooser immediately. We do a
+        // HARD navigation to /dashboard (not router.replace) so no client
+        // RSC/soft-nav loop can bounce us back to /login. /dashboard's own
+        // role router then sends super admins to Platform Admin and everyone
+        // else to their school view — no fragile RLS query needed here.
+        window.location.replace("/dashboard");
+      } catch {
+        if (!cancelled) setChecking(false);
+      }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(failSafe); };
   }, [router]);
 
   function handleSubmit(e: React.FormEvent) {

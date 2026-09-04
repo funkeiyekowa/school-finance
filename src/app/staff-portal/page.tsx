@@ -35,23 +35,23 @@ export default function StaffPortalLegacyPage() {
     // of any school), and any other signed-in user to their dashboard.
     // Only an anonymous visitor sees the school chooser.
     let cancelled = false;
+    const failSafe = setTimeout(() => { if (!cancelled) setChecking(false); }, 4000);
+
     (async () => {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (cancelled) return;
-      if (!user) { setChecking(false); return; }
-
-      const [{ data: prof }, { data: mem }] = await Promise.all([
-        supabase.from("profiles").select("role, active").eq("id", user.id).maybeSingle(),
-        supabase.from("org_memberships").select("role").eq("user_id", user.id).eq("role", "super_admin").eq("active", true).limit(1),
-      ]);
-      if (cancelled) return;
-      const p = prof as { role?: string; active?: boolean } | null;
-      const isSuperAdmin = ((mem ?? []).length > 0) || (p?.role === "developer" && !!p.active);
-
-      router.replace(isSuperAdmin ? "/dashboard/platform" : "/dashboard");
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (cancelled) return;
+        if (!session?.user) { setChecking(false); return; }
+        // Any authenticated session: hard-navigate to /dashboard, whose role
+        // router sends super admins to Platform Admin and everyone else to
+        // their school. Never make a signed-in user pick a school here.
+        window.location.replace("/dashboard");
+      } catch {
+        if (!cancelled) setChecking(false);
+      }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(failSafe); };
   }, [router]);
 
   function handleSubmit(e: React.FormEvent) {
