@@ -106,12 +106,22 @@ export default function StudentPortalPage() {
       setChanging(false);
       return;
     }
-    if (me) {
-      await supabase.from("students").update({ must_change_password: false }).eq("id", me.id);
+    // Clear the "must change password" flag on the student's OWN row.
+    // A direct `update students` is blocked by RLS (students is staff-write
+    // only, no student self-update policy), which is why the screen used to
+    // reappear — the flag never actually cleared. Use the SECURITY DEFINER
+    // RPC that clears it for the caller (auth.uid()), matching how the
+    // staff/parent ForcePasswordChange flow does it.
+    const { error: rpcErr } = await supabase.rpc("clear_must_change_password");
+    if (rpcErr) {
+      // Best-effort fallback (works only if a self-update policy exists).
+      if (me) await supabase.from("students").update({ must_change_password: false }).eq("id", me.id);
     }
+    // Reflect the cleared flag locally so a subsequent load() (or this one)
+    // does not bounce the student straight back to the password screen.
+    if (me) setMe({ ...me, must_change_password: false });
     setShowChangePassword(false);
     setChanging(false);
-    load();
   }
 
   const stats = useMemo(() => {
