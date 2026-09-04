@@ -35,7 +35,7 @@ function downloadStudentImportTemplate() {
 
 export function ImportStudentsModal({ onCloseAction }: ImportStudentsModalProps) {
   const supabase = createClient();
-  const { profile } = useAuth();
+  const { profile, orgId } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ count: number } | null>(null);
@@ -72,9 +72,18 @@ export function ImportStudentsModal({ onCloseAction }: ImportStudentsModalProps)
         return row;
       });
 
-      // Prepare data for bulk insert - INCLUDE org_id
+      // Use the ACTIVE org (orgId ~ current_user_org_id()); the students RLS
+      // WITH CHECK requires organization_id = current_user_org_id(), so using
+      // profile.organization_id fails when switched into another school.
+      const activeOrgId = orgId || profile?.organization_id || null;
+      if (!activeOrgId) {
+        setError("No active school context. Refresh or switch to a school and try again.");
+        setLoading(false);
+        return;
+      }
+      // Prepare data for bulk insert - INCLUDE org_id (active org)
       const studentsToInsert = rows.map((row) => ({
-        organization_id: profile?.organization_id || null, // ✅ CRITICAL: organization_id from profile
+        organization_id: activeOrgId,
         student_code: (row.student_code || row.id || "").toUpperCase(),
         first_name: row.first_name || row.firstname || "",
         last_name: row.last_name || row.lastname || "",

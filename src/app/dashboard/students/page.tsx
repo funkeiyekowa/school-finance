@@ -496,7 +496,7 @@ function EditCell({ id, field, value, editing, editValue, setEditValue, canEdit,
 
 function AddStudentModal({ onClose }: { onClose: () => void }) {
   const supabase = useMemo(() => createClient(), []);
-  const { profile } = useAuth();
+  const { profile, orgId } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({
@@ -525,8 +525,20 @@ function AddStudentModal({ onClose }: { onClose: () => void }) {
     if (!form.last_name.trim()) { setError("Last name is required."); return; }
     if (!form.first_name.trim()) { setError("First name is required."); return; }
     setLoading(true); setError("");
+    // Use the ACTIVE org (orgId, which mirrors the DB's current_user_org_id())
+    // rather than profile.organization_id. The students RLS WITH CHECK requires
+    // organization_id = current_user_org_id(); when a user is switched into a
+    // different school (e.g. a super-admin managing another school), their
+    // profile.organization_id is a DIFFERENT (or null) org, which fails the
+    // check — the "new row violates row-level security policy" error.
+    const activeOrgId = orgId || profile?.organization_id || null;
+    if (!activeOrgId) {
+      setError("No active school context. Please refresh or switch to a school and try again.");
+      setLoading(false);
+      return;
+    }
     const { error: err } = await supabase.from("students").insert({
-      organization_id: profile?.organization_id || null,
+      organization_id: activeOrgId,
       student_code: form.student_code, full_name: fullName,
       last_name: form.last_name, first_name: form.first_name,
       middle_name: form.middle_name || null, grade: form.grade || null,
