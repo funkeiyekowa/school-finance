@@ -53,6 +53,15 @@ GRANT EXECUTE ON FUNCTION public.has_active_exam_attempt() TO authenticated;
 -- ------------------------------------------------------------
 -- 3. submit_exam_attempt with optional reason
 -- ------------------------------------------------------------
+-- Drop the OLD 2-argument overload from cbt_upgrade_migration.sql first.
+-- Otherwise both submit_exam_attempt(uuid, boolean) and
+-- submit_exam_attempt(uuid, boolean, text) coexist, and a 2-argument call
+-- becomes ambiguous (PostgREST PGRST203 "could not choose the best
+-- candidate function"). The 3-arg version below has a default for p_reason,
+-- so it accepts both 2-arg and 3-arg call styles on its own. Safe/idempotent:
+-- DROP ... IF EXISTS on the specific 2-arg signature only.
+DROP FUNCTION IF EXISTS public.submit_exam_attempt(uuid, boolean);
+
 CREATE OR REPLACE FUNCTION public.submit_exam_attempt(
   p_attempt uuid,
   p_timed_out boolean DEFAULT false,
