@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { fmtMoney, fmtDate, cn } from "@/lib/utils";
@@ -33,7 +34,59 @@ interface DashboardData {
   smsAlertsNeedReview: number;
 }
 
+/**
+ * Role-aware dashboard router.
+ *
+ * The generic /dashboard landing must NOT show the finance dashboard to
+ * everyone. Each role is routed to the view appropriate to it:
+ *   student  -> Student Portal
+ *   parent   -> Parent Portal
+ *   teacher (and not also an admin/finance role) -> Teaching portal
+ *   finance/admin roles (owner, admin, bursar, accountant, developer,
+ *     super_admin) -> the finance dashboard below
+ *   plain staff/editor/viewer -> only if their permissions grant a finance
+ *     feature; otherwise sent to a neutral page (students overview) rather
+ *     than school-wide finance figures.
+ *
+ * This is a redirect for non-finance roles (URL becomes their portal), so
+ * bookmarks to /dashboard land everyone correctly, and the finance data
+ * fetch never even runs for a student/parent/teacher.
+ */
+const FINANCE_DASHBOARD_ROLES = ["owner", "admin", "bursar", "accountant", "developer"];
+
 export default function DashboardPage() {
+  const { loading: authLoading, membership, isSuperAdmin, isAdmin, hasFeature } = useAuth();
+  const router = useRouter();
+
+  const role = membership?.role ?? "";
+
+  // Decide where this user belongs. Runs once auth is resolved.
+  const financeAllowed =
+    isSuperAdmin || isAdmin ||
+    FINANCE_DASHBOARD_ROLES.includes(role) ||
+    hasFeature("finance_overview") || hasFeature("income");
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (role === "student") { router.replace("/dashboard/student-portal"); return; }
+    if (role === "parent") { router.replace("/dashboard/parent-portal"); return; }
+    // A pure teacher (not also admin/finance) lands on the teaching portal.
+    if (role === "teacher" && !financeAllowed) { router.replace("/dashboard/teaching"); return; }
+    // Plain staff/editor/viewer without any finance feature: send to a
+    // neutral operational page rather than school-wide finance.
+    if (!financeAllowed) { router.replace("/dashboard/students/overview"); return; }
+  }, [authLoading, role, financeAllowed, router]);
+
+  // While auth resolves, or while we're redirecting a non-finance role,
+  // render nothing (a spinner) so the finance data fetch never runs for them.
+  if (authLoading || !financeAllowed) {
+    return <div className="p-6"><LoadingSpinner /></div>;
+  }
+
+  return <FinanceDashboard />;
+}
+
+function FinanceDashboard() {
   const { profile, org } = useAuth();
   const supabase = createClient();
   const [data, setData] = useState<DashboardData | null>(null);

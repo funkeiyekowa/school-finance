@@ -2,10 +2,8 @@
 import { ModuleGuard } from "@/lib/guards/module-guard";
 import { RoleGuard, STAFF_MANAGEMENT_ROLES } from "@/lib/guards/role-guard";
 export default function Layout({ children }: { children: React.ReactNode }) {
-  // Staff HR data — school-wide people management. Not for students/parents;
-  // gate to management roles on top of the org's hr module.
   return (
-    <ModuleGuard module="hr">
+    <ModuleGuard module="procurement">
       <RoleGuard allowedRoles={STAFF_MANAGEMENT_ROLES}>{children}</RoleGuard>
     </ModuleGuard>
   );
