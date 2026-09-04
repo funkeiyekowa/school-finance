@@ -237,3 +237,60 @@ FROM public.students
 WHERE profile_id IS NOT NULL
 GROUP BY profile_id
 HAVING count(DISTINCT organization_id) > 1;
+
+
+-- =====================================================================
+-- 3. BACKFILL: correct profiles.full_name where it holds a business CODE
+--    instead of the real person's name (e.g. "s024"). The UI reads
+--    profiles.full_name; older provisioning paths stored the code/email
+--    there, so the sidebar showed the code. This pulls the real name from
+--    the authoritative role tables. public.profiles only — NO auth changes,
+--    NO business-code changes. Idempotent.
+-- =====================================================================
+
+-- A profiles.full_name is "code-like" if it is null/blank, equals the login
+-- local-part, or is a bare code (letters?+digits, STF###, VEN-###, digits).
+CREATE OR REPLACE FUNCTION public._is_code_like_name(p_name text, p_email text)
+RETURNS boolean
+LANGUAGE sql IMMUTABLE
+AS $$
+  SELECT
+    p_name IS NULL
+    OR btrim(p_name) = ''
+    OR lower(btrim(p_name)) = split_part(split_part(coalesce(p_email,''), '@', 1), '.', 1)
+    OR btrim(p_name) ~* '^(?:[a-z]{0,4}[-.]?[0-9]{2,}|stf[0-9]+|ven-?[0-9]+)$'
+    OR (btrim(p_name) ~ '[0-9]' AND btrim(p_name) !~ '\s');
+$$;
+
+-- Students
+UPDATE public.profiles p
+   SET full_name = s.full_name
+  FROM public.students s
+ WHERE s.profile_id = p.id
+   AND s.full_name IS NOT NULL AND btrim(s.full_name) <> ''
+   AND NOT public._is_code_like_name(s.full_name, p.email)
+   AND public._is_code_like_name(p.full_name, p.email);
+
+-- Staff
+UPDATE public.profiles p
+   SET full_name = sm.full_name
+  FROM public.staff_members sm
+ WHERE sm.user_id = p.id
+   AND sm.full_name IS NOT NULL AND btrim(sm.full_name) <> ''
+   AND NOT public._is_code_like_name(sm.full_name, p.email)
+   AND public._is_code_like_name(p.full_name, p.email);
+
+-- Parents
+UPDATE public.profiles p
+   SET full_name = pp.full_name
+  FROM public.parent_profiles pp
+ WHERE pp.profile_id = p.id
+   AND pp.full_name IS NOT NULL AND btrim(pp.full_name) <> ''
+   AND NOT public._is_code_like_name(pp.full_name, p.email)
+   AND public._is_code_like_name(p.full_name, p.email);
+
+-- V7. Any profiles STILL carrying a code-like name after backfill
+--     (diagnostic; these have no real name in any role table yet).
+SELECT 'V7 profiles still code-like' AS check, count(*) AS n
+FROM public.profiles
+WHERE public._is_code_like_name(full_name, email);
