@@ -105,8 +105,9 @@ export default function TakeExamPage() {
             if (!autoSubmittingRef.current) {
               autoSubmittingRef.current = true;
               alert("You have switched tabs too many times. Your exam will be submitted.");
-              // Auto-submit AND leave the exam screen (redirect to My Exams).
-              void submitExam(true, true);
+              // Auto-submit AND leave the exam screen (redirect to My Exams),
+              // recording tab_switch_limit as the termination reason.
+              void submitExam(true, true, "tab_switch_limit");
             }
           } else {
             alert(`Warning ${next}/${MAX_TAB_WARNINGS}: Switching tabs during a proctored exam is not allowed. Your exam will be auto-submitted after ${MAX_TAB_WARNINGS} warnings.`);
@@ -381,18 +382,32 @@ export default function TakeExamPage() {
     await Promise.all(entries.map(([qid, val]) => persistAnswer(qid, val)));
   }
 
-  async function submitExam(timedOut = false, autoRedirect = false) {
+  async function submitExam(timedOut = false, autoRedirect = false, reason?: string) {
     if (!attempt) return;
     setSubmitting(true);
     if (timerRef.current) clearInterval(timerRef.current);
 
     // Make sure nothing the student picked is left unsaved before grading.
+    // Awaited so no answer is lost on a fast manual submit or an auto-submit.
     await flushAllAnswers();
 
-    const { data, error: err } = await supabase.rpc("submit_exam_attempt", {
+    // Prefer the 3-arg RPC that records WHY the attempt ended. If the DB
+    // hasn't had cbt_ai_integration.sql applied yet, that overload won't
+    // exist (PostgREST returns PGRST202 / "Could not find the function"),
+    // so we transparently fall back to the original 2-arg call. This keeps
+    // exam submission working regardless of migration/deploy ordering — a
+    // student's paper is never blocked by a not-yet-applied migration.
+    let { data, error: err } = await supabase.rpc("submit_exam_attempt", {
       p_attempt: attempt.id,
       p_timed_out: timedOut,
+      p_reason: reason ?? (timedOut ? "timed_out" : "manual"),
     });
+    if (err && (err.code === "PGRST202" || /Could not find the function/i.test(err.message))) {
+      ({ data, error: err } = await supabase.rpc("submit_exam_attempt", {
+        p_attempt: attempt.id,
+        p_timed_out: timedOut,
+      }));
+    }
 
     if (err) {
       setError(err.message);

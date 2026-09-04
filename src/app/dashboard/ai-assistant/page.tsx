@@ -37,12 +37,18 @@ export default function AiAssistantPage() {
   const [input, setInput] = useState("");
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [examLock, setExamLock] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     if (!orgId) { setLoading(false); return; }
-    const { data } = await supabase.rpc("get_org_assistant_config", { p_org: orgId }).maybeSingle();
-    setConfig((data as AssistantConfig) ?? { enabled: true, allowed_roles: [], max_input_chars: 2000 });
+    const [cfgRes, examRes] = await Promise.all([
+      supabase.rpc("get_org_assistant_config", { p_org: orgId }).maybeSingle(),
+      // Client-side courtesy check; the server (/api/ai/ask) is the real gate.
+      supabase.rpc("has_active_exam_attempt"),
+    ]);
+    setConfig((cfgRes.data as AssistantConfig) ?? { enabled: true, allowed_roles: [], max_input_chars: 2000 });
+    setExamLock(examRes.data === true);
     setLoading(false);
   }, [orgId, supabase]);
 
@@ -52,7 +58,8 @@ export default function AiAssistantPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [turns, asking]);
 
-  const allowed = config?.enabled && (config.allowed_roles.length === 0 || config.allowed_roles.includes(role));
+  const roleAllowed = config?.enabled && (config.allowed_roles.length === 0 || config.allowed_roles.includes(role));
+  const allowed = roleAllowed && !examLock;
   const maxChars = config?.max_input_chars ?? 2000;
 
   async function ask() {
@@ -98,7 +105,9 @@ export default function AiAssistantPage() {
             <EmptyState
               icon={<Bot size={32} />}
               message={
-                config?.enabled === false
+                examLock
+                  ? "AI Assistant is unavailable while you are taking an exam."
+                  : config?.enabled === false
                   ? "The AI assistant is currently turned off for your school."
                   : "Your account type does not have access to the AI assistant. Please contact an administrator."
               }

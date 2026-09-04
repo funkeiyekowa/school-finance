@@ -102,8 +102,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Your question is empty." }, { status: 400 });
   }
 
-  // Load this school's assistant configuration.
   const supabase = await createClient();
+
+  // CBT interlock — enforced server-side, never on a client flag. If the
+  // caller has a CBT attempt still in progress, the AI Assistant is blocked
+  // so it can't be used to answer live exam questions. This holds until the
+  // attempt is submitted / auto-submitted / timed out (status leaves
+  // 'in_progress'). Checked before anything else AI-related runs.
+  const { data: hasActiveExam } = await supabase.rpc("has_active_exam_attempt");
+  if (hasActiveExam === true) {
+    return NextResponse.json(
+      { error: "AI Assistant is unavailable while you are taking an exam." },
+      { status: 403 },
+    );
+  }
+
+  // Load this school's assistant configuration.
   const { data: cfgRow, error: cfgErr } = await supabase
     .rpc("get_org_assistant_config", { p_org: session.organizationId })
     .maybeSingle();
