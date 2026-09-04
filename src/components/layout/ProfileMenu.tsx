@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDisplayName } from "@/lib/hooks/useDisplayName";
 import { signOutToSchoolLogin } from "@/lib/auth/signOutToSchoolLogin";
 import { cn } from "@/lib/utils";
 import {
@@ -27,6 +28,7 @@ import {
 export function ProfileMenu() {
   const supabase = createClient();
   const { user, profile, membership, signOut } = useAuth();
+  const displayName = useDisplayName();
   const [open, setOpen] = useState(false);
   const [changingPw, setChangingPw] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -54,9 +56,11 @@ export function ProfileMenu() {
 
   if (!user) return null;
 
-  const name = profile?.full_name || user.email?.split("@")[0] || "Account";
+  const name = displayName;
   const initial = name.charAt(0).toUpperCase();
   const roleLabel = (membership?.role || profile?.role || "").replace(/_/g, " ");
+  // Hide the synthetic <code>.<org>@student.local login email from the menu.
+  const showEmail = !/@[^@]*\.local$/i.test(user.email || "");
 
   async function handleSignOut() {
     await signOut();
@@ -90,7 +94,7 @@ export function ProfileMenu() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-gray-900 truncate">{name}</div>
-              <div className="text-xs text-gray-500 truncate">{user.email}</div>
+              {showEmail && <div className="text-xs text-gray-500 truncate">{user.email}</div>}
               {roleLabel && (
                 <div className="text-[10px] uppercase tracking-wide font-bold text-[#C9A227] mt-0.5">
                   {roleLabel}

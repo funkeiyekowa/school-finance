@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDisplayName } from "@/lib/hooks/useDisplayName";
 import { signOutToSchoolLogin } from "@/lib/auth/signOutToSchoolLogin";
 import { OrgSwitcher, ActiveOrgBadge } from "@/components/layout/OrgSwitcher";
 import { SchoolBrandBar } from "@/components/layout/SchoolBrandBar";
@@ -296,6 +297,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (pathname !== takePath) router.replace(takePath);
   }, [examLock, pathname, router]);
 
+  // Friendly display name for the sidebar footer — resolves the real
+  // student/parent/staff name and never shows the synthetic *.local email.
+  const displayName = useDisplayName();
+
   // Determine which item is active (longest prefix match)
   const allItems = NAV_GROUPS.flatMap(g => g.items);
   const activeHref = allItems.reduce<string | null>((best, item) => {
@@ -446,12 +451,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               className="w-8 h-8 rounded-full bg-[#1B3E63] flex items-center justify-center shrink-0 hover:ring-2 hover:ring-[#C9A227] transition-shadow"
             >
               <span className="text-[#C9A227] text-sm font-bold">
-                {(profile?.full_name || profile?.email || "?")[0].toUpperCase()}
+                {(displayName || "?")[0].toUpperCase()}
               </span>
             </Link>
             <Link href="/dashboard/my-profile" className="flex-1 min-w-0">
               <div className="text-white text-sm font-medium truncate">
-                {profile?.full_name || profile?.email?.split("@")[0]}
+                {displayName}
               </div>
               <div className="text-[#C9A227] text-xs uppercase tracking-wide font-semibold">
                 {membership?.role?.replace("_", " ") || profile?.role}
