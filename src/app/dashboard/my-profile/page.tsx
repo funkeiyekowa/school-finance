@@ -23,8 +23,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDisplayName } from "@/lib/hooks/useDisplayName";
 import { useToast } from "@/lib/hooks/useToast";
 import { uploadProfilePhoto } from "@/lib/photos/storage";
 import { SelfieCapture } from "@/components/photos/SelfieCapture";
@@ -43,7 +45,8 @@ interface MyProfileRow {
 
 export default function MyProfilePage() {
   const supabase = useMemo(() => createClient(), []);
-  const { orgId } = useAuth();
+  const { orgId, isSuperAdmin, profile } = useAuth();
+  const displayName = useDisplayName();
   const { notify, ToastHost } = useToast();
 
   const [me, setMe] = useState<MyProfileRow | null>(null);
@@ -93,7 +96,25 @@ export default function MyProfilePage() {
       <PageHeader icon={<Camera size={24} />} gradient="navy" title="My Profile" subtitle="Update your photo" />
       <ToastHost />
 
-      {!me || me.kind === "unknown" ? (
+      {isSuperAdmin && (!me || me.kind === "unknown") ? (
+        <Card className="p-6 flex flex-col items-center gap-4">
+          <div className="h-32 w-32 rounded-full flex items-center justify-center text-3xl font-bold text-white bg-gradient-to-br from-[#0F2A47] to-[#C9A227]">
+            {(displayName || "A").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}
+          </div>
+          <div className="text-center">
+            <p className="font-bold text-[#0F2A47]">{displayName}</p>
+            <p className="text-xs text-gray-500">{profile?.email}</p>
+            <p className="text-[10px] uppercase tracking-wide font-bold text-[#C9A227] mt-1">Platform Super Admin</p>
+          </div>
+          <p className="text-sm text-gray-500 text-center max-w-sm">
+            You&apos;re a platform administrator, not tied to a single school record. Manage your
+            name, credentials, and other super admins from{" "}
+            <Link href="/dashboard/platform" className="text-[#0F2A47] font-medium hover:underline">
+              Platform Admin &rarr; Super Admins
+            </Link>.
+          </p>
+        </Card>
+      ) : !me || me.kind === "unknown" ? (
         <Card className="p-8 text-center text-gray-500">
           We couldn&apos;t find a staff, student or parent record linked to your
           login. Ask an administrator to check your account.

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { OrgMembersPanel } from "@/components/platform/OrgMembersPanel";
+import { SuperAdminsPanel } from "@/components/platform/SuperAdminsPanel";
 import { SeedDataPanel } from "@/components/platform/SeedDataPanel";
 import {
   Plus, Building2, Package, Users, ShieldCheck, LogIn, AlertTriangle,
@@ -44,7 +45,7 @@ interface SubRow {
   status: string;
 }
 
-type Tab = "orgs" | "school" | "members" | "modules";
+type Tab = "orgs" | "school" | "members" | "modules" | "superadmins";
 
 export default function PlatformAdminPage() {
   const { isSuperAdmin, profile, orgId, switchOrg } = useAuth();
@@ -335,6 +336,7 @@ export default function PlatformAdminPage() {
           { id: "school", label: "School details", icon: <ExternalLink size={14} /> },
           { id: "members", label: "Members", icon: <Users size={14} /> },
           { id: "modules", label: "Module catalogue", icon: <Package size={14} /> },
+          { id: "superadmins", label: "Super Admins", icon: <ShieldCheck size={14} /> },
         ] as const).map(t => (
           <button
             key={t.id}
@@ -593,6 +595,22 @@ export default function PlatformAdminPage() {
                 </tbody>
               </table>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {tab === "superadmins" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Super Admins</CardTitle>
+            <p className="text-xs text-gray-500 mt-1">
+              Platform administrators can manage every school, entitlement, and other super
+              admins. Manage names, credentials, and access here. Only super admins can see or
+              use this.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <SuperAdminsPanel />
           </CardContent>
         </Card>
       )}
