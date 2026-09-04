@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 
@@ -21,29 +21,24 @@ const sizeClasses = {
 };
 
 export function Modal({ open, onClose, title, children, size = "md", className }: ModalProps) {
-  const overlayRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
     if (open) {
-      document.addEventListener("keydown", handler);
       document.body.style.overflow = "hidden";
     }
     return () => {
-      document.removeEventListener("keydown", handler);
       document.body.style.overflow = "";
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
+  // Intentionally no backdrop click-to-close and no Escape-to-close:
+  // form/creation dialogs must only be dismissed via the X button (or an
+  // explicit in-dialog Cancel), so an accidental click outside or stray
+  // Escape keypress can't discard a half-filled form.
   return (
     <div
-      ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-      onClick={e => e.target === overlayRef.current && onClose()}
     >
       <div className={cn(
         "bg-white rounded-xl shadow-2xl w-full max-h-[90vh] overflow-y-auto",

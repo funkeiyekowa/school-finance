@@ -313,6 +313,61 @@ async function processUnknownDirection(
 
 
 // ============================================================
+// AUTO-CREATE VENDOR (opt-in, debit alerts only)
+// ============================================================
+// Creates a vendors row for an unknown payee when the school enabled
+// sms_auto_create_vendor. Generates a VEN-#### code by scanning the org's
+// existing codes (same scheme the Vendors screen uses). Best-effort: if
+// the payee already exists (case-insensitive) we reuse it rather than
+// creating a duplicate, and any insert error returns null so the caller
+// falls back to recording the expense under the raw payee name.
+async function autoCreateVendor(
+  supabase: SupabaseClient,
+  organizationId: string,
+  payeeName: string,
+  category: string,
+): Promise<{ id: string; name: string } | null> {
+  // Reuse an existing vendor with the same name (case-insensitive) first —
+  // matchVendor may have missed it on fuzzy grounds, but an exact-name row
+  // should never be duplicated.
+  const { data: existing } = await supabase
+    .from("vendors")
+    .select("id, name")
+    .eq("organization_id", organizationId)
+    .ilike("name", payeeName)
+    .limit(1);
+  if (existing && existing.length > 0) {
+    return { id: existing[0].id as string, name: existing[0].name as string };
+  }
+
+  // Generate the next VEN-#### code for this org.
+  const { data: codeRows } = await supabase
+    .from("vendors")
+    .select("vendor_code")
+    .eq("organization_id", organizationId);
+  const maxNum = (codeRows ?? []).reduce((m: number, r: { vendor_code: string | null }) => {
+    const n = parseInt((r.vendor_code || "").replace(/\D/g, ""), 10);
+    return isNaN(n) ? m : Math.max(m, n);
+  }, 0);
+  const vendorCode = `VEN-${String(maxNum + 1).padStart(4, "0")}`;
+
+  const { data: inserted, error } = await supabase
+    .from("vendors")
+    .insert({
+      organization_id: organizationId,
+      vendor_code: vendorCode,
+      name: payeeName,
+      category: category || null,
+      notes: "Auto-created from a bank debit alert (unknown payee).",
+    })
+    .select("id, name")
+    .single();
+
+  if (error || !inserted) return null;
+  return { id: inserted.id as string, name: inserted.name as string };
+}
+
+// ============================================================
 // DEBIT (DR) → EXPENSE
 // ============================================================
 async function processDebit(
@@ -326,6 +381,7 @@ async function processDebit(
 
   const expenseCategory = detectExpenseCategory(parsed.payeeName, parsed.purpose, parsed.reference);
   const autoExpenseEnabled = settings.sms_auto_expense === true;
+  const autoCreateVendorEnabled = settings.sms_auto_create_vendor === true;
 
   // --- New matching engine: evaluate ALL vendor candidates, score, decide ---
   const vendorResult: VendorMatchResult = await matchVendor(
@@ -333,8 +389,32 @@ async function processDebit(
     parsed.payeeName,
     organizationId,
   );
-  const matchedVendorId = vendorResult.matchedId;
-  const matchedVendorName = vendorResult.matchedName;
+  let matchedVendorId = vendorResult.matchedId;
+  let matchedVendorName = vendorResult.matchedName;
+
+  // --- Optional auto-create vendor ---
+  // When the school opted in (sms_auto_create_vendor) and this debit's
+  // payee didn't resolve to an existing vendor, create a vendor record now
+  // so the expense links to a real vendor instead of a bare name. Only
+  // fires when there's an actual payee name to key on; a failure here is
+  // non-fatal — we fall back to recording under the payee name.
+  if (
+    autoCreateVendorEnabled &&
+    !matchedVendorId &&
+    vendorResult.status === "NO_MATCH" &&
+    parsed.payeeName?.trim()
+  ) {
+    const created = await autoCreateVendor(
+      supabase,
+      organizationId,
+      parsed.payeeName.trim(),
+      expenseCategory,
+    );
+    if (created) {
+      matchedVendorId = created.id;
+      matchedVendorName = created.name;
+    }
+  }
 
   // Duplicate status from the new dedup service (already ran before matching).
   const isPossibleDuplicate = dupResult.status === "POSSIBLE_DUPLICATE";

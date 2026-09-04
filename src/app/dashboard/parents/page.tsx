@@ -172,6 +172,10 @@ export default function ParentsPage() {
     const email = form.email.trim().toLowerCase();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setSaveError("Enter a valid primary email (this is the parent's login).");
     if (!form.full_name.trim()) return setSaveError("Full name is required.");
+    // A parent must be linked to at least one student — a parent record
+    // with no child has no meaning in this system and breaks the parent
+    // portal (nothing to show). Enforced on both create and edit.
+    if (selectedStudentIds.length === 0) return setSaveError("Assign at least one student before saving. A parent must be linked to a child.");
 
     // Uniqueness check on primary email within org (auth is global, but a duplicate parent_profiles row is confusing).
     const { data: dup } = await supabase

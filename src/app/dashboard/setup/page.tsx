@@ -511,6 +511,7 @@ function SmsGatewayTab() {
     sms_webhook_registered_at: "",
     sms_allowed_senders: "",
     sms_auto_expense: false,
+    sms_auto_create_vendor: false,
   });
 
   const load = useCallback(() => {
@@ -530,6 +531,7 @@ function SmsGatewayTab() {
           sms_webhook_registered_at: (data as any).sms_webhook_registered_at || "",
           sms_allowed_senders: (data as any).sms_allowed_senders || "",
           sms_auto_expense: (data as any).sms_auto_expense || false,
+          sms_auto_create_vendor: (data as any).sms_auto_create_vendor || false,
         });
       }
       setLoading(false);
@@ -552,6 +554,7 @@ function SmsGatewayTab() {
       "sms_gateway_device_id", "sms_auto_credit", "sms_auto_credit_min_confidence",
       "sms_webhook_secret", "sms_webhook_id", "sms_webhook_registered_at",
       "sms_gateway_provider", "sms_allowed_senders", "sms_auto_expense",
+      "sms_auto_create_vendor",
     ];
     const merged = { ...form, ...extra };
     const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -934,6 +937,34 @@ function SmsGatewayTab() {
                 {form.sms_auto_expense
                   ? "When a debit (DR) bank alert is received, the expense is automatically recorded in the Expense Ledger with auto-detected category and payee."
                   : "Debit alerts appear in Payment Alerts for manual review. Staff must approve before the expense is posted to the ledger."
+                }
+              </p>
+            </div>
+          </div>
+
+          {/* Auto-create vendor sub-option */}
+          <div className="flex items-start gap-4 p-4 mt-3 rounded-xl border border-gray-200 bg-gray-50">
+            <label className="relative inline-flex items-center cursor-pointer mt-0.5">
+              <input
+                type="checkbox"
+                checked={form.sms_auto_create_vendor || false}
+                onChange={async (e) => {
+                  const checked = e.target.checked;
+                  setForm(f => ({ ...f, sms_auto_create_vendor: checked }));
+                  await persist({ sms_auto_create_vendor: checked } as any);
+                }}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-300 peer-focus:ring-2 peer-focus:ring-[#C9A227] rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-[#0F2A47] after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+            </label>
+            <div>
+              <div className="font-semibold text-sm text-gray-900">
+                {form.sms_auto_create_vendor ? "Auto-Create Vendor is ON" : "Auto-Create Vendor is OFF"}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {form.sms_auto_create_vendor
+                  ? "When a debit alert's payee doesn't match any vendor on file, a new vendor record is created automatically and the expense is linked to it."
+                  : "When a debit alert's payee doesn't match any vendor on file, the expense is still recorded under the payee name, but no new vendor record is created."
                 }
               </p>
             </div>
