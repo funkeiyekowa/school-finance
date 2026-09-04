@@ -18,6 +18,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 import { ShieldCheck, ChevronRight } from "lucide-react";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
@@ -29,10 +30,29 @@ export default function StaffPortalLegacyPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Do NOT auto-redirect based on cookie. This is a school chooser only.
-    // Users must explicitly enter their school slug or arrive at /s/<slug>/staff-portal directly.
-    setChecking(false);
-  }, []);
+    // A signed-in user must never be asked "which school?" here. Route a
+    // platform super admin straight to Platform Admin (they're independent
+    // of any school), and any other signed-in user to their dashboard.
+    // Only an anonymous visitor sees the school chooser.
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (cancelled) return;
+      if (!user) { setChecking(false); return; }
+
+      const [{ data: prof }, { data: mem }] = await Promise.all([
+        supabase.from("profiles").select("role, active").eq("id", user.id).maybeSingle(),
+        supabase.from("org_memberships").select("role").eq("user_id", user.id).eq("role", "super_admin").eq("active", true).limit(1),
+      ]);
+      if (cancelled) return;
+      const p = prof as { role?: string; active?: boolean } | null;
+      const isSuperAdmin = ((mem ?? []).length > 0) || (p?.role === "developer" && !!p.active);
+
+      router.replace(isSuperAdmin ? "/dashboard/platform" : "/dashboard");
+    })();
+    return () => { cancelled = true; };
+  }, [router]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

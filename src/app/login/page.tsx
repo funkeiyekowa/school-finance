@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 import { GraduationCap, ChevronRight } from "lucide-react";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
@@ -27,10 +28,33 @@ export default function LegacyLoginPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Do NOT auto-redirect based on cookie. This is a school chooser only.
-    // Users must explicitly enter their school slug or arrive at /s/<slug>/login directly.
-    setChecking(false);
-  }, []);
+    // If someone reaches /login while ALREADY signed in, never make them
+    // pick a school — route them where they belong:
+    //   • platform super admin (profiles.role='developer' OR any active
+    //     super_admin membership) -> Platform Admin. Super admins are
+    //     independent of any school, so they must NOT see the chooser.
+    //   • any other signed-in user -> their dashboard, which resolves
+    //     their own org server-side.
+    // Only a genuinely anonymous visitor sees the school chooser.
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (cancelled) return;
+      if (!user) { setChecking(false); return; }
+
+      const [{ data: prof }, { data: mem }] = await Promise.all([
+        supabase.from("profiles").select("role, active").eq("id", user.id).maybeSingle(),
+        supabase.from("org_memberships").select("role").eq("user_id", user.id).eq("role", "super_admin").eq("active", true).limit(1),
+      ]);
+      if (cancelled) return;
+      const p = prof as { role?: string; active?: boolean } | null;
+      const isSuperAdmin = ((mem ?? []).length > 0) || (p?.role === "developer" && !!p.active);
+
+      router.replace(isSuperAdmin ? "/dashboard/platform" : "/dashboard");
+    })();
+    return () => { cancelled = true; };
+  }, [router]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

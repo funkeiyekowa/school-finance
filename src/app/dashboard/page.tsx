@@ -55,7 +55,7 @@ interface DashboardData {
 const FINANCE_DASHBOARD_ROLES = ["owner", "admin", "bursar", "accountant", "developer"];
 
 export default function DashboardPage() {
-  const { loading: authLoading, membership, isSuperAdmin, isAdmin, hasFeature } = useAuth();
+  const { loading: authLoading, membership, isSuperAdmin, isAdmin, hasFeature, orgId } = useAuth();
   const router = useRouter();
 
   const role = membership?.role ?? "";
@@ -68,6 +68,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (authLoading) return;
+    // A platform super admin with no active school belongs on Platform Admin,
+    // not a school finance view. (When they're actively viewing a specific
+    // school — a support session with an orgId — let them see its dashboard.)
+    if (isSuperAdmin && !orgId) { router.replace("/dashboard/platform"); return; }
     if (role === "student") { router.replace("/dashboard/student-portal"); return; }
     if (role === "parent") { router.replace("/dashboard/parent-portal"); return; }
     // A pure teacher (not also admin/finance) lands on the teaching portal.
@@ -75,11 +79,12 @@ export default function DashboardPage() {
     // Plain staff/editor/viewer without any finance feature: send to a
     // neutral operational page rather than school-wide finance.
     if (!financeAllowed) { router.replace("/dashboard/students/overview"); return; }
-  }, [authLoading, role, financeAllowed, router]);
+  }, [authLoading, role, financeAllowed, isSuperAdmin, orgId, router]);
 
-  // While auth resolves, or while we're redirecting a non-finance role,
-  // render nothing (a spinner) so the finance data fetch never runs for them.
-  if (authLoading || !financeAllowed) {
+  // While auth resolves, while we're redirecting a non-finance role, or
+  // while redirecting a school-less super admin to Platform Admin, render a
+  // spinner so the finance data fetch never runs for them.
+  if (authLoading || !financeAllowed || (isSuperAdmin && !orgId)) {
     return <div className="p-6"><LoadingSpinner /></div>;
   }
 
