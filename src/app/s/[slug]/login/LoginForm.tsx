@@ -5,8 +5,11 @@
  * resolve_login_context(p_slug). No role tabs, no persona picker.
  *
  * Accepts either an email OR a student code (letter+digits, or anything
- * without '@'). Student codes are translated to <code>@student.local for
- * signInWithPassword, matching the existing convention in /auth/login.
+ * without '@'). Student codes are translated to a TENANT-SCOPED synthetic
+ * login email — <lower(code)>.<organizationId>@student.local — so the same
+ * business code (e.g. S123) in two schools maps to two DISTINCT auth users.
+ * The visible student_code never changes. organization_id (immutable) is the
+ * auth discriminator, NOT the slug (slugs can change).
  */
 
 import { useState } from "react";
@@ -17,11 +20,20 @@ import { Eye, EyeOff, Lock, ChevronRight, User, GraduationCap } from "lucide-rea
 
 interface Props {
   slug: string;
+  /** Immutable org id — the permanent tenant discriminator for student
+   *  synthetic auth identities. Null only when the school failed to resolve. */
+  organizationId: string | null;
   schoolName: string;
   logoUrl: string | null;
   found: boolean;
   /** organizations.status, when the brand RPC resolved. */
   status?: string | null;
+}
+
+/** Canonical tenant-scoped synthetic student login email. MUST match the
+ *  SQL helper public.student_auth_email(code, org) byte-for-byte. */
+function studentAuthEmail(code: string, orgId: string): string {
+  return `${code.trim().toLowerCase()}.${orgId}@student.local`;
 }
 
 interface LoginContext {
@@ -59,7 +71,7 @@ function raceWithTimeoutRpc(
   ]) as Promise<{ data: unknown; error: { message: string } | null }>;
 }
 
-export default function SchoolLoginForm({ slug, schoolName, logoUrl, found, status }: Props) {
+export default function SchoolLoginForm({ slug, organizationId, schoolName, logoUrl, found, status }: Props) {
   // Org lifecycle: 'active' and 'trial' are the only states that should
   // accept new sign-ins. 'suspended' and 'cancelled' orgs return found=true
   // from the brand RPC but must not admit users — surface a clear banner
@@ -106,12 +118,28 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found, stat
           setLoading(false);
           return;
         }
-        // Optionally verify the student code exists first for a better error
-        // message, but fall back to trying the derived email so a legacy
-        // code without verify_student_code still works.
+        // FAIL CLOSED: a student code can only be resolved WITH tenant
+        // context. Without the org id we cannot build the tenant-scoped
+        // identity, so we refuse rather than fall back to a global email.
+        if (!organizationId) {
+          setError("This school could not be identified. Reload the page and try again.");
+          setLoading(false);
+          return;
+        }
+        // Verify the code WITHIN THIS SCHOOL (org-scoped RPC, no LIMIT 1
+        // guessing). Prefer the authoritative login_email it returns; fall
+        // back to the same tenant-scoped derivation the DB uses.
         try {
-          const { data: verify } = await supabase.rpc("verify_student_code", { p_code: codeUpper });
-          const v = verify as { exists?: boolean; active?: boolean; login_email?: string; has_auth?: boolean } | null;
+          const { data: verify } = await supabase.rpc("verify_student_code", {
+            p_code: codeUpper,
+            p_org: organizationId,
+          });
+          const v = verify as { exists?: boolean; active?: boolean; login_email?: string; has_auth?: boolean; error?: string } | null;
+          if (v?.error === "ambiguous") {
+            setError("This student code needs attention from your school administrator.");
+            setLoading(false);
+            return;
+          }
           if (v?.exists === false) {
             setError("Student code not found at this school.");
             setLoading(false);
@@ -122,13 +150,9 @@ export default function SchoolLoginForm({ slug, schoolName, logoUrl, found, stat
             setLoading(false);
             return;
           }
-          if (v?.login_email) {
-            loginEmail = v.login_email;
-          } else {
-            loginEmail = `${codeUpper.toLowerCase()}@student.local`;
-          }
+          loginEmail = v?.login_email || studentAuthEmail(codeUpper, organizationId);
         } catch {
-          loginEmail = `${codeUpper.toLowerCase()}@student.local`;
+          loginEmail = studentAuthEmail(codeUpper, organizationId);
         }
       }
 

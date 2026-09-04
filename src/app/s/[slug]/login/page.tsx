@@ -25,6 +25,7 @@ export default async function SchoolScopedLoginPage({ params }: Props) {
   return (
     <SchoolLoginForm
       slug={brand.slug || slug}
+      organizationId={brand.organization_id}
       schoolName={brand.name}
       logoUrl={brand.logo_url}
       found={brand.found}

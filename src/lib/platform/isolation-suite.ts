@@ -375,6 +375,116 @@ export async function runIsolationSuite(opts: {
       }
     }
 
+    // T-023 — a DUPLICATE student_code WITHIN one org must be rejected.
+    //         (T-014 proved cross-org is allowed; this proves in-org is not.)
+    {
+      const { error } = await admin.from("students").insert({
+        student_code: sharedStudentCode, // already used by orgB in T-014
+        full_name: `${MARKER} Duplicate in same school`,
+        organization_id: orgB,
+        status: "active",
+      });
+      if (error) {
+        pass("T-023", "Duplicate code within a school is rejected",
+          "A school cannot reuse its own student_code", "high",
+          `Rejected: ${error.message}`);
+      } else {
+        fail("T-023", "Duplicate code within a school is rejected",
+          "A school cannot reuse its own student_code", "high",
+          "BREACH: the same student_code was accepted twice in one org");
+      }
+    }
+
+    // T-024 — same staff_code usable by both schools (per-org unique).
+    {
+      const code = `ISOSTF-${run}`;
+      const { error } = await admin.from("staff_members").insert([
+        { staff_code: code, full_name: `${MARKER} StaffA`, organization_id: orgA, status: "active" },
+        { staff_code: code, full_name: `${MARKER} StaffB`, organization_id: orgB, status: "active" },
+      ]);
+      if (error) {
+        fail("T-024", "Staff codes are unique per school",
+          "Both schools can use the same staff_code", "high",
+          `Blocked: ${error.message} — staff_code may still be global`);
+      } else {
+        pass("T-024", "Staff codes are unique per school",
+          "Both schools can use the same staff_code", "high");
+      }
+    }
+
+    // T-025 — same vendor_code usable by both schools (per-org unique).
+    {
+      const code = `ISOVEN-${run}`;
+      const { error } = await admin.from("vendors").insert([
+        { vendor_code: code, name: `${MARKER} VendorA`, organization_id: orgA },
+        { vendor_code: code, name: `${MARKER} VendorB`, organization_id: orgB },
+      ]);
+      if (error) {
+        fail("T-025", "Vendor codes are unique per school",
+          "Both schools can use the same vendor_code", "high",
+          `Blocked: ${error.message} — vendor_code may still be global`);
+      } else {
+        pass("T-025", "Vendor codes are unique per school",
+          "Both schools can use the same vendor_code", "high");
+      }
+    }
+
+    // T-026 — the synthetic student auth identity is TENANT-SCOPED: the
+    //         same code in two orgs yields DISTINCT login emails.
+    {
+      const { data: eA, error: e1 } = await admin.rpc("student_auth_email", { p_code: "S123", p_org: orgA });
+      const { data: eB, error: e2 } = await admin.rpc("student_auth_email", { p_code: "S123", p_org: orgB });
+      if (e1 || e2) {
+        fail("T-026", "Student auth identity is tenant-scoped",
+          "student_auth_email differs per org", "critical",
+          `RPC error: ${e1?.message || e2?.message}`);
+      } else if (eA && eB && eA !== eB) {
+        pass("T-026", "Student auth identity is tenant-scoped",
+          "student_auth_email differs per org", "critical",
+          `A=${eA} B=${eB}`);
+      } else {
+        fail("T-026", "Student auth identity is tenant-scoped",
+          "student_auth_email differs per org", "critical",
+          `BREACH: same code produced the same email across orgs (${String(eA)})`);
+      }
+    }
+
+    // T-027 — verify_student_code resolves ONLY within the given org.
+    {
+      // orgA has sharedStudentCode? No — T-014 inserted it into orgB only.
+      // So verify in orgB should exist, and in orgA should NOT (no cross-tenant).
+      const { data: inB } = await admin.rpc("verify_student_code", { p_code: sharedStudentCode, p_org: orgB });
+      const { data: inA } = await admin.rpc("verify_student_code", { p_code: sharedStudentCode, p_org: orgA });
+      const vB = inB as { exists?: boolean } | null;
+      const vA = inA as { exists?: boolean } | null;
+      if (vB?.exists === true && vA?.exists === false) {
+        pass("T-027", "Code lookup cannot cross tenants",
+          "verify_student_code(code, org) matches only that org", "critical",
+          `orgB exists=true, orgA exists=false`);
+      } else {
+        fail("T-027", "Code lookup cannot cross tenants",
+          "verify_student_code(code, org) matches only that org", "critical",
+          `LEAK/ERR: orgB=${JSON.stringify(vB)} orgA=${JSON.stringify(vA)}`);
+      }
+    }
+
+    // T-028 — the dangerous code-ONLY signature must not exist. Calling
+    //         verify_student_code with a single text arg should error
+    //         (function signature not found), proving tenant context is
+    //         mandatory.
+    {
+      const { error } = await admin.rpc("verify_student_code", { p_code: sharedStudentCode });
+      if (error) {
+        pass("T-028", "Code-only lookup is impossible",
+          "verify_student_code requires an org argument", "critical",
+          `Rejected: ${error.message}`);
+      } else {
+        fail("T-028", "Code-only lookup is impossible",
+          "verify_student_code requires an org argument", "critical",
+          "BREACH: verify_student_code resolved with no tenant context");
+      }
+    }
+
     // T-016 — entitlements are per tenant
     {
       const { data } = await clientA.from("subscriptions").select("organization_id, module_key");
@@ -515,9 +625,37 @@ export async function runIsolationSuite(opts: {
     try {
       if (clientA) await clientA.auth.signOut();
 
+      // The auto_provision_student trigger mints a synthetic auth user for
+      // every active test student we inserted (T-014/T-023). Collect those
+      // profile_ids BEFORE the org cascade removes the student rows, so we
+      // can delete the orphaned auth users afterwards.
+      const provisionedUids = new Set<string>();
+      try {
+        const orgIds = [orgA, orgB].filter(Boolean);
+        if (orgIds.length) {
+          const { data: testStudents } = await admin
+            .from("students")
+            .select("profile_id")
+            .in("organization_id", orgIds);
+          (testStudents ?? []).forEach((s) => {
+            const pid = (s as { profile_id: string | null }).profile_id;
+            if (pid) provisionedUids.add(pid);
+          });
+        }
+      } catch { /* best-effort */ }
+
       // Organizations cascade to their tenant rows.
       if (orgA) await admin.from("organizations").delete().eq("id", orgA);
       if (orgB) await admin.from("organizations").delete().eq("id", orgB);
+
+      // Remove synthetic student auth users created by the trigger.
+      for (const uid of provisionedUids) {
+        try {
+          await admin.from("org_memberships").delete().eq("user_id", uid);
+          await admin.from("profiles").delete().eq("id", uid);
+          await admin.auth.admin.deleteUser(uid);
+        } catch { /* best-effort */ }
+      }
 
       // Any row that escaped the cascade.
       await admin.from("students").delete().like("student_code", `ISO-%${run}%`);
@@ -526,6 +664,7 @@ export async function runIsolationSuite(opts: {
       await admin.from("income_entries").delete().like("receipt_no", `%${run}%`);
       await admin.from("expense_entries").delete().like("voucher_no", `%${run}%`);
       await admin.from("vendors").delete().like("vendor_code", `%${run}%`);
+      await admin.from("staff_members").delete().like("staff_code", `%${run}%`);
 
       if (userA) {
         await admin.from("org_memberships").delete().eq("user_id", userA);
