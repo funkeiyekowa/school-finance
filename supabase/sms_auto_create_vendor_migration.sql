@@ -36,4 +36,4 @@ WHERE table_name = 'school_settings'
 -- 2. Every existing school row now has the flag (defaulted to false).
 SELECT id, organization_id, sms_auto_create_vendor
 FROM school_settings
-ORDER BY created_at;
+ORDER BY updated_at;
