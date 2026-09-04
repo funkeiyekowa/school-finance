@@ -138,6 +138,8 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/receipts", label: "Receipts", icon: <Receipt size={17} />, feature: "receipts", module: "finance" },
       { href: "/dashboard/sms-alerts", label: "Payment Alerts", icon: <MessageSquare size={17} />, feature: "sms_alerts", module: "finance" },
       { href: "/dashboard/reconciliation", label: "Reconcile", icon: <ArrowLeftRight size={17} />, feature: "reconciliation", module: "finance" },
+      { href: "/dashboard/payroll", label: "Payroll", icon: <Wallet size={17} />, module: "payroll" },
+      { href: "/dashboard/payroll/salary-management", label: "Salary Management", icon: <DollarSign size={17} />, module: "payroll" },
     ],
   },
   {
@@ -148,8 +150,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/staff", label: "Staff", icon: <Users size={17} />, module: "hr" },
       { href: "/dashboard/staff/photos", label: "Staff Photos", icon: <Camera size={17} />, module: "hr" },
-      { href: "/dashboard/payroll", label: "Payroll", icon: <Wallet size={17} />, module: "payroll" },
-      { href: "/dashboard/payroll/salary-management", label: "Salary Management", icon: <DollarSign size={17} />, module: "payroll" },
       { href: "/dashboard/parents", label: "Parents", icon: <Users size={17} />, adminOnly: true },
       { href: "/dashboard/team", label: "Team", icon: <Users size={17} />, feature: "team", adminOnly: true },
       { href: "/dashboard/roles", label: "Roles", icon: <Shield size={17} />, feature: "roles", adminOnly: true },
