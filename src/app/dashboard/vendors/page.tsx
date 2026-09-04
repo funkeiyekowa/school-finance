@@ -163,7 +163,7 @@ export default function VendorsPage() {
 
 function AddVendorModal({ onClose }: { onClose: () => void }) {
   const supabase = createClient();
-  const { profile } = useAuth();
+  const { profile, orgId } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({
@@ -172,20 +172,26 @@ function AddVendorModal({ onClose }: { onClose: () => void }) {
   });
 
   useEffect(() => {
-    supabase.from("vendors").select("vendor_code").then(({ data }) => {
+    if (!orgId) return;
+    // Scope the next-code scan to THIS school only, so VEN-#### sequences are
+    // per-org. VEN-0001 in one school and VEN-0001 in another are independent.
+    supabase.from("vendors").select("vendor_code").eq("organization_id", orgId).then(({ data }) => {
       const codes = (data ?? []).map(v => v.vendor_code);
       const max = codes.reduce((m, c) => { const n = parseInt(c.replace(/\D/g, ""), 10); return isNaN(n) ? m : Math.max(m, n); }, 0);
       setForm(f => ({ ...f, vendor_code: `VEN-${String(max + 1).padStart(4, "0")}` }));
     });
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(f => ({ ...f, [k]: e.target.value }));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) { setError("Vendor name is required."); return; }
+    if (!orgId) { setError("No active school selected. Reload and try again."); return; }
     setLoading(true);
-    const { error } = await supabase.from("vendors").insert(form);
+    // Stamp the ACTIVE org so the row lands in the current school and satisfies
+    // the RLS WITH CHECK (same fix pattern as student creation).
+    const { error } = await supabase.from("vendors").insert({ ...form, organization_id: orgId });
     if (error) { setError(error.message); setLoading(false); return; }
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,

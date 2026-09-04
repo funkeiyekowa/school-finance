@@ -509,13 +509,30 @@ function AddStudentModal({ onClose }: { onClose: () => void }) {
   const fullName = [form.last_name, form.first_name, form.middle_name].filter(Boolean).join(" ");
 
   useEffect(() => {
-    supabase.from("students").select("student_code").then(({ data }) => {
+    if (!orgId) return;
+    let cancelled = false;
+    (async () => {
+      // Prefer the atomic, org-scoped RPC so the suggested code is unique
+      // WITHIN THIS SCHOOL only. Codes are per-org, so S123 in one school and
+      // S123 in another are independent — the RPC scopes its scan to p_org.
+      const { data: rpcCode, error: rpcErr } = await supabase.rpc("next_student_code", { p_org: orgId });
+      if (!cancelled && !rpcErr && typeof rpcCode === "string" && rpcCode.trim()) {
+        setForm(f => ({ ...f, student_code: rpcCode.trim() }));
+        return;
+      }
+      // Fallback: generate a random code deduped against THIS org's codes only.
+      const { data } = await supabase
+        .from("students")
+        .select("student_code")
+        .eq("organization_id", orgId);
+      if (cancelled) return;
       const codes = new Set((data ?? []).map(s => s.student_code));
       let code: string;
       do { code = `S${String(Math.floor(Math.random() * 1000)).padStart(3, "0")}`; } while (codes.has(code));
       setForm(f => ({ ...f, student_code: code }));
-    });
-  }, [supabase]);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, orgId]);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
