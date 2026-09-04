@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { useAuth } from "@/lib/context/AuthContext";
@@ -38,13 +38,7 @@ export function SeedDataPanel({ focusOrgId }: SeedDataPanelProps) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteMode, setDeleteMode] = useState<"test_only" | "all">("test_only");
 
-  // Load stats on mount or when focusOrgId changes
-  useEffect(() => {
-    if (!focusOrgId) return;
-    loadStats();
-  }, [focusOrgId]);
-
-  async function loadStats() {
+  const loadStats = useCallback(async () => {
     if (!focusOrgId) return;
     setLoading(true);
     setError(null);
@@ -61,7 +55,13 @@ export function SeedDataPanel({ focusOrgId }: SeedDataPanelProps) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [focusOrgId, supabase]);
+
+  // Load stats on mount or when focusOrgId changes
+  useEffect(() => {
+    if (!focusOrgId) return;
+    loadStats();
+  }, [focusOrgId, loadStats]);
 
   async function seedData() {
     if (!focusOrgId) return;

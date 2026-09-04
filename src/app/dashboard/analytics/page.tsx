@@ -69,36 +69,6 @@ export default function AnalyticsPage() {
   const [aiDigestLoading, setAiDigestLoading] = useState(false);
   const [showAiDigest, setShowAiDigest] = useState(false);
 
-  async function generateDigest() {
-    setShowAiDigest(true);
-    setAiDigestLoading(true);
-    setAiDigest(null);
-    try {
-      const { generateWithAi } = await import("@/lib/ai/client");
-      const snapshot = {
-        active_students: kpis.students,
-        total_revenue: kpis.revenue,
-        total_expenses: kpis.expenses,
-        net_position: kpis.net,
-        attendance_rate_pct: kpis.attendance,
-        recent_months: monthlyFinance.slice(-3).map(m => ({
-          month: m.month, income: m.income, expense: m.expense, net: m.net,
-        })),
-      };
-      const result = await generateWithAi({
-        kind: "analytics_digest",
-        input: JSON.stringify(snapshot),
-        source: "analytics_digest",
-      });
-      setAiDigest(result.output);
-    } catch (err) {
-      setAiDigest(err instanceof Error ? err.message : "AI digest failed.");
-    } finally {
-      setAiDigestLoading(false);
-    }
-  }
-
-
   const kpis = useMemo(() => {
     const totalRev = incomes.reduce((s, i) => s + Number(i.amount), 0);
     const totalExp = expenses.reduce((s, i) => s + Number(i.amount), 0);
@@ -131,6 +101,35 @@ export default function AnalyticsPage() {
     });
     return Array.from(map.values()).sort((a, b) => a.month.localeCompare(b.month));
   }, [incomes, expenses]);
+
+  const generateDigest = useCallback(async () => {
+    setShowAiDigest(true);
+    setAiDigestLoading(true);
+    setAiDigest(null);
+    try {
+      const { generateWithAi } = await import("@/lib/ai/client");
+      const snapshot = {
+        active_students: kpis.students,
+        total_revenue: kpis.revenue,
+        total_expenses: kpis.expenses,
+        net_position: kpis.net,
+        attendance_rate_pct: kpis.attendance,
+        recent_months: monthlyFinance.slice(-3).map(m => ({
+          month: m.month, income: m.income, expense: m.expense, net: m.net,
+        })),
+      };
+      const result = await generateWithAi({
+        kind: "analytics_digest",
+        input: JSON.stringify(snapshot),
+        source: "analytics_digest",
+      });
+      setAiDigest(result.output);
+    } catch (err) {
+      setAiDigest(err instanceof Error ? err.message : "AI digest failed.");
+    } finally {
+      setAiDigestLoading(false);
+    }
+  }, [kpis, monthlyFinance]);
 
   const studentsByGrade = useMemo(() => {
     const map = new Map<string, number>();
