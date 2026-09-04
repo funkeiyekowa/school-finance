@@ -56,7 +56,7 @@ export async function updateSession(request: NextRequest) {
   // Refresh the session token. Wrapped in a try/catch so a slow or
   // unreachable Supabase doesn't produce a 504 — the user just lands
   // on the page with a potentially stale (but still valid) cookie and
-  // the client-side auth context handles the refresh there instead.
+  // the client-side AuthContext will handle the refresh there instead.
   try {
     await supabase.auth.getUser();
   } catch {
@@ -65,4 +65,41 @@ export async function updateSession(request: NextRequest) {
   }
 
   return supabaseResponse;
+}
+
+/**
+ * EXAM LOCK — the authoritative, server-side signal.
+ *
+ * Returns the exam_id the calling student is currently locked to (their own
+ * in-progress CBT attempt), or null. Backed by get_active_exam_lock()
+ * (supabase/cbt_exam_lock.sql), which is SECURITY DEFINER and resolves the
+ * caller from auth.uid(), so the client cannot fake or suppress it.
+ *
+ * Read-only, uses the request's session cookies. Any error (including the
+ * RPC not being deployed yet) resolves to null so the request is never
+ * blocked by an infra hiccup — the client-side shell guard is the backstop.
+ */
+export async function resolveExamLock(request: NextRequest): Promise<string | null> {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        // No-op: this is a read-only check, we never mutate cookies here.
+        setAll() {},
+      },
+    },
+  );
+
+  try {
+    const { data, error } = await supabase.rpc("get_active_exam_lock");
+    if (error || !data || (Array.isArray(data) && data.length === 0)) return null;
+    const row = Array.isArray(data) ? data[0] : data;
+    return (row as { exam_id?: string })?.exam_id ?? null;
+  } catch {
+    return null;
+  }
 }

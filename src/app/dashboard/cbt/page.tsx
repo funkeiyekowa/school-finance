@@ -146,7 +146,7 @@ export default function CbtPage() {
   const [showExamForm, setShowExamForm] = useState(false);
   const [savingExam, setSavingExam] = useState(false);
   const [editingExam, setEditingExam] = useState<ExamRow | null>(null);
-  const [examForm, setExamForm] = useState({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, starts_at: "", ends_at: "" });
+  const [examForm, setExamForm] = useState({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, fullscreen_required: false, sign_out_on_violation: true, max_violations: "3", starts_at: "", ends_at: "" });
 
   // Exam questions panel
   const [selectedExam, setSelectedExam] = useState<ExamRow | null>(null);
@@ -395,10 +395,10 @@ export default function CbtPage() {
     if (exam) {
       setEditingExam(exam);
       const s = (exam.settings || {}) as Record<string, unknown>;
-      setExamForm({ title: exam.title, exam_type: exam.exam_type, subject_id: exam.subject_id || "", class_id: exam.class_id || "", duration_minutes: String(exam.duration_minutes), max_attempts: String(exam.max_attempts), pass_mark: String(exam.pass_mark || 0), shuffle_questions: exam.shuffle_questions, shuffle_options: exam.shuffle_options, show_results: exam.show_results, show_answers: exam.show_answers, proctored: s.proctored === true, starts_at: (exam as unknown as { starts_at?: string | null }).starts_at ? (exam as unknown as { starts_at?: string | null }).starts_at!.slice(0, 16) : "", ends_at: (exam as unknown as { ends_at?: string | null }).ends_at ? (exam as unknown as { ends_at?: string | null }).ends_at!.slice(0, 16) : "" });
+      setExamForm({ title: exam.title, exam_type: exam.exam_type, subject_id: exam.subject_id || "", class_id: exam.class_id || "", duration_minutes: String(exam.duration_minutes), max_attempts: String(exam.max_attempts), pass_mark: String(exam.pass_mark || 0), shuffle_questions: exam.shuffle_questions, shuffle_options: exam.shuffle_options, show_results: exam.show_results, show_answers: exam.show_answers, proctored: s.proctored === true, fullscreen_required: s.fullscreen_required === true, sign_out_on_violation: s.sign_out_on_violation !== false, max_violations: String((s.max_violations as number) || 3), starts_at: (exam as unknown as { starts_at?: string | null }).starts_at ? (exam as unknown as { starts_at?: string | null }).starts_at!.slice(0, 16) : "", ends_at: (exam as unknown as { ends_at?: string | null }).ends_at ? (exam as unknown as { ends_at?: string | null }).ends_at!.slice(0, 16) : "" });
     } else {
       setEditingExam(null);
-      setExamForm({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, starts_at: "", ends_at: "" });
+      setExamForm({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, fullscreen_required: false, sign_out_on_violation: true, max_violations: "3", starts_at: "", ends_at: "" });
     }
     setShowExamForm(true);
   }
@@ -417,7 +417,12 @@ export default function CbtPage() {
       pass_mark: parseFloat(examForm.pass_mark) || 0,
       shuffle_questions: examForm.shuffle_questions, shuffle_options: examForm.shuffle_options,
       show_results: examForm.show_results, show_answers: examForm.show_answers,
-      settings: { proctored: examForm.proctored },
+      settings: {
+        proctored: examForm.proctored,
+        fullscreen_required: examForm.fullscreen_required,
+        sign_out_on_violation: examForm.sign_out_on_violation,
+        max_violations: parseInt(examForm.max_violations) || 3,
+      },
       starts_at: examForm.starts_at ? new Date(examForm.starts_at).toISOString() : null,
       ends_at: examForm.ends_at ? new Date(examForm.ends_at).toISOString() : null,
       organization_id: orgId, updated_at: new Date().toISOString(),
@@ -797,8 +802,21 @@ export default function CbtPage() {
               <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.shuffle_options} onChange={e => setExamForm(f => ({ ...f, shuffle_options: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Shuffle options</label>
               <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.show_results} onChange={e => setExamForm(f => ({ ...f, show_results: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Show results after</label>
               <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.show_answers} onChange={e => setExamForm(f => ({ ...f, show_answers: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Show correct answers</label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.proctored} onChange={e => setExamForm(f => ({ ...f, proctored: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Proctored (tab-switch detection)</label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.proctored} onChange={e => setExamForm(f => ({ ...f, proctored: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Proctored (Exam Lock)</label>
             </div>
+            {examForm.proctored && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
+                <p className="text-xs font-semibold text-amber-900">Exam Lock / Proctor Mode</p>
+                <p className="text-[11px] text-amber-800">While a student takes this exam they are confined to it: school navigation and the AI Assistant are blocked server-side until they submit. Blocking AI for students is always enforced and cannot be turned off here.</p>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.fullscreen_required} onChange={e => setExamForm(f => ({ ...f, fullscreen_required: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Require fullscreen</label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.sign_out_on_violation} onChange={e => setExamForm(f => ({ ...f, sign_out_on_violation: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Sign out after forced submission</label>
+                </div>
+                <div className="w-40">
+                  <Input label="Max violations" type="number" min="1" max="10" value={examForm.max_violations} onChange={e => setExamForm(f => ({ ...f, max_violations: e.target.value }))} />
+                </div>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2"><Button variant="secondary" onClick={() => { setShowExamForm(false); setEditingExam(null); }}>Cancel</Button><Button variant="gold" loading={savingExam} onClick={saveExam} disabled={!examForm.title.trim()}><Save size={14} /> {editingExam ? "Update" : "Create"}</Button></div>
           </div>
         </Modal>

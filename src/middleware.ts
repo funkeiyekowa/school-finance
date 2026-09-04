@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { updateSession } from "@/lib/supabase/middleware";
+import { updateSession, resolveExamLock } from "@/lib/supabase/middleware";
 
 /**
  * Minimal edge middleware.
@@ -77,6 +77,20 @@ function withTimeout(p: Promise<NextResponse>, ms: number): Promise<NextResponse
   ]);
 }
 
+/** Generic hard-timeout wrapper (returns `fallback` if `p` doesn't settle). */
+function withTimeoutT<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
+/** True when the pathname is the take page for the given exam (the one route
+ *  a locked student is allowed to see). */
+function isActiveExamTakePath(pathname: string, examId: string): boolean {
+  return pathname === `/dashboard/cbt/${examId}/take`;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "";
@@ -134,6 +148,23 @@ export async function middleware(request: NextRequest) {
     }
 
     const refreshed = await withTimeout(updateSession(request), 3000);
+
+    // ---- EXAM LOCK (server-authoritative) ----
+    // On a real document load into /dashboard/*, if the signed-in user is a
+    // student with an in-progress CBT attempt, they may ONLY be on that
+    // exam's take page. Any other dashboard URL (typed, new tab, back/forward,
+    // a stale link) is redirected straight to the active exam — the requested
+    // page is never rendered. The check is one indexed, cookie-authed RPC,
+    // hard-capped at 2s and fail-open (a slow/absent RPC never locks anyone
+    // out; the client-side shell guard is the backstop).
+    const lockedExamId = await withTimeoutT(resolveExamLock(request), 2000, null);
+    if (lockedExamId && !isActiveExamTakePath(pathname, lockedExamId)) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/dashboard/cbt/${lockedExamId}/take`;
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+
     return refreshed ?? NextResponse.next();
   }
 

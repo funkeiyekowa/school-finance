@@ -264,6 +264,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, [user]);
 
+  // ---- EXAM LOCK (client backstop for the server middleware) ----
+  // While a student has an in-progress CBT attempt, the whole app shell is
+  // replaced by the exam alone: no sidebar, topbar, brand bar, command
+  // palette or AI FAB, and any soft navigation is bounced back to the exam.
+  // The server middleware (resolveExamLock) is the authoritative gate for
+  // hard loads/new tabs/back-forward; this handles in-page client nav and
+  // hides the chrome. Super admins are never locked. Only students are even
+  // queried (only they can own an attempt), so staff pay no cost.
+  const [examLock, setExamLock] = useState<{ examId: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const role = membership?.role;
+    if (isSuperAdmin || role !== "student" || !user) {
+      setExamLock(null);
+      return;
+    }
+    const supabase = createClient();
+    supabase.rpc("get_active_exam_lock").then(({ data }) => {
+      if (cancelled) return;
+      const row = Array.isArray(data) ? data[0] : data;
+      const examId = (row as { exam_id?: string } | undefined)?.exam_id ?? null;
+      setExamLock(examId ? { examId } : null);
+    });
+    return () => { cancelled = true; };
+  }, [user, isSuperAdmin, membership?.role, pathname]);
+
+  useEffect(() => {
+    if (!examLock) return;
+    const takePath = `/dashboard/cbt/${examLock.examId}/take`;
+    if (pathname !== takePath) router.replace(takePath);
+  }, [examLock, pathname, router]);
+
   // Determine which item is active (longest prefix match)
   const allItems = NAV_GROUPS.flatMap(g => g.items);
   const activeHref = allItems.reduce<string | null>((best, item) => {
@@ -441,6 +473,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     .map((g) => ({ label: g.label, items: g.items.filter(isVisible).map((i) => ({ href: i.href, label: i.label, icon: i.icon })) }))
     .filter((g) => g.items.length > 0);
   const commandItems = useNavCommandItems(cmdGroups);
+
+  // EXAM LOCK MODE — render ONLY the exam, with zero application chrome.
+  // No sidebar, topbar, brand bar, command palette, AI FAB or force-password
+  // modal. A locked student's browser has nothing else to interact with; if
+  // they're somehow not on the take route yet, the redirect effect above is
+  // sending them there, so we show a brief transitional message.
+  if (examLock) {
+    const takePath = `/dashboard/cbt/${examLock.examId}/take`;
+    return (
+      <div className="h-screen overflow-hidden bg-[#F7F5F0]">
+        {pathname === takePath ? children : (
+          <div className="flex items-center justify-center h-full text-sm text-gray-500">
+            Returning you to your exam…
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>

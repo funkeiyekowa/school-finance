@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
-import { CheckCircle2, Clock, Flag, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { CheckCircle2, Clock, Flag, ChevronLeft, ChevronRight, AlertTriangle, Lock, Maximize } from "lucide-react";
 
 interface OptionRow { id: string; text: string; is_correct: boolean; }
 interface MatchingPair { left: string; right: string; }
@@ -85,52 +85,83 @@ export default function TakeExamPage() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const [tabWarnings, setTabWarnings] = useState(0);
   const [proctored, setProctored] = useState(false);
+  const [fullscreenRequired, setFullscreenRequired] = useState(false);
+  const [maxViolations, setMaxViolations] = useState(3);
+  const [signOutOnViolation, setSignOutOnViolation] = useState(true);
+  const [violations, setViolations] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const autoSubmittingRef = useRef(false);
-  const MAX_TAB_WARNINGS = 3;
+
+  const requestFullscreen = useCallback(() => {
+    // Best-effort. Browsers may refuse fullscreen without a fresh user
+    // gesture, and the user can always exit it — fullscreen is a deterrent
+    // and a proctoring signal, never a hard guarantee (see MDN Fullscreen API).
+    try {
+      const el = document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen) {
+        el.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   /* ---------- Proctoring ---------- */
   useEffect(() => {
     if (!proctored || submitted) return;
 
-    function handleVisibility() {
-      if (document.hidden) {
-        setTabWarnings(prev => {
-          const next = prev + 1;
-          if (next >= MAX_TAB_WARNINGS) {
-            // Guard against re-entry: a burst of visibilitychange events
-            // must trigger exactly one auto-submit + redirect.
-            if (!autoSubmittingRef.current) {
-              autoSubmittingRef.current = true;
-              alert("You have switched tabs too many times. Your exam will be submitted.");
-              // Integrity violation: auto-submit (reason tab_switch_limit),
-              // then sign the student out of the app entirely.
-              void submitExam(true, true, "tab_switch_limit", true);
-            }
-          } else {
-            alert(`Warning ${next}/${MAX_TAB_WARNINGS}: Switching tabs during a proctored exam is not allowed. Your exam will be auto-submitted after ${MAX_TAB_WARNINGS} warnings.`);
+    // One place to count violations, whatever their source (leaving the tab,
+    // minimising, switching apps, or exiting fullscreen). The functional
+    // update + autoSubmittingRef guard guarantee that a burst of events from
+    // a single action can only ever produce ONE forced submission.
+    function registerViolation(kind: string) {
+      setViolations(prev => {
+        const next = prev + 1;
+        if (next >= maxViolations) {
+          if (!autoSubmittingRef.current) {
+            autoSubmittingRef.current = true;
+            alert("You have exceeded the allowed number of proctoring violations. Your exam will be submitted.");
+            // Auto-submit (reason tab_switch_limit) and, per config, sign the
+            // student out of the app entirely so they cannot resume/return.
+            void submitExam(true, true, "tab_switch_limit", signOutOnViolation);
           }
-          return next;
-        });
+        } else {
+          const remaining = maxViolations - next;
+          alert(`Proctoring warning ${next}/${maxViolations} — ${kind}. ${remaining} warning${remaining === 1 ? "" : "s"} left before your exam is auto-submitted.`);
+        }
+        return next;
+      });
+    }
+
+    function handleVisibility() {
+      if (document.hidden && !autoSubmittingRef.current) registerViolation("you left the exam");
+    }
+    function handleFullscreenChange() {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      // Count only EXITING fullscreen (not entering it), and only when the
+      // exam requires fullscreen.
+      if (!fs && fullscreenRequired && !autoSubmittingRef.current) {
+        registerViolation("you left fullscreen");
       }
     }
     function block(e: Event) { e.preventDefault(); }
 
     document.addEventListener("visibilitychange", handleVisibility);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
     document.addEventListener("copy", block);
     document.addEventListener("paste", block);
     document.addEventListener("contextmenu", block);
-    try { document.documentElement.requestFullscreen?.(); } catch { /* ignore */ }
+    requestFullscreen();
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
       document.removeEventListener("copy", block);
       document.removeEventListener("paste", block);
       document.removeEventListener("contextmenu", block);
     };
-  }, [proctored, submitted]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [proctored, submitted, maxViolations, signOutOnViolation, fullscreenRequired, requestFullscreen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---------- Init: start_exam_attempt RPC + load questions ---------- */
   const init = useCallback(async () => {
@@ -187,7 +218,14 @@ export default function TakeExamPage() {
       return;
     }
     setExam(examData as unknown as ExamData);
-    setProctored((examData.settings as Record<string, unknown>)?.proctored === true);
+    // Proctoring config lives in exams.settings (jsonb). Sensible defaults so
+    // an exam flagged proctored is locked down even without explicit knobs.
+    const s = (examData.settings as Record<string, unknown>) ?? {};
+    const isProctored = s.proctored === true;
+    setProctored(isProctored);
+    setFullscreenRequired(s.fullscreen_required === true || isProctored);
+    setMaxViolations(typeof s.max_violations === "number" && s.max_violations > 0 ? s.max_violations : 3);
+    setSignOutOnViolation(s.sign_out_on_violation !== false); // default true
 
     let questionList: QuestionData[] = qData.map(q => {
       const rawOpts = q.options;
@@ -543,6 +581,23 @@ export default function TakeExamPage() {
           </Button>
         </div>
       </div>
+
+      {proctored && (
+        <div className="bg-[#0b1f34] text-white/90 px-4 py-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] shrink-0 border-b border-[#1B3E63]">
+          <span className="inline-flex items-center gap-1 font-bold text-[#C9A227]"><Lock size={12} /> EXAM LOCK ACTIVE</span>
+          <span className="text-white/60 hidden sm:inline">You may only use this exam until it is submitted.</span>
+          <span className="ml-auto inline-flex items-center gap-3">
+            <span className={cn("inline-flex items-center gap-1", isFullscreen ? "text-green-300" : "text-amber-300")}>
+              <Maximize size={11} /> {isFullscreen ? "Fullscreen" : "Not fullscreen"}
+            </span>
+            {!isFullscreen && fullscreenRequired && (
+              <button onClick={requestFullscreen} className="underline hover:text-white">Re-enter</button>
+            )}
+            <span className={saveWarning ? "text-amber-300" : "text-green-300"}>{saveWarning ? "Save issue" : "Saved"}</span>
+            <span className="text-white/80">Violations {violations}/{maxViolations}</span>
+          </span>
+        </div>
+      )}
 
       {saveWarning && (
         <div className="bg-amber-100 border-b border-amber-300 text-amber-900 px-4 py-2 text-xs flex items-center gap-2 shrink-0">
