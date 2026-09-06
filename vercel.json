@@ -2,5 +2,11 @@
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "outputDirectory": ".next",
-  "installCommand": "npm install"
+  "installCommand": "npm install",
+  "build": {
+    "env": {
+      "NEXT_PUBLIC_SUPABASE_URL": "https://dqlsdocmjudzyzmqisrx.supabase.co",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_iKLSPJU_hah8mnbsK3JOiw_2pD_lcn3"
+    }
+  }
 }

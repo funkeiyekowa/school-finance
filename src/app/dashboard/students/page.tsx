@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { fmtDateTime } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
+import { Pagination } from "@/components/ui/Pagination";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
@@ -30,11 +31,28 @@ import { Modal } from "@/components/ui/Modal";
 import { ImportStudentsModal } from "@/components/students/ImportStudentsModal";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
+import { usePaginatedData } from "@/lib/hooks/usePaginatedData";
 import { useToast } from "@/lib/hooks/useToast";
 import { cn, today } from "@/lib/utils";
-import { GraduationCap, Plus, Search, ChevronRight, Upload, Trash2, Check, X, Pencil, Filter, Users, UserCheck, UserX, Download, Printer } from "lucide-react";
+import { GraduationCap, Plus, Search, ChevronRight, Upload, Trash2, Check, X, Pencil, Filter, Users, UserCheck, UserX, Download, Printer, AlertTriangle, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import type { Student } from "@/lib/types";
+
+interface StudentRowWithTotal extends Student {
+  last_name?: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
+  total_count?: number;
+}
+
+interface StudentStats {
+  total: number;
+  active: number;
+  inactive: number;
+  male: number;
+  female: number;
+  classCount: number;
+}
 
 export default function StudentsPage() {
   return (
@@ -49,8 +67,6 @@ function StudentsPageInner() {
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
   const searchParams = useSearchParams();
-  const [students, setStudents] = useState<Student[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterGrade, setFilterGrade] = useState(() => searchParams.get("grade") || "");
   const [filterGender, setFilterGender] = useState("");
@@ -65,56 +81,76 @@ function StudentsPageInner() {
   const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("students")
-      .select("*")
-      .order("last_name")
-      .order("first_name");
-    setStudents((data ?? []) as Student[]);
-    setLoading(false);
-  }, [supabase]);
+  const studentRpcParams = useMemo(() => ({
+    p_search: search.trim() || null,
+    p_grade: filterGrade || null,
+    p_gender: filterGender || null,
+    p_status: filterStatus || null,
+    p_sort_by: "last_name",
+  }), [search, filterGrade, filterGender, filterStatus]);
+  const {
+    data: students,
+    loading,
+    error: loadError,
+    refetch: load,
+    pagination,
+    nextPage,
+    prevPage,
+    reset: resetPagination,
+  } = usePaginatedData<StudentRowWithTotal>(studentRpcParams, {
+    rpcName: "students_paginated",
+    supabase,
+    limit: 50,
+  });
+  const [stats, setStats] = useState<StudentStats>({ total: 0, active: 0, inactive: 0, male: 0, female: 0, classCount: 0 });
+  const [filterOptionsError, setFilterOptionsError] = useState<string | null>(null);
+  const [grades, setGrades] = useState<string[]>([]);
+  const [genders, setGenders] = useState<string[]>([]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { resetPagination(); }, [search, filterGrade, filterGender, filterStatus, resetPagination]);
   useEffect(() => {
     if (editingCell && inputRef.current) inputRef.current.focus();
   }, [editingCell]);
 
-  // Unique values for filter dropdowns
-  const grades = useMemo(() =>
-    Array.from(new Set(students.map(s => s.grade).filter(Boolean))).sort() as string[],
-    [students]
-  );
-  const genders = useMemo(() =>
-    Array.from(new Set(students.map(s => s.gender).filter(Boolean))).sort() as string[],
-    [students]
-  );
+  // Stats + filter-option dropdowns come from their own lightweight RPCs
+  // (not derived from the current page of results) so they stay correct
+  // regardless of which page/filter is active. Wrapped in a callback so a
+  // failure can be retried without reloading the whole page.
+  const loadStatsAndOptions = useCallback(async () => {
+    setFilterOptionsError(null);
+    const [statsRes, optionsRes] = await Promise.all([
+      supabase.rpc("student_stats"),
+      supabase.rpc("student_filter_options"),
+    ]);
+    if (statsRes.error) {
+      setFilterOptionsError(statsRes.error.message);
+    } else if (statsRes.data?.[0]) {
+      const row = statsRes.data[0] as {
+        total_students?: number; active_students?: number; inactive_students?: number;
+        male_students?: number; female_students?: number;
+      };
+      setStats((current) => ({
+        ...current,
+        total: row.total_students ?? 0,
+        active: row.active_students ?? 0,
+        inactive: row.inactive_students ?? 0,
+        male: row.male_students ?? 0,
+        female: row.female_students ?? 0,
+      }));
+    }
+    if (optionsRes.error) {
+      setFilterOptionsError((current) => current ?? optionsRes.error?.message ?? null);
+    } else if (optionsRes.data?.[0]) {
+      const row = optionsRes.data[0] as { grades?: string[] | null; genders?: string[] | null };
+      setGrades(row.grades ?? []);
+      setGenders(row.genders ?? []);
+      setStats((current) => ({ ...current, classCount: row.grades?.length ?? 0 }));
+    }
+  }, [supabase]);
 
-  const filtered = useMemo(() => students.filter(s => {
-    const q = search.toLowerCase();
-    if (q && !(
-      s.full_name.toLowerCase().includes(q) ||
-      s.student_code.toLowerCase().includes(q) ||
-      (s.grade ?? "").toLowerCase().includes(q) ||
-      (s.guardian_name ?? "").toLowerCase().includes(q) ||
-      (s.guardian_phone ?? "").toLowerCase().includes(q)
-    )) return false;
-    if (filterGrade && s.grade !== filterGrade) return false;
-    if (filterGender && s.gender !== filterGender) return false;
-    if (filterStatus && s.status !== filterStatus) return false;
-    return true;
-  }), [students, search, filterGrade, filterGender, filterStatus]);
+  useEffect(() => { loadStatsAndOptions(); }, [loadStatsAndOptions]);
 
-  // Stats
-  const stats = useMemo(() => ({
-    total: students.length,
-    active: students.filter(s => s.status === "active").length,
-    inactive: students.filter(s => s.status !== "active").length,
-    male: students.filter(s => s.gender === "Male").length,
-    female: students.filter(s => s.gender === "Female").length,
-    classCount: grades.length,
-  }), [students, grades]);
+  const filtered = students;
 
   const { selectedIds, toggle: toggleBulk, selectAll: bulkSelectAll, clearSelection: bulkClear } = useBulkSelect(filtered.map(s => s.id));
 
@@ -136,9 +172,9 @@ function StudentsPageInner() {
     // If editing a name field, recalculate full_name
     if (["last_name", "first_name", "middle_name"].includes(key)) {
       const student = students.find(s => s.id === id);
-      const last = key === "last_name" ? editValue : ((student as Record<string, unknown>)?.last_name as string ?? "");
-      const first = key === "first_name" ? editValue : ((student as Record<string, unknown>)?.first_name as string ?? "");
-      const middle = key === "middle_name" ? editValue : ((student as Record<string, unknown>)?.middle_name as string ?? "");
+      const last = key === "last_name" ? editValue : (student?.last_name ?? "");
+      const first = key === "first_name" ? editValue : (student?.first_name ?? "");
+      const middle = key === "middle_name" ? editValue : (student?.middle_name ?? "");
       updates.full_name = [last, first, middle].filter(Boolean).join(" ");
     }
 
@@ -146,7 +182,7 @@ function StudentsPageInner() {
     if (error) {
       notify(`Save failed: ${error.message}`, "error");
     } else {
-      setStudents(prev => prev.map(s => s.id === id ? { ...s, ...updates } as Student : s));
+      await load();
       await supabase.from("activity_log").insert({
         user_email: profile?.email, user_name: profile?.full_name,
         action: "Edit Student", details: `Updated ${key} for ${id}`,
@@ -166,7 +202,6 @@ function StudentsPageInner() {
       setSavingId(null);
       return;
     }
-    setStudents(prev => prev.filter(s => s.id !== deleteTarget.id));
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,
       action: "Delete Student", details: `${deleteTarget.student_code} — ${deleteTarget.full_name}`,
@@ -174,6 +209,7 @@ function StudentsPageInner() {
     notify(`Deleted ${deleteTarget.full_name}`);
     setSavingId(null);
     setDeleteTarget(null);
+    await load();
   }
 
   async function bulkDeleteSelected(ids: string[]) {
@@ -240,6 +276,26 @@ function StudentsPageInner() {
           )}
         </div>
       </PageHeader>
+
+      {loadError && (
+        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span className="flex-1"><strong className="font-semibold">Failed to load students:</strong> {loadError}</span>
+          <Button size="sm" variant="secondary" onClick={() => load()}>
+            <RefreshCw size={13} /> Retry
+          </Button>
+        </div>
+      )}
+
+      {filterOptionsError && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span className="flex-1"><strong className="font-semibold">Some student stats or filters could not be loaded:</strong> {filterOptionsError}</span>
+          <Button size="sm" variant="secondary" onClick={() => loadStatsAndOptions()}>
+            <RefreshCw size={13} /> Retry
+          </Button>
+        </div>
+      )}
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -347,15 +403,15 @@ function StudentsPageInner() {
                       <tr key={s.id} className={cn("border-b border-gray-50 hover:bg-gray-50 group", busy && "opacity-50")}>
                         <RowCheckbox id={s.id} selectedIds={selectedIds} onToggle={toggleBulk} isDeveloper={isDeveloper} />
                         <td className="px-4 py-3 font-mono text-xs text-gray-500 font-semibold">{s.student_code}</td>
-                        <EditCell id={s.id} field="last_name" value={(s as Record<string, unknown>).last_name as string ?? ""}
+                        <EditCell id={s.id} field="last_name" value={s.last_name ?? ""}
                           editing={editingCell} editValue={editValue} setEditValue={setEditValue}
                           canEdit={canEdit} onStart={startEdit} onSave={saveEdit} onCancel={cancelEdit}
                           onKeyDown={handleKeyDown} inputRef={inputRef} bold />
-                        <EditCell id={s.id} field="first_name" value={(s as Record<string, unknown>).first_name as string ?? ""}
+                        <EditCell id={s.id} field="first_name" value={s.first_name ?? ""}
                           editing={editingCell} editValue={editValue} setEditValue={setEditValue}
                           canEdit={canEdit} onStart={startEdit} onSave={saveEdit} onCancel={cancelEdit}
                           onKeyDown={handleKeyDown} inputRef={inputRef} />
-                        <EditCell id={s.id} field="middle_name" value={(s as Record<string, unknown>).middle_name as string ?? ""}
+                        <EditCell id={s.id} field="middle_name" value={s.middle_name ?? ""}
                           editing={editingCell} editValue={editValue} setEditValue={setEditValue}
                           canEdit={canEdit} onStart={startEdit} onSave={saveEdit} onCancel={cancelEdit}
                           onKeyDown={handleKeyDown} inputRef={inputRef} muted />
@@ -376,8 +432,12 @@ function StudentsPageInner() {
                           {canEdit ? (
                             <select value={s.status} onChange={async e => {
                               setSavingId(s.id);
-                              await supabase.from("students").update({ status: e.target.value, updated_at: new Date().toISOString() }).eq("id", s.id);
-                              setStudents(prev => prev.map(st => st.id === s.id ? { ...st, status: e.target.value } : st));
+                              const { error } = await supabase.from("students").update({ status: e.target.value, updated_at: new Date().toISOString() }).eq("id", s.id);
+                              if (error) {
+                                notify(`Save failed: ${error.message}`, "error");
+                              } else {
+                                await load();
+                              }
                               setSavingId(null);
                             }} className={cn("text-xs font-semibold px-2 py-1 rounded-lg border-0 cursor-pointer", s.status === "active" ? "bg-green-100 text-green-700" : s.status === "graduated" ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-500")}>
                               <option value="active">Active</option>
@@ -407,10 +467,20 @@ function StudentsPageInner() {
                 </tbody>
               </table>
             </div>
-            <div className="px-4 py-3 border-t border-gray-100 text-xs text-gray-500 flex items-center justify-between">
-              <span>Showing {filtered.length} of {students.length} students</span>
-              <span className="text-[10px] text-gray-400">Click any cell to edit · Tab to navigate</span>
+            <div className="px-4 py-2 border-t border-gray-100 text-[10px] text-gray-400 text-right">
+              Click any cell to edit · Tab to navigate
             </div>
+            <Pagination
+              currentPage={pagination.currentPage}
+              pageCount={pagination.pageCount}
+              hasNext={pagination.hasNext}
+              hasPrev={pagination.hasPrev}
+              total={pagination.total}
+              showing={filtered.length}
+              limit={pagination.limit}
+              onNextPage={nextPage}
+              onPrevPage={prevPage}
+            />
           </Card>
         </>
       )}

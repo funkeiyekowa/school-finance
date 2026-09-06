@@ -86,3 +86,30 @@ export async function askLearningAssistant(input: string, source = "ai_assistant
   }
   return payload as GenerateResult;
 }
+
+export interface ReportCardExplainerResult {
+  output: string;
+  ai_generated: true;
+  review_required: true;
+  elapsed_ms: number;
+  source: { report_card_id: string; term: string };
+}
+
+/**
+ * Client for /api/ai/report-card-explainer — a grounded, read-only,
+ * plain-language explanation of ONE already-published report card, for the
+ * signed-in student themselves or a linked parent. The server re-verifies
+ * ownership of the report card independently of RLS before calling AI.
+ */
+export async function explainReportCard(reportCardId: string): Promise<ReportCardExplainerResult> {
+  const resp = await fetch("/api/ai/report-card-explainer", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ report_card_id: reportCardId }),
+  });
+  const payload = await resp.json().catch(() => ({} as { error?: string }));
+  if (!resp.ok) {
+    throw new Error((payload as { error?: string }).error || `AI request failed (${resp.status})`);
+  }
+  return payload as ReportCardExplainerResult;
+}
