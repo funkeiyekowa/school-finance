@@ -34,6 +34,9 @@ export type AiTaskKind =
   | "lms_grading_assist"
   | "lms_course_outline"
   | "lms_bulk_parse"
+  | "lms_study_help"
+  | "lms_practice"
+  | "lms_flashcards"
   | "student_term_summary"
   | "analytics_digest"
   | "student_brief"
@@ -296,6 +299,37 @@ export const AI_PRESETS: Record<AiTaskKind, AiPreset> = {
       return `Subject: ${subject}\nClass/Grade: ${grade}\nRequested lessons: ${count}\nAdditional brief: ${brief}\n\nGenerate the outline as the specified JSON.`;
     },
     maxTokens: 1400,
+  },
+  lms_study_help: {
+    kind: "lms_study_help",
+    label: "Grounded lesson study help",
+    description: "Answer a student's question using only the approved lesson source.",
+    system:
+      "You are a careful student study helper. Use only the approved lesson source supplied by the server. " +
+      "If the source does not contain enough information, say it is not available in this lesson rather than guessing. " +
+      "This is study support, not an official school record or assessment.",
+    compose: (input) => input,
+    maxTokens: 300,
+  },
+  lms_practice: {
+    kind: "lms_practice",
+    label: "Generate lesson practice",
+    description: "Create review questions from an approved lesson source.",
+    system:
+      "You generate practice questions for a school student using only the approved lesson source supplied by the server. " +
+      "Return only the JSON shape requested. Do not invent facts, grades, answers from outside the source, or official school records.",
+    compose: (input) => input,
+    maxTokens: 1200,
+  },
+  lms_flashcards: {
+    kind: "lms_flashcards",
+    label: "Generate lesson flashcards",
+    description: "Create review flashcards from an approved lesson source.",
+    system:
+      "You generate concise study flashcards for a school student using only the approved lesson source supplied by the server. " +
+      "Return only the JSON shape requested. Do not invent facts or present the cards as official school records.",
+    compose: (input) => input,
+    maxTokens: 900,
   },
   free_form: {
     kind: "free_form",

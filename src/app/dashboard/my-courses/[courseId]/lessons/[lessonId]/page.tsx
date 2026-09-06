@@ -38,6 +38,8 @@ interface DiscussionRow { id: string; title: string; body: string | null; studen
 interface ReplyRow { id: string; discussion_id: string; body: string; student_id: string | null; staff_id: string | null; is_ai_generated: boolean; created_at: string; }
 interface StudyChatMsg { role: "student" | "ai"; text: string; }
 interface BadgeAward { id: string; name: string; }
+interface AiPracticeQuestion { question: string; answer: string; explanation: string; }
+interface AiFlashcard { front: string; back: string; }
 
 export default function LessonViewerPage() {
   const params = useParams<{ courseId: string; lessonId: string }>();
@@ -229,6 +231,10 @@ export default function LessonViewerPage() {
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const [aiMode, setAiMode] = useState<"practice" | "flashcards" | null>(null);
+  const [aiQuestions, setAiQuestions] = useState<AiPracticeQuestion[]>([]);
+  const [aiCards, setAiCards] = useState<AiFlashcard[]>([]);
+  const [aiPracticeBusy, setAiPracticeBusy] = useState(false);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, chatOpen]);
 
@@ -254,6 +260,32 @@ export default function LessonViewerPage() {
     }
   }
 
+  async function generateAiPractice(mode: "practice" | "flashcards") {
+    setAiPracticeBusy(true);
+    setAiMode(null);
+    try {
+      const resp = await fetch("/api/ai/lms-practice", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lesson_id: lessonId, mode, count: 5 }),
+      });
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(payload.error || "AI practice could not be generated.");
+      if (mode === "practice") {
+        setAiQuestions((payload.questions as AiPracticeQuestion[]) ?? []);
+        setAiCards([]);
+      } else {
+        setAiCards((payload.cards as AiFlashcard[]) ?? []);
+        setAiQuestions([]);
+      }
+      setAiMode(mode);
+    } catch (err) {
+      notify(extractErrorMessage(err, "AI practice could not be generated."), "error");
+    } finally {
+      setAiPracticeBusy(false);
+    }
+  }
+
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
   if (!studentId) return <div className="p-6"><EmptyState message="No student record is linked to this account yet." /></div>;
   if (!lesson) return <div className="p-6"><EmptyState message="Lesson not found." /></div>;
@@ -274,6 +306,42 @@ export default function LessonViewerPage() {
 
       <Card>
         <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderAiOutputHtml(lesson.content || "No content yet.") }} />
+      </Card>
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+          <div>
+            <h3 className="text-sm font-bold text-[#0F2A47] flex items-center gap-1.5"><Sparkles size={14} className="text-[#C9A227]" /> AI Practice</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Generated from this published lesson only · review before relying on it.</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => generateAiPractice("practice")} loading={aiPracticeBusy}>Practice questions</Button>
+            <Button variant="secondary" size="sm" onClick={() => generateAiPractice("flashcards")} loading={aiPracticeBusy}>Flashcards</Button>
+          </div>
+        </div>
+        {aiMode === "practice" && aiQuestions.length > 0 && (
+          <div className="space-y-2 mt-3">
+            {aiQuestions.map((item, index) => (
+              <details key={`${item.question}-${index}`} className="rounded-lg border border-gray-100 px-3 py-2">
+                <summary className="cursor-pointer text-sm font-medium text-gray-700">{index + 1}. {item.question}</summary>
+                <div className="mt-2 space-y-1 text-xs text-gray-600">
+                  <p><span className="font-semibold text-[#0F2A47]">Answer:</span> {item.answer}</p>
+                  <p><span className="font-semibold text-[#0F2A47]">Why:</span> {item.explanation}</p>
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
+        {aiMode === "flashcards" && aiCards.length > 0 && (
+          <div className="grid gap-2 sm:grid-cols-2 mt-3">
+            {aiCards.map((card, index) => (
+              <details key={`${card.front}-${index}`} className="rounded-lg border border-gray-100 px-3 py-2">
+                <summary className="cursor-pointer text-sm font-medium text-gray-700">{card.front}</summary>
+                <p className="mt-2 text-xs text-gray-600">{card.back}</p>
+              </details>
+            ))}
+          </div>
+        )}
       </Card>
 
       {quiz && (
