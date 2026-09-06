@@ -32,3 +32,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.env*
+
+# Local agent/tooling artifacts (never commit these)
+.kiro/
+Claude outputs/
+supabase/.temp/
+github_claude
+AGENTS.md
+PAYSLIP_FIXES.md

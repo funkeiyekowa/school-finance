@@ -118,7 +118,10 @@ CREATE OR REPLACE FUNCTION public.broadcast_announcement_to_inbox(
   p_title text, p_body text, p_scope text DEFAULT 'all', p_class_id uuid DEFAULT NULL
 )
 RETURNS TABLE (conversation_id uuid, recipients_added integer)
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+SET plpgsql.variable_conflict = 'use_column'
 AS $$
 DECLARE
   v_org uuid := current_user_org_id();
