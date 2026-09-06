@@ -183,7 +183,7 @@ AS $$
       AND s.organization_id = public.current_user_org_id()
       AND (
         s.profile_id = auth.uid()
-        OR s.id IN (SELECT x.student_id FROM public.my_linked_student_ids() x)
+        OR s.id IN (SELECT student_id FROM public.my_linked_student_ids())
         OR (
           public.phase1_active_role() = 'teacher'
           AND EXISTS (
@@ -329,7 +329,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_active_role() = 'teacher'
       AND public.phase1_student_scope(id));
   CREATE POLICY phase1_students_self_read ON public.students FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND id IN (SELECT x.student_id FROM public.my_linked_student_ids() x));
+    USING (public.phase1_same_org(organization_id) AND id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_students_staff_insert ON public.students FOR INSERT
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_hr_access());
   CREATE POLICY phase1_students_staff_update ON public.students FOR UPDATE
@@ -345,7 +345,7 @@ BEGIN
   CREATE POLICY phase1_enrollments_teacher_read ON public.student_enrollments FOR SELECT
     USING (public.phase1_active_role() = 'teacher' AND public.phase1_student_scope(student_id));
   CREATE POLICY phase1_enrollments_self_read ON public.student_enrollments FOR SELECT
-    USING (student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_enrollments_staff_insert ON public.student_enrollments FOR INSERT
     WITH CHECK (public.phase1_hr_access() AND student_id IN (SELECT s.id FROM public.students s WHERE public.phase1_same_org(s.organization_id)));
   CREATE POLICY phase1_enrollments_staff_update ON public.student_enrollments FOR UPDATE
@@ -366,7 +366,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_active_role() = 'teacher' AND public.phase1_student_scope(student_id))
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_active_role() = 'teacher' AND public.phase1_student_scope(student_id));
   CREATE POLICY phase1_scores_self_read ON public.student_scores FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
 
   PERFORM public._reset_policies('attendance_records');
   CREATE POLICY phase1_attendance_staff_all ON public.attendance_records FOR ALL
@@ -380,7 +380,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_active_role() = 'teacher' AND public.phase1_student_scope(student_id))
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_active_role() = 'teacher' AND public.phase1_student_scope(student_id));
   CREATE POLICY phase1_attendance_self_read ON public.attendance_records FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
 END $$;
 
 -- Finance and payroll: finance permission is the source of truth. A parent or
@@ -392,7 +392,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_finance_access())
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_finance_access());
   CREATE POLICY phase1_income_self_read ON public.income_entries FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
 
   PERFORM public._reset_policies('expense_entries');
   CREATE POLICY phase1_expense_finance_all ON public.expense_entries FOR ALL
@@ -466,7 +466,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND status = 'published' AND EXISTS (
       SELECT 1 FROM public.lms_enrollments e
       WHERE e.course_id = id AND e.status IN ('active','completed')
-        AND e.student_id IN (SELECT x.student_id FROM public.my_linked_student_ids())
+        AND e.student_id IN (SELECT student_id FROM public.my_linked_student_ids())
     ));
 
   PERFORM public._reset_policies('lms_lessons');
@@ -481,7 +481,7 @@ BEGIN
       SELECT 1 FROM public.lms_enrollments e JOIN public.lms_courses c ON c.id = e.course_id
       WHERE e.course_id = course_id AND e.status IN ('active','completed')
         AND c.status = 'published'
-        AND e.student_id IN (SELECT x.student_id FROM public.my_linked_student_ids())
+        AND e.student_id IN (SELECT student_id FROM public.my_linked_student_ids())
     ));
 
   PERFORM public._reset_policies('lms_quizzes');
@@ -495,7 +495,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND EXISTS (
       SELECT 1 FROM public.lms_lessons l JOIN public.lms_enrollments e ON e.course_id = l.course_id
       WHERE l.id = lesson_id AND l.status = 'published' AND e.status IN ('active','completed')
-        AND e.student_id IN (SELECT x.student_id FROM public.my_linked_student_ids())
+        AND e.student_id IN (SELECT student_id FROM public.my_linked_student_ids())
     ));
 
   -- Question options include answer keys, so students never read this table
@@ -519,7 +519,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND EXISTS (
       SELECT 1 FROM public.lms_lessons l JOIN public.lms_enrollments e ON e.course_id = l.course_id
       WHERE l.id = lesson_id AND e.status IN ('active','completed')
-        AND e.student_id IN (SELECT x.student_id FROM public.my_linked_student_ids())
+        AND e.student_id IN (SELECT student_id FROM public.my_linked_student_ids())
     ));
 
   PERFORM public._reset_policies('lms_badges');
@@ -534,7 +534,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope(course_id))
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope(course_id));
   CREATE POLICY phase1_lms_enrollments_self_read ON public.lms_enrollments FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_lms_enrollments_self_insert ON public.lms_enrollments FOR INSERT
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_own_student(student_id)
       AND EXISTS (SELECT 1 FROM public.lms_courses c WHERE c.id = course_id AND c.organization_id = organization_id AND c.status = 'published'));
@@ -544,7 +544,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = lesson_id)))
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = lesson_id)));
   CREATE POLICY phase1_lms_progress_self_read ON public.lms_lesson_progress FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_lms_progress_self_insert ON public.lms_lesson_progress FOR INSERT
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_own_student(student_id));
   CREATE POLICY phase1_lms_progress_self_update ON public.lms_lesson_progress FOR UPDATE
@@ -556,7 +556,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id WHERE q.id = quiz_id)))
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id WHERE q.id = quiz_id)));
   CREATE POLICY phase1_lms_attempts_self_read ON public.lms_quiz_attempts FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_lms_attempts_self_insert ON public.lms_quiz_attempts FOR INSERT
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_own_student(student_id));
   CREATE POLICY phase1_lms_attempts_self_update ON public.lms_quiz_attempts FOR UPDATE
@@ -577,7 +577,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_assignments a ON a.lesson_id = l.id WHERE a.id = assignment_id)))
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_assignments a ON a.lesson_id = l.id WHERE a.id = assignment_id)));
   CREATE POLICY phase1_lms_submissions_self_read ON public.lms_submissions FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_lms_submissions_self_insert ON public.lms_submissions FOR INSERT
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_own_student(student_id));
 
@@ -586,14 +586,14 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_lms_admin())
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_lms_admin());
   CREATE POLICY phase1_lms_studentbadges_self_read ON public.lms_student_badges FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
 
   PERFORM public._reset_policies('lms_discussions');
   CREATE POLICY phase1_lms_discussions_staff_all ON public.lms_discussions FOR ALL
     USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = lesson_id)))
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = lesson_id)));
   CREATE POLICY phase1_lms_discussions_student_read ON public.lms_discussions FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_lms_discussions_student_insert ON public.lms_discussions FOR INSERT
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_own_student(student_id));
 
@@ -602,7 +602,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_discussions d ON d.lesson_id = l.id WHERE d.id = discussion_id)))
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_discussions d ON d.lesson_id = l.id WHERE d.id = discussion_id)));
   CREATE POLICY phase1_lms_replies_student_read ON public.lms_discussion_replies FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_lms_replies_student_insert ON public.lms_discussion_replies FOR INSERT
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_own_student(student_id));
 END $$;
@@ -619,7 +619,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_clinic_access())
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_clinic_access());
   CREATE POLICY phase1_clinic_patients_student_read ON public.clinic_patient_records FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_clinic_patients_staffself_read ON public.clinic_patient_records FOR SELECT
     USING (public.phase1_same_org(organization_id) AND staff_id IN (SELECT sm.id FROM public.staff_members sm WHERE sm.user_id = auth.uid()));
 
@@ -628,7 +628,7 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_clinic_access())
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_clinic_access());
   CREATE POLICY phase1_clinic_visits_student_read ON public.clinic_visits FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()));
+    USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_clinic_visits_staffself_read ON public.clinic_visits FOR SELECT
     USING (public.phase1_same_org(organization_id) AND staff_id IN (SELECT sm.id FROM public.staff_members sm WHERE sm.user_id = auth.uid()));
 
@@ -643,7 +643,7 @@ BEGIN
   FOREACH t IN ARRAY ARRAY['clinic_vaccinations','clinic_health_incidents'] LOOP
     PERFORM public._reset_policies(t);
     EXECUTE format('CREATE POLICY %I ON public.%I FOR ALL USING (public.phase1_same_org(organization_id) AND public.phase1_clinic_access()) WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_clinic_access())', 'phase1_' || t || '_staff_all', t);
-    EXECUTE format('CREATE POLICY %I ON public.%I FOR SELECT USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT x.student_id FROM public.my_linked_student_ids()))', 'phase1_' || t || '_student_read', t);
+    EXECUTE format('CREATE POLICY %I ON public.%I FOR SELECT USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()))', 'phase1_' || t || '_student_read', t);
   END LOOP;
 END $$;
 
@@ -813,7 +813,7 @@ RETURNS TABLE(student_id uuid, student_name text, lessons_done bigint, avg_quiz_
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
   IF NOT (public.phase1_teacher_course_scope(p_course_id) OR (public.phase1_active_role() = 'student' AND EXISTS (
-    SELECT 1 FROM public.lms_enrollments e WHERE e.course_id = p_course_id AND e.status IN ('active','completed') AND e.student_id IN (SELECT x.student_id FROM public.my_linked_student_ids())
+    SELECT 1 FROM public.lms_enrollments e WHERE e.course_id = p_course_id AND e.status IN ('active','completed') AND e.student_id IN (SELECT student_id FROM public.my_linked_student_ids())
   ))) THEN RAISE EXCEPTION 'LMS course access required'; END IF;
   RETURN QUERY SELECT * FROM public.lms_leaderboard(p_course_id);
 END $$;
@@ -849,7 +849,7 @@ BEGIN
   SELECT l.course_id INTO v_course FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id WHERE q.id = p_quiz_id AND q.organization_id = public.current_user_org_id();
   IF v_course IS NULL OR NOT (
     public.phase1_teacher_course_scope(v_course)
-    OR (public.phase1_active_role() = 'student' AND EXISTS (SELECT 1 FROM public.lms_enrollments e WHERE e.course_id = v_course AND e.status IN ('active','completed') AND e.student_id IN (SELECT x.student_id FROM public.my_linked_student_ids())))
+    OR (public.phase1_active_role() = 'student' AND EXISTS (SELECT 1 FROM public.lms_enrollments e WHERE e.course_id = v_course AND e.status IN ('active','completed') AND e.student_id IN (SELECT student_id FROM public.my_linked_student_ids())))
   ) THEN RAISE EXCEPTION 'LMS course access required'; END IF;
   RETURN QUERY
   SELECT q.id, q.question_text,

@@ -4,6 +4,7 @@ import path from "node:path";
 
 const root = path.resolve(__dirname, "..", "..", "..");
 const migration = fs.readFileSync(path.join(root, "supabase", "20260905120000_phase1_security_enforcement.sql"), "utf8");
+const broadcast = fs.readFileSync(path.join(root, "supabase", "broadcast_channels_module.sql"), "utf8");
 const studyHelp = fs.readFileSync(path.join(root, "src", "app", "api", "ai", "lms-study-help", "route.ts"), "utf8");
 const dashboardGuard = fs.readFileSync(path.join(root, "src", "lib", "api", "requireDashboardAccess.ts"), "utf8");
 
@@ -21,6 +22,8 @@ assert.match(studyHelp, /session\.role !== "student"/);
 assert.match(studyHelp, /\.eq\("profile_id", session\.user\.id\)/);
 assert.match(studyHelp, /\.eq\("organization_id", session\.organizationId\)/);
 assert.doesNotMatch(studyHelp, /guardian_email/);
+assert.doesNotMatch(migration, /x\.student_id/);
+assert.doesNotMatch(broadcast, /SET\s+plpgsql\.variable_conflict/);
 assert.match(dashboardGuard, /redirect\("\/dashboard"\)/);
 assert.match(dashboardGuard, /org_memberships/);
 

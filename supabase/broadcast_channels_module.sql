@@ -121,7 +121,8 @@ RETURNS TABLE (conversation_id uuid, recipients_added integer)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-SET plpgsql.variable_conflict = 'use_column'
+-- `plpgsql.variable_conflict` is superuser-only on Supabase; all column
+-- references below are qualified instead of changing the session setting.
 AS $$
 DECLARE
   v_org uuid := current_user_org_id();
