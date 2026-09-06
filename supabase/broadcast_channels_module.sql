@@ -114,6 +114,11 @@ GRANT EXECUTE ON FUNCTION public.get_notification_provider_settings() TO authent
 -- instead of a new inbox entry per message -- same UX as a school's
 -- WhatsApp broadcast list or an email newsletter thread.
 -- ---------------------------------------------------------------------
+-- Supabase cannot replace a function when its OUT-row type changed between
+-- module revisions. Drop this exact overload before recreating it so reruns
+-- work against databases that already have the earlier definition.
+DROP FUNCTION IF EXISTS public.broadcast_announcement_to_inbox(text, text, text, uuid);
+
 CREATE OR REPLACE FUNCTION public.broadcast_announcement_to_inbox(
   p_title text, p_body text, p_scope text DEFAULT 'all', p_class_id uuid DEFAULT NULL
 )

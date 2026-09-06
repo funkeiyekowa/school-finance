@@ -24,6 +24,8 @@ assert.match(studyHelp, /\.eq\("organization_id", session\.organizationId\)/);
 assert.doesNotMatch(studyHelp, /guardian_email/);
 assert.doesNotMatch(migration, /x\.student_id/);
 assert.doesNotMatch(broadcast, /SET\s+plpgsql\.variable_conflict/);
+assert.match(migration, /DECLARE t text;\s*BEGIN[\s\S]*FOREACH t IN ARRAY ARRAY\['payroll_components'/);
+assert.match(broadcast, /DROP FUNCTION IF EXISTS public\.broadcast_announcement_to_inbox\(text, text, text, uuid\)/);
 assert.match(dashboardGuard, /redirect\("\/dashboard"\)/);
 assert.match(dashboardGuard, /org_memberships/);
 

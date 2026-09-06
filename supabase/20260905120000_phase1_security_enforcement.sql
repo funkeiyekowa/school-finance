@@ -386,6 +386,7 @@ END $$;
 -- Finance and payroll: finance permission is the source of truth. A parent or
 -- student may read only linked payment rows; nobody else sees finance data.
 DO $$
+DECLARE t text;
 BEGIN
   PERFORM public._reset_policies('income_entries');
   CREATE POLICY phase1_income_finance_all ON public.income_entries FOR ALL
