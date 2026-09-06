@@ -272,11 +272,12 @@ export default function StaffPage() {
 
     // Reconcile the class-teacher assignment against what it was before
     // (classTeacherOf, keyed class_id -> staff_id) and what the form now
-    // says. set_class_teacher(null, classId) only clears that one class,
-    // so if this staff member previously held a different class than the
-    // one now selected (or the checkbox was turned off), that old class
-    // must be cleared first -- otherwise they'd end up as class teacher
-    // of two classes at once.
+    // says. Class teachers are now MANY-TO-MANY and shared with the Class
+    // Teacher Allocation page, so we must only ever touch THIS teacher's
+    // own rows -- never blanket-clear a class (which would delete the other
+    // class teachers that page allocated). set_class_teacher() is now
+    // additive (sibling-preserving); to move this teacher off their old
+    // class we remove only their own row via remove_class_teacher().
     if (staffId) {
       let previousClassId = "";
       for (const [classId, sid] of Object.entries(classTeacherOf)) {
@@ -285,7 +286,7 @@ export default function StaffPage() {
       const nextClassId = form.is_class_teacher ? form.class_teacher_class_id : "";
       try {
         if (previousClassId && previousClassId !== nextClassId) {
-          const { error: clearErr } = await supabase.rpc("set_class_teacher", { p_staff_id: null, p_class_id: previousClassId });
+          const { error: clearErr } = await supabase.rpc("remove_class_teacher", { p_staff_id: staffId, p_class_id: previousClassId });
           if (clearErr) throw clearErr;
         }
         if (nextClassId) {
