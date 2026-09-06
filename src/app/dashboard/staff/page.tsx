@@ -36,6 +36,13 @@ interface StaffRow {
 
 interface DeptRow { id: string; name: string; }
 interface ClassRow { id: string; name: string; }
+interface TeachingAssignment {
+  kind: "class_teacher" | "subject_teacher";
+  class_id: string;
+  class_name: string;
+  subject_id: string | null;
+  subject_name: string | null;
+}
 
 interface StaffRowWithTotal extends StaffRow {
   total_count?: number;
@@ -64,6 +71,11 @@ export default function StaffPage() {
   const [credNotice, setCredNotice] = useState<{ email: string; name: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Read-only reflection of everything this staff member is allocated to on
+  // the Class Teacher / Subject Teacher Allocation pages (all share the same
+  // teacher_assignments data), shown in the edit modal.
+  const [teachingAssignments, setTeachingAssignments] = useState<TeachingAssignment[]>([]);
+  const [loadingAssignments, setLoadingAssignments] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [selfieOpen, setSelfieOpen] = useState(false);
@@ -165,9 +177,21 @@ export default function StaffPage() {
     resetPagination();
   }, [search, resetPagination]);
 
+  async function loadAssignments(staffId: string) {
+    setLoadingAssignments(true);
+    setTeachingAssignments([]);
+    const { data, error } = await supabase.rpc("list_staff_teaching_assignments", { p_staff_id: staffId });
+    setLoadingAssignments(false);
+    if (error) { /* non-fatal: the summary just stays empty */ return; }
+    setTeachingAssignments((data as TeachingAssignment[]) ?? []);
+  }
+
   async function openForm(s?: StaffRow) {
     if (s) {
       setEditing(s);
+      // Reflect this staff member's current class-teacher and subject-teacher
+      // allocations (made here or on the Allocation pages) read-only.
+      loadAssignments(s.id);
       // Reverse-lookup: is this staff member (by id) currently the class
       // teacher of any class? classTeacherOf maps class_id -> staff_id.
       let assignedClassId = "";
@@ -194,6 +218,7 @@ export default function StaffPage() {
       });
     } else {
       setEditing(null);
+      setTeachingAssignments([]);
       // Auto-generate the next staff code
       let nextCode = "";
       try {
@@ -609,6 +634,51 @@ export default function StaffPage() {
                   </span>
                 </label>
               </div>
+              {editing && (
+                <div className="sm:col-span-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wide text-gray-600">Teaching assignments</span>
+                    <span className="text-[10px] text-gray-400">Set on Class / Subject Teacher Allocation</span>
+                  </div>
+                  {loadingAssignments ? (
+                    <p className="mt-2 text-xs text-gray-400 italic">Loading…</p>
+                  ) : (() => {
+                    const classTeacherClasses = teachingAssignments
+                      .filter(a => a.kind === "class_teacher")
+                      .map(a => a.class_name);
+                    const subjectRows = teachingAssignments.filter(a => a.kind === "subject_teacher");
+                    if (classTeacherClasses.length === 0 && subjectRows.length === 0) {
+                      return <p className="mt-2 text-xs text-gray-400 italic">Not currently allocated to any class or subject.</p>;
+                    }
+                    return (
+                      <div className="mt-2 space-y-2">
+                        {classTeacherClasses.length > 0 && (
+                          <div>
+                            <span className="text-[11px] font-semibold text-gray-500">Class teacher of</span>
+                            <div className="mt-1 flex flex-wrap gap-1.5">
+                              {classTeacherClasses.map((name, i) => (
+                                <span key={`ct-${i}`} className="inline-flex items-center rounded-full bg-[#0F2A47] px-2 py-0.5 text-[11px] font-medium text-white">{name}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {subjectRows.length > 0 && (
+                          <div>
+                            <span className="text-[11px] font-semibold text-gray-500">Subjects taught</span>
+                            <div className="mt-1 flex flex-wrap gap-1.5">
+                              {subjectRows.map((a, i) => (
+                                <span key={`st-${i}`} className="inline-flex items-center rounded-full bg-[#FBF6E8] px-2 py-0.5 text-[11px] font-medium text-[#0F2A47]">
+                                  {a.subject_name ?? "Subject"} · {a.class_name}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
               <div className="sm:col-span-2">
                 <label className="flex items-start gap-2.5 cursor-pointer select-none">
                   <input
@@ -621,7 +691,7 @@ export default function StaffPage() {
                     <span className="font-medium">Class Teacher</span>
                     <span className="block text-xs text-gray-500 mt-0.5">
                       Makes this person the primary teacher of record for a class
-                      (homeroom teacher).
+                      (homeroom teacher). Add more classes from the Class Teacher Allocation page.
                     </span>
                   </span>
                 </label>
