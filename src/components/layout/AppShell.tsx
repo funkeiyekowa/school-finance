@@ -200,6 +200,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/setup", label: "Setup", icon: <Settings size={17} />, feature: "setup" },
       { href: "/dashboard/setup/signatures", label: "Letter Signatures", icon: <PenTool size={17} />, adminOnly: true },
       { href: "/dashboard/setup/subject-teachers", label: "Subject Teachers", icon: <GraduationCap size={17} />, adminOnly: true },
+      { href: "/dashboard/setup/class-teachers", label: "Class Teachers", icon: <Users size={17} />, adminOnly: true },
       { href: "/dashboard/ai-assistant-settings", label: "AI Assistant Settings", icon: <Sparkles size={17} />, adminOnly: true },
     ],
   },
