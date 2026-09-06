@@ -340,7 +340,7 @@ BEGIN
 
   PERFORM public._reset_policies('student_enrollments');
   CREATE POLICY phase1_enrollments_staff_read ON public.student_enrollments FOR SELECT
-    USING (public.phase1_same_org((SELECT s.organization_id FROM public.students s WHERE s.id = student_id))
+    USING (public.phase1_same_org((SELECT s.organization_id FROM public.students s WHERE s.id = public.student_enrollments.student_id))
       AND public.phase1_hr_access());
   CREATE POLICY phase1_enrollments_teacher_read ON public.student_enrollments FOR SELECT
     USING (public.phase1_active_role() = 'teacher' AND public.phase1_student_scope(student_id));
@@ -466,7 +466,7 @@ BEGIN
   CREATE POLICY phase1_lms_courses_student_read ON public.lms_courses FOR SELECT
     USING (public.phase1_same_org(organization_id) AND status = 'published' AND EXISTS (
       SELECT 1 FROM public.lms_enrollments e
-      WHERE e.course_id = id AND e.status IN ('active','completed')
+      WHERE e.course_id = public.lms_courses.id AND e.status IN ('active','completed')
         AND e.student_id IN (SELECT student_id FROM public.my_linked_student_ids())
     ));
 
@@ -480,7 +480,7 @@ BEGIN
   CREATE POLICY phase1_lms_lessons_student_read ON public.lms_lessons FOR SELECT
     USING (public.phase1_same_org(organization_id) AND status = 'published' AND EXISTS (
       SELECT 1 FROM public.lms_enrollments e JOIN public.lms_courses c ON c.id = e.course_id
-      WHERE e.course_id = course_id AND e.status IN ('active','completed')
+      WHERE e.course_id = public.lms_lessons.course_id AND e.status IN ('active','completed')
         AND c.status = 'published'
         AND e.student_id IN (SELECT student_id FROM public.my_linked_student_ids())
     ));
@@ -490,12 +490,12 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_lms_admin())
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_lms_admin());
   CREATE POLICY phase1_lms_quizzes_teacher_all ON public.lms_quizzes FOR ALL
-    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = lesson_id)))
-    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = lesson_id)));
+    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = public.lms_quizzes.lesson_id)))
+    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = public.lms_quizzes.lesson_id)));
   CREATE POLICY phase1_lms_quizzes_student_read ON public.lms_quizzes FOR SELECT
     USING (public.phase1_same_org(organization_id) AND EXISTS (
       SELECT 1 FROM public.lms_lessons l JOIN public.lms_enrollments e ON e.course_id = l.course_id
-      WHERE l.id = lesson_id AND l.status = 'published' AND e.status IN ('active','completed')
+      WHERE l.id = public.lms_quizzes.lesson_id AND l.status = 'published' AND e.status IN ('active','completed')
         AND e.student_id IN (SELECT student_id FROM public.my_linked_student_ids())
     ));
 
@@ -506,20 +506,20 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND public.phase1_lms_admin())
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_lms_admin());
   CREATE POLICY phase1_lms_quizq_teacher_all ON public.lms_quiz_questions FOR ALL
-    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id JOIN public.lms_quiz_questions x ON x.quiz_id = q.id WHERE x.id = id)))
-    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id JOIN public.lms_quiz_questions x ON x.quiz_id = q.id WHERE x.id = id)));
+    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id JOIN public.lms_quiz_questions x ON x.quiz_id = q.id WHERE x.id = public.lms_quiz_questions.id)))
+    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id JOIN public.lms_quiz_questions x ON x.quiz_id = q.id WHERE x.id = public.lms_quiz_questions.id)));
 
   PERFORM public._reset_policies('lms_assignments');
   CREATE POLICY phase1_lms_assignments_admin_all ON public.lms_assignments FOR ALL
     USING (public.phase1_same_org(organization_id) AND public.phase1_lms_admin())
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_lms_admin());
   CREATE POLICY phase1_lms_assignments_teacher_all ON public.lms_assignments FOR ALL
-    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = lesson_id)))
-    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = lesson_id)));
+    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = public.lms_assignments.lesson_id)))
+    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = public.lms_assignments.lesson_id)));
   CREATE POLICY phase1_lms_assignments_student_read ON public.lms_assignments FOR SELECT
     USING (public.phase1_same_org(organization_id) AND EXISTS (
       SELECT 1 FROM public.lms_lessons l JOIN public.lms_enrollments e ON e.course_id = l.course_id
-      WHERE l.id = lesson_id AND e.status IN ('active','completed')
+      WHERE l.id = public.lms_assignments.lesson_id AND e.status IN ('active','completed')
         AND e.student_id IN (SELECT student_id FROM public.my_linked_student_ids())
     ));
 
@@ -538,12 +538,12 @@ BEGIN
     USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_lms_enrollments_self_insert ON public.lms_enrollments FOR INSERT
     WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_own_student(student_id)
-      AND EXISTS (SELECT 1 FROM public.lms_courses c WHERE c.id = course_id AND c.organization_id = organization_id AND c.status = 'published'));
+      AND EXISTS (SELECT 1 FROM public.lms_courses c WHERE c.id = public.lms_enrollments.course_id AND c.organization_id = public.lms_enrollments.organization_id AND c.status = 'published'));
 
   PERFORM public._reset_policies('lms_lesson_progress');
   CREATE POLICY phase1_lms_progress_staff_all ON public.lms_lesson_progress FOR ALL
-    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = lesson_id)))
-    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = lesson_id)));
+    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = public.lms_lesson_progress.lesson_id)))
+    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = public.lms_lesson_progress.lesson_id)));
   CREATE POLICY phase1_lms_progress_self_read ON public.lms_lesson_progress FOR SELECT
     USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_lms_progress_self_insert ON public.lms_lesson_progress FOR INSERT
@@ -554,8 +554,8 @@ BEGIN
 
   PERFORM public._reset_policies('lms_quiz_attempts');
   CREATE POLICY phase1_lms_attempts_staff_all ON public.lms_quiz_attempts FOR ALL
-    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id WHERE q.id = quiz_id)))
-    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id WHERE q.id = quiz_id)));
+    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id WHERE q.id = public.lms_quiz_attempts.quiz_id)))
+    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id WHERE q.id = public.lms_quiz_attempts.quiz_id)));
   CREATE POLICY phase1_lms_attempts_self_read ON public.lms_quiz_attempts FOR SELECT
     USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_lms_attempts_self_insert ON public.lms_quiz_attempts FOR INSERT
@@ -566,17 +566,17 @@ BEGIN
 
   PERFORM public._reset_policies('lms_quiz_answers');
   CREATE POLICY phase1_lms_answers_staff_all ON public.lms_quiz_answers FOR ALL
-    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id JOIN public.lms_quiz_attempts a ON a.quiz_id = q.id WHERE a.id = attempt_id)))
-    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id JOIN public.lms_quiz_attempts a ON a.quiz_id = q.id WHERE a.id = attempt_id)));
+    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id JOIN public.lms_quiz_attempts a ON a.quiz_id = q.id WHERE a.id = public.lms_quiz_answers.attempt_id)))
+    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_quizzes q ON q.lesson_id = l.id JOIN public.lms_quiz_attempts a ON a.quiz_id = q.id WHERE a.id = public.lms_quiz_answers.attempt_id)));
   CREATE POLICY phase1_lms_answers_self_read ON public.lms_quiz_answers FOR SELECT
-    USING (public.phase1_same_org(organization_id) AND EXISTS (SELECT 1 FROM public.lms_quiz_attempts a WHERE a.id = attempt_id AND public.phase1_own_student(a.student_id)));
+    USING (public.phase1_same_org(organization_id) AND EXISTS (SELECT 1 FROM public.lms_quiz_attempts a WHERE a.id = public.lms_quiz_answers.attempt_id AND public.phase1_own_student(a.student_id)));
   CREATE POLICY phase1_lms_answers_self_insert ON public.lms_quiz_answers FOR INSERT
-    WITH CHECK (public.phase1_same_org(organization_id) AND EXISTS (SELECT 1 FROM public.lms_quiz_attempts a WHERE a.id = attempt_id AND public.phase1_own_student(a.student_id) AND a.submitted_at IS NULL));
+    WITH CHECK (public.phase1_same_org(organization_id) AND EXISTS (SELECT 1 FROM public.lms_quiz_attempts a WHERE a.id = public.lms_quiz_answers.attempt_id AND public.phase1_own_student(a.student_id) AND a.submitted_at IS NULL));
 
   PERFORM public._reset_policies('lms_submissions');
   CREATE POLICY phase1_lms_submissions_staff_all ON public.lms_submissions FOR ALL
-    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_assignments a ON a.lesson_id = l.id WHERE a.id = assignment_id)))
-    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_assignments a ON a.lesson_id = l.id WHERE a.id = assignment_id)));
+    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_assignments a ON a.lesson_id = l.id WHERE a.id = public.lms_submissions.assignment_id)))
+    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_assignments a ON a.lesson_id = l.id WHERE a.id = public.lms_submissions.assignment_id)));
   CREATE POLICY phase1_lms_submissions_self_read ON public.lms_submissions FOR SELECT
     USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_lms_submissions_self_insert ON public.lms_submissions FOR INSERT
@@ -591,8 +591,8 @@ BEGIN
 
   PERFORM public._reset_policies('lms_discussions');
   CREATE POLICY phase1_lms_discussions_staff_all ON public.lms_discussions FOR ALL
-    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = lesson_id)))
-    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = lesson_id)));
+    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = public.lms_discussions.lesson_id)))
+    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l WHERE l.id = public.lms_discussions.lesson_id)));
   CREATE POLICY phase1_lms_discussions_student_read ON public.lms_discussions FOR SELECT
     USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_lms_discussions_student_insert ON public.lms_discussions FOR INSERT
@@ -600,8 +600,8 @@ BEGIN
 
   PERFORM public._reset_policies('lms_discussion_replies');
   CREATE POLICY phase1_lms_replies_staff_all ON public.lms_discussion_replies FOR ALL
-    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_discussions d ON d.lesson_id = l.id WHERE d.id = discussion_id)))
-    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_discussions d ON d.lesson_id = l.id WHERE d.id = discussion_id)));
+    USING (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_discussions d ON d.lesson_id = l.id WHERE d.id = public.lms_discussion_replies.discussion_id)))
+    WITH CHECK (public.phase1_same_org(organization_id) AND public.phase1_teacher_course_scope((SELECT l.course_id FROM public.lms_lessons l JOIN public.lms_discussions d ON d.lesson_id = l.id WHERE d.id = public.lms_discussion_replies.discussion_id)));
   CREATE POLICY phase1_lms_replies_student_read ON public.lms_discussion_replies FOR SELECT
     USING (public.phase1_same_org(organization_id) AND student_id IN (SELECT student_id FROM public.my_linked_student_ids()));
   CREATE POLICY phase1_lms_replies_student_insert ON public.lms_discussion_replies FOR INSERT
