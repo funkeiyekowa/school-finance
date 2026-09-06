@@ -28,7 +28,7 @@ const DAYS = [
 ];
 
 export default function TimetablePage() {
-  const { canEdit, profile, orgId } = useAuth();
+  const { canEdit, profile, orgId, membership, isAdmin, isSuperAdmin, isDeveloper } = useAuth();
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
 
@@ -48,11 +48,29 @@ export default function TimetablePage() {
   const [form, setForm] = useState({ subject_id: "", teacher_name: "", room: "", period_id: "", day_of_week: "1" });
   const [showBulk, setShowBulk] = useState(false);
 
+  // Role-aware class scoping. RLS on timetable_entries is the real
+  // enforcement layer (see supabase/fix_timetable_role_scoped_access.sql)
+  // -- this is only about which classes the UI offers/auto-selects.
+  const role = membership?.role ?? "";
+  const isTeacherRole = role === "teacher";
+  const isPrivilegedStaff =
+    isAdmin || isSuperAdmin || isDeveloper ||
+    ["editor", "staff", "bursar", "accountant", "developer", "super_admin", "viewer"].includes(role);
+  // Anyone not recognized as privileged staff or a teacher is treated as
+  // student-like for the UI: auto-scope to their own class, fail closed
+  // (no selector, no implicit "show everything") if it can't be resolved.
+  const isStudentLike = !isPrivilegedStaff && !isTeacherRole;
+
+  const [scopeError, setScopeError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     const [clsRes, subRes, perRes, entRes, teachRes] = await Promise.all([
       supabase.from("classes").select("id, name").eq("active", true).order("sequence"),
       supabase.from("subjects").select("id, name, short_code").eq("active", true).order("name"),
       supabase.from("periods").select("*").eq("active", true).order("sort_order"),
+      // RLS (fix_timetable_role_scoped_access.sql) already restricts which
+      // rows come back for a student/teacher -- this unfiltered select is
+      // safe by construction, not by convention.
       supabase.from("timetable_entries").select("*"),
       supabase.from("staff_members").select("id, full_name").eq("staff_type", "teaching").eq("status", "active").order("full_name"),
     ]);
@@ -67,16 +85,64 @@ export default function TimetablePage() {
       setLoading(false);
       return;
     }
+
+    const allClasses = clsRes.data as ClassRow[] ?? [];
+    let scopedClasses = allClasses;
+    setScopeError(null);
+
+    if (isTeacherRole) {
+      // Reuse the SAME source of truth as the Teaching dashboard
+      // (src/app/dashboard/teaching/page.tsx): teacher_assignments,
+      // unfiltered by role, IS the union of class_teacher + subject_teacher
+      // for this user -- no separate/duplicate assignment query needed.
+      const { data: assignRows, error: assignErr } = await supabase
+        .from("teacher_assignments")
+        .select("class_id")
+        .eq("user_id", profile?.id ?? "")
+        .eq("active", true);
+      if (assignErr) {
+        setScopeError(assignErr.message);
+        scopedClasses = [];
+      } else {
+        const ids = Array.from(new Set((assignRows ?? []).map(r => (r as { class_id: string }).class_id)));
+        scopedClasses = allClasses.filter(c => ids.includes(c.id));
+      }
+    } else if (isStudentLike) {
+      // Server-resolved: the student's own current class via
+      // student_enrollments (student_current_class_id()), never a
+      // client-supplied class id. Fails closed (null) rather than
+      // showing every class if it can't be resolved.
+      const { data: classId, error: classErr } = await supabase.rpc("get_my_current_class_id");
+      if (classErr) {
+        setScopeError(classErr.message);
+        scopedClasses = [];
+      } else {
+        const resolved = (classId as string | null) ?? null;
+        scopedClasses = resolved ? allClasses.filter(c => c.id === resolved) : [];
+      }
+    }
+
     setLoadError(null);
-    setClasses(clsRes.data as ClassRow[] ?? []);
+    setClasses(scopedClasses);
     setSubjects(subRes.data as SubjectRow[] ?? []);
     setPeriods(perRes.data as PeriodRow[] ?? []);
     setEntries(entRes.data as EntryRow[] ?? []);
     setTeachers(teachRes.data as TeacherRow[] ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, isTeacherRole, isStudentLike, profile?.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Auto-select: students always land on their one authorized class with
+  // no manual choice; a teacher with exactly one authorized class gets the
+  // same treatment. A teacher with more than one, or privileged staff,
+  // keeps manual selection (staff starts blank, as before).
+  useEffect(() => {
+    if (loading) return;
+    if ((isStudentLike || isTeacherRole) && classes.length === 1 && !selectedClassId) {
+      setSelectedClassId(classes[0].id);
+    }
+  }, [loading, isStudentLike, isTeacherRole, classes, selectedClassId]);
 
   const classEntries = entries.filter(e => e.class_id === selectedClassId);
 
@@ -204,17 +270,43 @@ export default function TimetablePage() {
         </div>
       )}
 
-      {/* Class selector */}
+      {scopeError && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span><strong className="font-semibold">Could not determine your class access:</strong> {scopeError}</span>
+        </div>
+      )}
+
+      {(isStudentLike || isTeacherRole) && !scopeError && classes.length === 0 && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>
+            {isStudentLike
+              ? "You're not currently enrolled in an active class, so there's no timetable to show yet."
+              : "You have no active class or subject assignment yet, so there's no timetable to show."}
+          </span>
+        </div>
+      )}
+
+      {/* Class selector -- hidden for students and single-class teachers,
+          who are auto-scoped to their one authorized class; shown (scoped
+          to authorized classes only) for multi-class teachers and staff. */}
       <Card>
         <CardContent className="py-4">
           <div className="flex items-end gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">Class</label>
-              <select value={selectedClassId} onChange={e => setSelectedClassId(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] min-w-[180px]">
-                <option value="">Select class...</option>
-                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              {isStudentLike || (isTeacherRole && classes.length <= 1) ? (
+                <div className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 min-w-[180px] text-gray-700 font-medium">
+                  {classes[0]?.name ?? "—"}
+                </div>
+              ) : (
+                <select value={selectedClassId} onChange={e => setSelectedClassId(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] min-w-[180px]">
+                  <option value="">Select class...</option>
+                  {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              )}
             </div>
             {selectedClassId && (
               <span className="text-xs text-gray-500 pb-2">

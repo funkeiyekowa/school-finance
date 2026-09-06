@@ -42,34 +42,70 @@ export default function TimetablePrintPage() {
 function Inner() {
   const params = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
-  const { orgId } = useAuth();
+  const { orgId, membership, isAdmin, isSuperAdmin, isDeveloper } = useAuth();
   const branding = useBranding();
-  const classId = params.get("class") ?? "";
+  const requestedClassId = params.get("class") ?? "";
 
   const [cls, setCls] = useState<ClassRow | null>(null);
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
   const [periods, setPeriods] = useState<PeriodRow[]>([]);
   const [entries, setEntries] = useState<EntryRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [denied, setDenied] = useState(false);
+
+  // Defense in depth: RLS on timetable_entries (see
+  // supabase/fix_timetable_role_scoped_access.sql) is the actual
+  // enforcement -- a student or teacher passing another class's id here
+  // gets zero timetable rows back regardless. This additionally refuses to
+  // even attempt the fetch for a non-privileged caller whose own
+  // authorized class doesn't match the requested one, so the URL can't be
+  // used to fish for other classes' names/existence via this page either.
+  const role = membership?.role ?? "";
+  const isTeacherRole = role === "teacher";
+  const isPrivilegedStaff =
+    isAdmin || isSuperAdmin || isDeveloper ||
+    ["editor", "staff", "bursar", "accountant", "developer", "super_admin", "viewer"].includes(role);
 
   useEffect(() => {
-    if (!orgId || !classId) { setLoading(false); return; }
+    if (!orgId || !requestedClassId) { setLoading(false); return; }
+    let cancelled = false;
     (async () => {
+      let effectiveClassId = requestedClassId;
+
+      if (!isPrivilegedStaff) {
+        if (isTeacherRole) {
+          const { data } = await supabase
+            .from("teacher_assignments")
+            .select("class_id")
+            .eq("class_id", requestedClassId)
+            .eq("active", true)
+            .limit(1);
+          if (!data || data.length === 0) { if (!cancelled) { setDenied(true); setLoading(false); } return; }
+        } else {
+          const { data: myClassId } = await supabase.rpc("get_my_current_class_id");
+          if (!myClassId || myClassId !== requestedClassId) { if (!cancelled) { setDenied(true); setLoading(false); } return; }
+          effectiveClassId = myClassId as string;
+        }
+      }
+
       const [cRes, subRes, perRes, entRes] = await Promise.all([
-        supabase.from("classes").select("id, name").eq("id", classId).maybeSingle(),
+        supabase.from("classes").select("id, name").eq("id", effectiveClassId).maybeSingle(),
         supabase.from("subjects").select("id, name, short_code").eq("active", true),
         supabase.from("periods").select("*").eq("active", true).order("sort_order"),
-        supabase.from("timetable_entries").select("*").eq("class_id", classId),
+        supabase.from("timetable_entries").select("*").eq("class_id", effectiveClassId),
       ]);
+      if (cancelled) return;
       setCls((cRes.data as ClassRow) ?? null);
       setSubjects((subRes.data as SubjectRow[]) ?? []);
       setPeriods((perRes.data as PeriodRow[]) ?? []);
       setEntries((entRes.data as EntryRow[]) ?? []);
       setLoading(false);
     })();
-  }, [supabase, orgId, classId]);
+    return () => { cancelled = true; };
+  }, [supabase, orgId, requestedClassId, isPrivilegedStaff, isTeacherRole]);
 
   if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
+  if (denied) return <div className="p-8 text-center text-gray-500">You are not authorized to view this class&apos;s timetable.</div>;
   if (!cls) return <div className="p-8 text-center text-gray-500">Select a class first.</div>;
 
   const subjectById = new Map(subjects.map((s) => [s.id, s]));
