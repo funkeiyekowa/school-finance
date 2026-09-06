@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/lib/hooks/useToast";
 import { AiAssistButton } from "@/components/ai/AiAssistButton";
+import { ReportCardExplainer } from "@/components/ai/ReportCardExplainer";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, Printer, CheckCircle2, Award, GraduationCap, Users } from "lucide-react";
 
@@ -32,7 +33,8 @@ interface Student { id: string; student_code: string; full_name: string; grade: 
 export default function ReportCardDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { isAdmin, profile } = useAuth();
+  const { isAdmin, profile, membership } = useAuth();
+  const isFamilyViewer = membership?.role === "student" || membership?.role === "parent";
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
 
@@ -116,6 +118,10 @@ export default function ReportCardDetailPage() {
           )}
         </div>
       </div>
+
+      {isFamilyViewer && rc.published && (
+        <ReportCardExplainer reportCardId={rc.id} />
+      )}
 
       {/* Printable card */}
       <Card className="print:shadow-none print:border-0">
