@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, Save, Package, Search, TrendingUp, TrendingDown, Printer, UploadCloud } from "lucide-react";
+import { Plus, Save, Package, Search, TrendingUp, TrendingDown, Printer, UploadCloud, AlertTriangle } from "lucide-react";
 
 interface ItemRow { id: string; name: string; item_code: string | null; category: string | null; unit: string; quantity_on_hand: number; reorder_level: number; unit_cost: number | null; location: string | null; }
 
@@ -20,6 +20,7 @@ export default function InventoryPage() {
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [search, setSearch] = useState("");
 
@@ -37,7 +38,14 @@ export default function InventoryPage() {
   const [showBulk, setShowBulk] = useState(false);
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from("inventory_items").select("*").eq("active", true).order("name");
+    const { data, error } = await supabase.from("inventory_items").select("*").eq("active", true).order("name");
+    if (error) {
+      setLoadError(error.message);
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+    setLoadError(null);
     setItems(data as ItemRow[] ?? []);
     setLoading(false);
   }, [supabase]);
@@ -123,6 +131,13 @@ export default function InventoryPage() {
         {canEdit && <Button variant="secondary" onClick={() => setShowBulk(true)}><UploadCloud size={14} /> Bulk import</Button>}
         {canEdit && <Button variant="gold" onClick={() => openItemForm()}><Plus size={14} /> Add Item</Button>}
       </PageHeader>
+
+      {loadError && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span><strong className="font-semibold">Failed to load inventory:</strong> {loadError}</span>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

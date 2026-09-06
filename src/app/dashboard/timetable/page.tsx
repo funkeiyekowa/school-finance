@@ -33,6 +33,7 @@ export default function TimetablePage() {
   const { notify, ToastHost } = useToast();
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
   const [periods, setPeriods] = useState<PeriodRow[]>([]);
@@ -55,6 +56,18 @@ export default function TimetablePage() {
       supabase.from("timetable_entries").select("*"),
       supabase.from("staff_members").select("id, full_name").eq("staff_type", "teaching").eq("status", "active").order("full_name"),
     ]);
+    const firstError = [clsRes.error, subRes.error, perRes.error, entRes.error, teachRes.error].find(Boolean);
+    if (firstError) {
+      setLoadError(firstError.message);
+      setClasses([]);
+      setSubjects([]);
+      setPeriods([]);
+      setEntries([]);
+      setTeachers([]);
+      setLoading(false);
+      return;
+    }
+    setLoadError(null);
     setClasses(clsRes.data as ClassRow[] ?? []);
     setSubjects(subRes.data as SubjectRow[] ?? []);
     setPeriods(perRes.data as PeriodRow[] ?? []);
@@ -183,6 +196,13 @@ export default function TimetablePage() {
       <PageHeader
         icon={<CalendarClock size={24} />}
         gradient="navy" title="Timetable" subtitle="Manage class timetables — assign subjects, teachers, and rooms to periods" />
+
+      {loadError && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span><strong className="font-semibold">Failed to load timetable:</strong> {loadError}</span>
+        </div>
+      )}
 
       {/* Class selector */}
       <Card>

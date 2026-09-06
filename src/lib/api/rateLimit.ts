@@ -3,14 +3,14 @@
  *
  * Scope + limitations:
  *
- *   • In-memory only. On a serverless deployment (Vercel) each
+ *   • The local fallback is in-memory only. On a serverless deployment (Vercel) each
  *     Lambda / edge instance has its own map, so a caller who is
  *     spread across N cold instances can effectively make N × the
  *     limit. That's fine for our threat model — the goal is to
  *     make sustained brute-force calling by a single misconfigured
  *     forwarder cheap to detect, not to enforce hard multi-region
- *     quotas. Upstash or a Redis-backed limiter can replace this
- *     seam later without changing callers.
+ *     quotas. When UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are
+ *     configured, rateLimitAsync() uses a shared Upstash Redis counter.
  *
  *   • Fixed-window buckets. A caller who spikes at the boundary
  *     between windows can burst up to 2× the limit briefly. Again,
@@ -29,7 +29,7 @@ interface Bucket {
   count: number;
 }
 
-type LimiterName = "sms-webhook" | "email-webhook" | "alert-test" | "ai-generate" | "ai-test" | "client-error" | "lms-study-help" | "ai-assistant" | "ai-ask" | "photos-upload" | "storage-upload";
+export type LimiterName = "sms-webhook" | "email-webhook" | "alert-test" | "ai-generate" | "ai-test" | "client-error" | "lms-study-help" | "ai-assistant" | "ai-ask" | "photos-upload" | "storage-upload" | "proctoring-upload-url";
 
 const store = new Map<string, Bucket>();
 
@@ -84,6 +84,56 @@ export function rateLimit(params: {
     retryAfterMs: 0,
     currentCount: bucket.count,
   };
+}
+
+type RateLimitParams = {
+  name: LimiterName;
+  key: string;
+  max: number;
+  windowMs: number;
+};
+
+type UpstashResponse = { result?: number | string | null };
+
+/** Shared limiter with a safe local fallback when Upstash is not configured. */
+export async function rateLimitAsync(params: RateLimitParams): Promise<ReturnType<typeof rateLimit>> {
+  const url = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, "");
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return rateLimit(params);
+
+  const redisKey = `school-finance:ratelimit:${params.name}:${params.key}`;
+  try {
+    const response = await fetch(`${url}/pipeline`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify([["INCR", redisKey], ["PTTL", redisKey]]),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`Upstash returned HTTP ${response.status}`);
+    const payload = (await response.json()) as UpstashResponse[];
+    const count = Number(payload[0]?.result);
+    let ttlMs = Number(payload[1]?.result);
+    if (!Number.isFinite(count) || !Number.isFinite(ttlMs)) throw new Error("Invalid Upstash response");
+    if (ttlMs < 0) {
+      const expireResponse = await fetch(`${url}/pexpire/${encodeURIComponent(redisKey)}/${params.windowMs}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (!expireResponse.ok) throw new Error(`Upstash expiry returned HTTP ${expireResponse.status}`);
+      ttlMs = params.windowMs;
+    }
+    const allowed = count <= params.max;
+    return {
+      allowed,
+      remaining: allowed ? Math.max(0, params.max - count) : 0,
+      retryAfterMs: allowed ? 0 : Math.max(1, ttlMs),
+      currentCount: count,
+    };
+  } catch (error) {
+    console.warn("[rate-limit] shared limiter unavailable; using local fallback", error);
+    return rateLimit(params);
+  }
 }
 
 /**

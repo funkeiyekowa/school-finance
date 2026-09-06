@@ -73,6 +73,7 @@ export function useExamRecording(opts: UseExamRecordingOpts) {
           recordingType: type,
           chunkIndex: idx,
           contentType: blob.type || "video/webm",
+          chunkSize: blob.size,
         }),
       });
       if (!urlRes.ok) {
@@ -90,7 +91,7 @@ export function useExamRecording(opts: UseExamRecordingOpts) {
       if (!uploadRes.ok) throw new Error(`Storage upload failed: ${uploadRes.status}`);
 
       // Register the chunk metadata in the DB
-      await supabase.rpc("register_proctoring_chunk", {
+      const { error: registrationError } = await supabase.rpc("register_proctoring_chunk", {
         p_attempt: attemptId,
         p_recording_type: type,
         p_chunk_index: idx,
@@ -98,6 +99,7 @@ export function useExamRecording(opts: UseExamRecordingOpts) {
         p_size_bytes: blob.size,
         p_duration_ms: CHUNK_INTERVAL_MS,
       });
+      if (registrationError) throw new Error(`Chunk registration failed: ${registrationError.message}`);
     } catch (err) {
       console.error(`Proctoring chunk upload failed (${type} #${idx}):`, err);
       // Don't crash the exam — log the error and continue recording

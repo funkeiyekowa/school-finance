@@ -19,7 +19,7 @@
 
 import { NextResponse } from "next/server";
 import { requireActiveSession } from "@/lib/api/requireSession";
-import { rateLimit, callerKey } from "@/lib/api/rateLimit";
+import { rateLimitAsync, callerKey } from "@/lib/api/rateLimit";
 import { runAiCompletion } from "@/lib/ai/server";
 
 const AI_RATE_MAX = 20;
@@ -36,11 +36,13 @@ export async function POST(request: Request) {
   if (session instanceof Response) return session;
 
   const ip = callerKey(request);
-  const rl = rateLimit({ name: "ai-assistant", key: ip, max: AI_RATE_MAX, windowMs: AI_RATE_WINDOW_MS });
-  if (!rl.allowed) {
+  const rl = await rateLimitAsync({ name: "ai-assistant", key: ip, max: AI_RATE_MAX, windowMs: AI_RATE_WINDOW_MS });
+  const userRl = await rateLimitAsync({ name: "ai-assistant", key: `user:${session.user.id}`, max: AI_RATE_MAX, windowMs: AI_RATE_WINDOW_MS });
+  const effectiveRl = rl.allowed ? userRl : rl;
+  if (!effectiveRl.allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded. Try again in a moment." },
-      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(effectiveRl.retryAfterMs / 1000)) } },
     );
   }
 

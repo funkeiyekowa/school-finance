@@ -15,7 +15,7 @@
 
 import { NextResponse } from "next/server";
 import { logError, requestContext } from "@/lib/errors/logError";
-import { rateLimit, callerKey } from "@/lib/api/rateLimit";
+import { rateLimitAsync, callerKey } from "@/lib/api/rateLimit";
 
 const MAX_MSG_LEN = 500;
 const MAX_STACK_LEN = 4000;
@@ -24,7 +24,7 @@ const CLIENT_ERR_RATE_WINDOW_MS = 60_000;
 
 export async function POST(request: Request) {
   const ip = callerKey(request);
-  const rl = rateLimit({
+  const rl = await rateLimitAsync({
     name: "client-error",
     key: ip,
     max: CLIENT_ERR_RATE_MAX,

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { processAlert } from "@/lib/alerts/processor";
-import { createServiceClient, extractSecret, verifySmsSecret } from "@/lib/alerts/service";
-import { rateLimit, callerKey } from "@/lib/api/rateLimit";
+import { createServiceClient, extractSecret, validateWebhookTimestamp, verifySmsSecret } from "@/lib/alerts/service";
+import { rateLimitAsync, callerKey } from "@/lib/api/rateLimit";
 import { logError, requestContext } from "@/lib/errors/logError";
 
 // Per-caller: 120 requests per minute. Real gateways forward at most a
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   // has its own bucket) but strong enough to make sustained abuse
   // visible in error_log.
   const ip = callerKey(request);
-  const rl = rateLimit({ name: "sms-webhook", key: ip, max: SMS_RATE_MAX, windowMs: SMS_RATE_WINDOW_MS });
+  const rl = await rateLimitAsync({ name: "sms-webhook", key: ip, max: SMS_RATE_MAX, windowMs: SMS_RATE_WINDOW_MS });
   if (!rl.allowed) {
     await logError({
       source: "sms-webhook",
@@ -44,6 +44,17 @@ export async function POST(request: Request) {
       { error: "Rate limit exceeded." },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } },
     );
+  }
+
+  const timestampCheck = validateWebhookTimestamp(request);
+  if (!timestampCheck.ok) {
+    await logError({
+      source: "sms-webhook",
+      severity: "warn",
+      message: timestampCheck.message ?? "Webhook timestamp rejected.",
+      ...requestContext(request),
+    });
+    return NextResponse.json({ error: timestampCheck.message }, { status: 401 });
   }
 
   const supabase = createServiceClient();
@@ -116,6 +127,7 @@ export async function POST(request: Request) {
       severity: "error",
       message,
       stack: err instanceof Error ? err.stack : null,
+      organizationId,
       context: { sender: normalised.sender, messageLen: normalised.messageText?.length ?? 0 },
       ...requestContext(request),
     });

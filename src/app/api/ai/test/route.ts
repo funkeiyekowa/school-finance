@@ -30,7 +30,7 @@
 
 import { NextResponse } from "next/server";
 import { requireStaffSession } from "@/lib/api/requireStaff";
-import { rateLimit, callerKey } from "@/lib/api/rateLimit";
+import { rateLimitAsync, callerKey } from "@/lib/api/rateLimit";
 import { pickProvider } from "@/lib/ai/providers";
 import { listCustomProviderConfigs } from "@/lib/ai/customProviders";
 import { decryptProviderKey } from "@/lib/ai/keyCrypto";
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   if (guard) return guard;
 
   const ip = callerKey(request);
-  const rl = rateLimit({ name: "ai-test", key: ip, max: TEST_RATE_MAX, windowMs: TEST_RATE_WINDOW_MS });
+  const rl = await rateLimitAsync({ name: "ai-test", key: ip, max: TEST_RATE_MAX, windowMs: TEST_RATE_WINDOW_MS });
   if (!rl.allowed) {
     return NextResponse.json(
       { error: "Too many test requests. Try again in a moment." },
@@ -74,6 +74,14 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  }
+
+  const userRl = await rateLimitAsync({ name: "ai-test", key: `user:${user.id}`, max: TEST_RATE_MAX, windowMs: TEST_RATE_WINDOW_MS });
+  if (!userRl.allowed) {
+    return NextResponse.json(
+      { error: "Your AI test limit has been reached. Try again in a moment." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(userRl.retryAfterMs / 1000)) } },
+    );
   }
 
   // Authorization: mirror /api/ai/org-settings exactly — never trust

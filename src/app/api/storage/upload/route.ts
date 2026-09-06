@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/alerts/service";
-import { rateLimit, callerKey } from "@/lib/api/rateLimit";
+import { rateLimitAsync, callerKey } from "@/lib/api/rateLimit";
 import { logError, requestContext } from "@/lib/errors/logError";
+import { requestSizeExceeds, safeUploadName, sanitizePathSegments, validateFileSignature } from "@/lib/uploads/security";
 
 /**
  * Server-mediated storage upload for website media and message
@@ -59,9 +60,19 @@ const MESSAGE_ATTACHMENT_TYPES = new Set([
 const MESSAGE_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
 
 export async function POST(request: Request) {
+  if (requestSizeExceeds(request, MESSAGE_ATTACHMENT_MAX_BYTES)) {
+    return NextResponse.json({ error: "Attachment is too large (max 25MB)." }, { status: 413 });
+  }
   const ip = callerKey(request);
-  const rl = rateLimit({ name: "storage-upload", key: ip, max: UPLOAD_RATE_MAX, windowMs: UPLOAD_RATE_WINDOW_MS });
+  const rl = await rateLimitAsync({ name: "storage-upload", key: ip, max: UPLOAD_RATE_MAX, windowMs: UPLOAD_RATE_WINDOW_MS });
   if (!rl.allowed) {
+    await logError({
+      source: "storage-upload",
+      severity: "warn",
+      message: `Rate limit exceeded (${rl.currentCount} requests in the current window)`,
+      context: { limit: UPLOAD_RATE_MAX, windowMs: UPLOAD_RATE_WINDOW_MS },
+      ...requestContext(request),
+    });
     return NextResponse.json(
       { error: "Too many uploads — please wait a moment and try again." },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } },
@@ -72,6 +83,20 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  }
+  const userRl = await rateLimitAsync({ name: "storage-upload", key: `user:${user.id}`, max: UPLOAD_RATE_MAX, windowMs: UPLOAD_RATE_WINDOW_MS });
+  if (!userRl.allowed) {
+    await logError({
+      source: "storage-upload",
+      severity: "warn",
+      message: `User upload rate limit exceeded (${userRl.currentCount} requests in the current window)`,
+      context: { limit: UPLOAD_RATE_MAX, windowMs: UPLOAD_RATE_WINDOW_MS },
+      ...requestContext(request),
+    });
+    return NextResponse.json(
+      { error: "Too many uploads — please wait a moment and try again." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(userRl.retryAfterMs / 1000)) } },
+    );
   }
 
   const { data: membership } = await supabase
@@ -120,12 +145,11 @@ export async function POST(request: Request) {
     if (!ORG_ADMIN_ROLES.has(role)) {
       return NextResponse.json({ error: "Only school administrators can manage website media." }, { status: 403 });
     }
-    if (!WEBSITE_MEDIA_TYPES.has(file.type)) {
-      return NextResponse.json({ error: "Please upload an image or PDF file." }, { status: 400 });
-    }
-    if (file.size > WEBSITE_MEDIA_MAX_BYTES) {
+    if (file.size > WEBSITE_MEDIA_MAX_BYTES || requestSizeExceeds(request, WEBSITE_MEDIA_MAX_BYTES)) {
       return NextResponse.json({ error: "File must be under 10MB." }, { status: 400 });
     }
+    const signatureError = await validateFileSignature(file, WEBSITE_MEDIA_TYPES);
+    if (signatureError) return NextResponse.json({ error: signatureError }, { status: 400 });
   } else {
     if (typeof conversationId !== "string" || !conversationId) {
       return NextResponse.json({ error: "Missing conversationId." }, { status: 400 });
@@ -140,18 +164,20 @@ export async function POST(request: Request) {
     if (!memberRow) {
       return NextResponse.json({ error: "You are not a member of this conversation." }, { status: 403 });
     }
-    if (!MESSAGE_ATTACHMENT_TYPES.has(file.type)) {
-      return NextResponse.json({ error: "That file type isn't supported as an attachment." }, { status: 400 });
-    }
+    const signatureError = await validateFileSignature(file, MESSAGE_ATTACHMENT_TYPES);
+    if (signatureError) return NextResponse.json({ error: signatureError }, { status: 400 });
     if (file.size > MESSAGE_ATTACHMENT_MAX_BYTES) {
       return NextResponse.json({ error: "Attachment is too large (max 25MB)." }, { status: 400 });
     }
   }
 
   const svc = createServiceClient();
-  const safeName = file.name.replace(/[^\w.-]+/g, "_");
+  const safeName = safeUploadName(file.name, file.type);
+  const safeFolder = bucket === "website-media" && typeof folder === "string"
+    ? sanitizePathSegments(folder)
+    : "";
   const path = bucket === "website-media"
-    ? `${orgId}/${typeof folder === "string" && folder ? `${folder}/` : ""}${Date.now()}-${safeName}`
+    ? `${orgId}/${safeFolder ? `${safeFolder}/` : ""}${Date.now()}-${safeName}`
     : `${orgId}/${conversationId}/${crypto.randomUUID()}-${safeName}`;
   const bytes = new Uint8Array(await file.arrayBuffer());
 
@@ -166,6 +192,7 @@ export async function POST(request: Request) {
       source: "storage-upload",
       severity: "error",
       message: `Storage upload failed: ${uploadError.message}`,
+      organizationId: orgId,
       context: { orgId, bucket, path },
       ...requestContext(request),
     });

@@ -28,7 +28,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireActiveSession } from "@/lib/api/requireSession";
-import { rateLimit, callerKey } from "@/lib/api/rateLimit";
+import { rateLimitAsync, callerKey } from "@/lib/api/rateLimit";
 import { logError, requestContext } from "@/lib/errors/logError";
 import { resolveProviderForOrg } from "@/lib/ai/resolve";
 
@@ -41,12 +41,17 @@ interface Body {
 }
 
 export async function POST(request: Request) {
+  const session = await requireActiveSession();
+  if (session instanceof Response) return session;
+
   const ip = callerKey(request);
-  const rl = rateLimit({ name: "lms-study-help", key: ip, max: RATE_MAX, windowMs: RATE_WINDOW_MS });
-  if (!rl.allowed) {
+  const rl = await rateLimitAsync({ name: "lms-study-help", key: ip, max: RATE_MAX, windowMs: RATE_WINDOW_MS });
+  const userRl = await rateLimitAsync({ name: "lms-study-help", key: `user:${session.user.id}`, max: RATE_MAX, windowMs: RATE_WINDOW_MS });
+  const effectiveRl = rl.allowed ? userRl : rl;
+  if (!effectiveRl.allowed) {
     return NextResponse.json(
       { error: "You're asking a lot of questions at once -- try again in a moment." },
-      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(effectiveRl.retryAfterMs / 1000)) } },
     );
   }
 
@@ -65,8 +70,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Question is too long -- keep it under 600 characters." }, { status: 400 });
   }
 
-  const session = await requireActiveSession();
-  if (session instanceof Response) return session;
   if (session.role !== "student") {
     return NextResponse.json({ error: "Student access required." }, { status: 403 });
   }

@@ -59,6 +59,34 @@ export function extractSecret(
 }
 
 /**
+ * Optional replay-window check for webhook providers that send a timestamp.
+ * Existing school integrations do not currently send this header, so an
+ * absent timestamp remains accepted for backwards compatibility. Providers
+ * that do send `x-webhook-timestamp` get a five-minute freshness guarantee.
+ */
+export function validateWebhookTimestamp(
+  request: Request,
+  maxSkewMs = 5 * 60 * 1000,
+  nowMs = Date.now(),
+): { ok: boolean; message?: string } {
+  const raw = request.headers.get("x-webhook-timestamp");
+  if (!raw) return { ok: true };
+
+  const trimmed = raw.trim();
+  const numeric = /^\d+(?:\.\d+)?$/.test(trimmed);
+  const parsed = numeric
+    ? Number(trimmed) * (trimmed.length <= 10 ? 1000 : 1)
+    : Date.parse(trimmed);
+  if (!Number.isFinite(parsed)) {
+    return { ok: false, message: "Invalid webhook timestamp." };
+  }
+  if (Math.abs(nowMs - parsed) > maxSkewMs) {
+    return { ok: false, message: "Webhook timestamp is outside the allowed replay window." };
+  }
+  return { ok: true };
+}
+
+/**
  * Constant-time string comparison.
  * A plain `===` on a secret leaks length and position information through
  * timing, so compare every character regardless of early mismatches.

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/alerts/service";
-import { rateLimit, callerKey } from "@/lib/api/rateLimit";
+import { rateLimitAsync, callerKey } from "@/lib/api/rateLimit";
 import { logError, requestContext } from "@/lib/errors/logError";
+import { requestSizeExceeds, validateFileSignature } from "@/lib/uploads/security";
 
 /**
  * Server-mediated profile photo upload.
@@ -44,9 +45,19 @@ const ORG_ADMIN_ROLES = new Set(["owner", "admin", "super_admin"]);
 type Kind = "staff" | "students" | "signatures";
 
 export async function POST(request: Request) {
+  if (requestSizeExceeds(request, MAX_BYTES)) {
+    return NextResponse.json({ error: "Image is too large (max 5MB)." }, { status: 413 });
+  }
   const ip = callerKey(request);
-  const rl = rateLimit({ name: "photos-upload", key: ip, max: UPLOAD_RATE_MAX, windowMs: UPLOAD_RATE_WINDOW_MS });
+  const rl = await rateLimitAsync({ name: "photos-upload", key: ip, max: UPLOAD_RATE_MAX, windowMs: UPLOAD_RATE_WINDOW_MS });
   if (!rl.allowed) {
+    await logError({
+      source: "photos-upload",
+      severity: "warn",
+      message: `Rate limit exceeded (${rl.currentCount} requests in the current window)`,
+      context: { limit: UPLOAD_RATE_MAX, windowMs: UPLOAD_RATE_WINDOW_MS },
+      ...requestContext(request),
+    });
     return NextResponse.json(
       { error: "Too many uploads — please wait a moment and try again." },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } },
@@ -57,6 +68,20 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  }
+  const userRl = await rateLimitAsync({ name: "photos-upload", key: `user:${user.id}`, max: UPLOAD_RATE_MAX, windowMs: UPLOAD_RATE_WINDOW_MS });
+  if (!userRl.allowed) {
+    await logError({
+      source: "photos-upload",
+      severity: "warn",
+      message: `User upload rate limit exceeded (${userRl.currentCount} requests in the current window)`,
+      context: { limit: UPLOAD_RATE_MAX, windowMs: UPLOAD_RATE_WINDOW_MS },
+      ...requestContext(request),
+    });
+    return NextResponse.json(
+      { error: "Too many uploads — please wait a moment and try again." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(userRl.retryAfterMs / 1000)) } },
+    );
   }
 
   const { data: membership } = await supabase
@@ -107,9 +132,8 @@ export async function POST(request: Request) {
   if (kind !== "signatures" && (typeof entityId !== "string" || !entityId)) {
     return NextResponse.json({ error: "Missing entityId." }, { status: 400 });
   }
-  if (!ALLOWED_TYPES.has(file.type)) {
-    return NextResponse.json({ error: "Please upload a JPEG, PNG, WEBP or HEIC image." }, { status: 400 });
-  }
+  const signatureError = await validateFileSignature(file, ALLOWED_TYPES);
+  if (signatureError) return NextResponse.json({ error: signatureError }, { status: 400 });
   if (file.size > MAX_BYTES) {
     return NextResponse.json({ error: "Image is too large (max 5MB)." }, { status: 400 });
   }
@@ -138,6 +162,7 @@ export async function POST(request: Request) {
       source: "photos-upload",
       severity: "error",
       message: `Storage upload failed: ${uploadError.message}`,
+      organizationId: orgId,
       context: { orgId, kind, entityId: entityId ?? null, path },
       ...requestContext(request),
     });

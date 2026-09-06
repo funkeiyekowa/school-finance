@@ -14,7 +14,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { usePaginatedData } from "@/lib/hooks/usePaginatedData";
 import { uploadProfilePhoto, isImageFile } from "@/lib/photos/storage";
 import { SelfieCapture } from "@/components/photos/SelfieCapture";
-import { Plus, Save, Users, Search, Trash2, IdCard, UploadCloud, Printer } from "lucide-react";
+import { Plus, Save, Users, Search, Trash2, IdCard, UploadCloud, Printer, AlertTriangle } from "lucide-react";
 
 interface StaffRow {
   id: string;
@@ -63,6 +63,7 @@ export default function StaffPage() {
   const [form, setForm] = useState({ staff_code: "", full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active", dual_role: false, is_class_teacher: false, class_teacher_class_id: "", photo_url: "" as string | null });
   const [credNotice, setCredNotice] = useState<{ email: string; name: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [selfieOpen, setSelfieOpen] = useState(false);
@@ -102,27 +103,30 @@ export default function StaffPage() {
 
   // Load departments
   const loadDepartments = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("departments")
       .select("id, name")
       .eq("active", true)
       .order("name");
+    if (error) { setLoadError(error.message); return; }
     setDepartments((data as DeptRow[]) ?? []);
   }, [supabase]);
 
   // Load classes (for the Class Teacher dropdown)
   const loadClasses = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("classes")
       .select("id, name")
       .eq("active", true)
       .order("sequence");
+    if (error) { setLoadError(error.message); return; }
     setClasses((data as ClassRow[]) ?? []);
   }, [supabase]);
 
   // Load current class_id -> staff_id class-teacher assignments
   const loadClassTeachers = useCallback(async () => {
-    const { data } = await supabase.rpc("list_class_teachers");
+    const { data, error } = await supabase.rpc("list_class_teachers");
+    if (error) { setLoadError(error.message); return; }
     const rows = (data as { class_id: string; staff_id: string }[] | null) ?? [];
     const map: Record<string, string> = {};
     for (const r of rows) map[r.class_id] = r.staff_id;
@@ -132,7 +136,8 @@ export default function StaffPage() {
   // Load stats
   const loadStats = useCallback(async () => {
     try {
-      const { data } = await supabase.rpc("staff_stats");
+      const { data, error } = await supabase.rpc("staff_stats");
+      if (error) { setLoadError(error.message); return; }
       if (data && data[0]) {
         const s = data[0];
         setStats({
@@ -143,7 +148,7 @@ export default function StaffPage() {
         });
       }
     } catch (error) {
-      console.error("Failed to load stats:", error);
+      setLoadError(error instanceof Error ? error.message : "Failed to load staff statistics.");
     }
   }, [supabase]);
 
@@ -196,7 +201,9 @@ export default function StaffPage() {
           const { data } = await supabase.rpc("next_staff_code", { p_org: orgId });
           if (typeof data === "string") nextCode = data;
         }
-      } catch { /* fall back to blank */ }
+      } catch (error) {
+        setLoadError(error instanceof Error ? error.message : "Failed to generate a staff code.");
+      }
       setForm({ staff_code: nextCode, full_name: "", email: "", phone: "", job_title: "", staff_type: "teaching", department_id: "", date_joined: "", status: "active", dual_role: false, is_class_teacher: false, class_teacher_class_id: "", photo_url: null });
     }
     setSaveError(null);
@@ -356,6 +363,13 @@ export default function StaffPage() {
       {staffError && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
           <strong className="font-semibold">Failed to load staff:</strong> {staffError}
+        </div>
+      )}
+
+      {loadError && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span><strong className="font-semibold">Some staff data could not be loaded:</strong> {loadError}</span>
         </div>
       )}
 

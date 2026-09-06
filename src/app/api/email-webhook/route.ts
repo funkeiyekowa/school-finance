@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { htmlToText } from "@/lib/alerts/parser";
 import { processAlert } from "@/lib/alerts/processor";
-import { createServiceClient, extractSecret, verifyEmailSecret } from "@/lib/alerts/service";
-import { rateLimit, callerKey } from "@/lib/api/rateLimit";
+import { createServiceClient, extractSecret, validateWebhookTimestamp, verifyEmailSecret } from "@/lib/alerts/service";
+import { rateLimitAsync, callerKey } from "@/lib/api/rateLimit";
 import { logError, requestContext } from "@/lib/errors/logError";
 
 // Per-caller: 60 requests per minute. Gmail Apps Script forwards at
@@ -20,7 +20,7 @@ const EMAIL_RATE_WINDOW_MS = 60_000;
  */
 export async function POST(request: Request) {
   const ip = callerKey(request);
-  const rl = rateLimit({ name: "email-webhook", key: ip, max: EMAIL_RATE_MAX, windowMs: EMAIL_RATE_WINDOW_MS });
+  const rl = await rateLimitAsync({ name: "email-webhook", key: ip, max: EMAIL_RATE_MAX, windowMs: EMAIL_RATE_WINDOW_MS });
   if (!rl.allowed) {
     await logError({
       source: "email-webhook",
@@ -33,6 +33,17 @@ export async function POST(request: Request) {
       { error: "Rate limit exceeded." },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } },
     );
+  }
+
+  const timestampCheck = validateWebhookTimestamp(request);
+  if (!timestampCheck.ok) {
+    await logError({
+      source: "email-webhook",
+      severity: "warn",
+      message: timestampCheck.message ?? "Webhook timestamp rejected.",
+      ...requestContext(request),
+    });
+    return NextResponse.json({ error: timestampCheck.message }, { status: 401 });
   }
 
   const supabase = createServiceClient();
@@ -179,6 +190,7 @@ export async function POST(request: Request) {
       severity: "error",
       message,
       stack: err instanceof Error ? err.stack : null,
+      organizationId,
       context: { from, subject, messageLen: messageText?.length ?? 0 },
       ...requestContext(request),
     });

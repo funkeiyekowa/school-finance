@@ -25,7 +25,7 @@
 
 import { NextResponse } from "next/server";
 import { requireStaffSession } from "@/lib/api/requireStaff";
-import { rateLimit, callerKey } from "@/lib/api/rateLimit";
+import { rateLimitAsync, callerKey } from "@/lib/api/rateLimit";
 import { logError, requestContext } from "@/lib/errors/logError";
 import { AI_PRESETS, type AiTaskKind } from "@/lib/ai/prompts";
 import { resolveProviderForOrg } from "@/lib/ai/resolve";
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
   if (guard) return guard;
 
   const ip = callerKey(request);
-  const rl = rateLimit({ name: "ai-generate", key: ip, max: AI_RATE_MAX, windowMs: AI_RATE_WINDOW_MS });
+  const rl = await rateLimitAsync({ name: "ai-generate", key: ip, max: AI_RATE_MAX, windowMs: AI_RATE_WINDOW_MS });
   if (!rl.allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded. Try again in a moment." },
@@ -82,6 +82,16 @@ export async function POST(request: Request) {
     ? await supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle()
     : { data: null };
   const orgId = (profile as { organization_id?: string | null } | null)?.organization_id ?? null;
+
+  if (user) {
+    const userRl = await rateLimitAsync({ name: "ai-generate", key: `user:${user.id}`, max: AI_RATE_MAX, windowMs: AI_RATE_WINDOW_MS });
+    if (!userRl.allowed) {
+      return NextResponse.json(
+        { error: "Your AI usage limit has been reached. Try again in a moment." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil(userRl.retryAfterMs / 1000)) } },
+      );
+    }
+  }
 
   const provider = await resolveProviderForOrg({ supabase, organizationId: orgId });
   if (!provider) {
