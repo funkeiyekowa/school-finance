@@ -109,14 +109,38 @@ export default function StudentPortalPage() {
     // Clear the "must change password" flag on the student's OWN row.
     // A direct `update students` is blocked by RLS (students is staff-write
     // only, no student self-update policy), which is why the screen used to
-    // reappear — the flag never actually cleared. Use the SECURITY DEFINER
+    // reappear -- the flag never actually cleared. Use the SECURITY DEFINER
     // RPC that clears it for the caller (auth.uid()), matching how the
     // staff/parent ForcePasswordChange flow does it.
     const { error: rpcErr } = await supabase.rpc("clear_must_change_password");
-    if (rpcErr) {
-      // Best-effort fallback (works only if a self-update policy exists).
+
+    // Do NOT trust the RPC's success blindly -- verify the flag is actually
+    // cleared in the database before hiding the screen. This is what used
+    // to bounce students back here forever: the old code hid the modal
+    // unconditionally even when the RPC errored and the RLS-blocked
+    // fallback also silently failed, so the DB flag never actually
+    // cleared while the UI acted like it had.
+    const { data: verifyCtx } = await supabase.rpc("get_my_student_context");
+    const verified = Array.isArray(verifyCtx) && verifyCtx.length > 0
+      ? (verifyCtx[0] as Student).must_change_password === false
+      : null; // couldn't verify -- treat as unverified, not as success
+
+    if (rpcErr || verified !== true) {
+      // Last-resort fallback (works only if a self-update policy exists).
       if (me) await supabase.from("students").update({ must_change_password: false }).eq("id", me.id);
+      const { data: recheck } = await supabase.rpc("get_my_student_context");
+      const stillStuck = !Array.isArray(recheck) || recheck.length === 0
+        || (recheck[0] as Student).must_change_password !== false;
+      if (stillStuck) {
+        setChangeError(
+          "Your password was changed, but we couldn't confirm this screen can be dismissed. " +
+          "Please sign out and sign back in with your new password -- that will clear it."
+        );
+        setChanging(false);
+        return; // keep the modal up; do not lie about success
+      }
     }
+
     // Reflect the cleared flag locally so a subsequent load() (or this one)
     // does not bounce the student straight back to the password screen.
     if (me) setMe({ ...me, must_change_password: false });
