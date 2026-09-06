@@ -29,7 +29,7 @@ import { ArrowLeft, Users, Check, Search, GraduationCap, UserPlus } from "lucide
 import { cn } from "@/lib/utils";
 
 interface ClassRow { id: string; name: string; }
-interface StaffRow { id: string; full_name: string; job_title: string | null; }
+interface StaffRow { id: string; full_name: string; job_title: string | null; email: string | null; user_id: string | null; }
 interface AllocationRow {
   class_id: string;
   class_name: string;
@@ -52,13 +52,17 @@ export default function ClassTeacherAllocationPage() {
   const [selectedClassId, setSelectedClassId] = useState("");
   const [search, setSearch] = useState("");
   const [savingStaffId, setSavingStaffId] = useState<string | null>(null);
+  // Inline "add login" flow for staff with no linked account (user_id null).
+  const [linkingStaffId, setLinkingStaffId] = useState<string | null>(null);
+  const [linkEmail, setLinkEmail] = useState("");
+  const [provisioning, setProvisioning] = useState(false);
 
   const load = useCallback(async () => {
     const [classesRes, teachersRes, allocRes] = await Promise.all([
       supabase.from("classes").select("id, name").eq("active", true).order("sequence"),
       supabase
         .from("staff_members")
-        .select("id, full_name, job_title")
+        .select("id, full_name, job_title, email, user_id")
         .eq("staff_type", "teaching")
         .eq("status", "active")
         .order("full_name"),
@@ -109,6 +113,44 @@ export default function ClassTeacherAllocationPage() {
     if (rpcErr) { setError(rpcErr.message); return; }
     setNotice(alreadyAllocated ? "Teacher removed from this class." : "Teacher allocated to this class.");
     await load();
+  }
+
+  function startLink(staff: StaffRow) {
+    setError(null);
+    setNotice(null);
+    setLinkingStaffId(staff.id);
+    setLinkEmail(staff.email ?? "");
+  }
+
+  async function provisionLogin(staff: StaffRow) {
+    const email = linkEmail.trim();
+    if (!email) { setError("Enter an email address to create the login."); return; }
+    setError(null);
+    setNotice(null);
+    setProvisioning(true);
+    const { error: rpcErr } = await supabase.rpc("provision_staff_login", {
+      p_staff_id: staff.id,
+      p_email: email,
+    });
+    setProvisioning(false);
+    if (rpcErr) { setError(rpcErr.message); return; }
+    setLinkingStaffId(null);
+    setLinkEmail("");
+    setNotice(`Login created for ${staff.full_name}. You can now allocate them to a class.`);
+    // Reload so the teacher's user_id is populated and they become allocatable,
+    // then immediately allocate them to the currently selected class.
+    await load();
+    if (selectedClassId) {
+      setSavingStaffId(staff.id);
+      const { error: allocErr } = await supabase.rpc("add_class_teacher", {
+        p_staff_id: staff.id,
+        p_class_id: selectedClassId,
+      });
+      setSavingStaffId(null);
+      if (allocErr) { setError(allocErr.message); return; }
+      await load();
+      setNotice(`Login created and ${staff.full_name} allocated to this class.`);
+    }
   }
 
   const filteredTeachers = teachers.filter((t) => {
@@ -196,9 +238,70 @@ export default function ClassTeacherAllocationPage() {
                 {filteredTeachers.length === 0 ? (
                   <p className="py-3 text-sm text-gray-400 italic">No teachers match “{search}”.</p>
                 ) : filteredTeachers.map((t) => {
-                  const allocated = isAllocated(t.id);
+                  const linked = !!t.user_id;
+                  const allocated = linked && isAllocated(t.id);
                   const held = classesFor(t.id);
                   const busy = savingStaffId === t.id;
+
+                  // --- Staff with no login account: cannot be allocated until
+                  //     a login is created. Offer an inline "Add login" flow. ---
+                  if (!linked) {
+                    const isLinking = linkingStaffId === t.id;
+                    return (
+                      <div key={t.id} className="py-2.5 px-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-gray-300 bg-gray-50" aria-hidden />
+                            <span className="min-w-0">
+                              <span className="block text-sm font-medium text-gray-800 truncate">{t.full_name}</span>
+                              <span className="block text-[11px] text-amber-600 truncate">No login yet — needs an email to be allocated</span>
+                            </span>
+                          </div>
+                          {!isLinking && (
+                            <button
+                              type="button"
+                              onClick={() => startLink(t)}
+                              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-[#C9A227] bg-white px-3 py-1.5 text-xs font-semibold text-[#0F2A47] hover:bg-[#FBF6E8]"
+                            >
+                              <UserPlus size={13} className="text-[#C9A227]" /> Add login
+                            </button>
+                          )}
+                        </div>
+                        {isLinking && (
+                          <div className="mt-2 ml-8 flex flex-wrap items-center gap-2">
+                            <input
+                              type="email"
+                              autoFocus
+                              value={linkEmail}
+                              onChange={(e) => setLinkEmail(e.target.value)}
+                              placeholder="teacher@school.com"
+                              className="flex-1 min-w-[200px] px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]"
+                            />
+                            <button
+                              type="button"
+                              disabled={provisioning || !linkEmail.trim()}
+                              onClick={() => provisionLogin(t)}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0F2A47] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1B3E63] disabled:opacity-50"
+                            >
+                              {provisioning ? "Creating…" : "Create login & allocate"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={provisioning}
+                              onClick={() => { setLinkingStaffId(null); setLinkEmail(""); }}
+                              className="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                            <p className="w-full text-[11px] text-gray-400">
+                              This creates the teacher&apos;s login (temporary password <strong>ChangeMe123!</strong>, changed on first sign-in) and allocates them to <strong>{selectedClass?.name}</strong>.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
                   return (
                     <button
                       key={t.id}
