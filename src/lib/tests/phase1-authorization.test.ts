@@ -26,6 +26,7 @@ assert.doesNotMatch(migration, /x\.student_id/);
 assert.doesNotMatch(migration, /x\.id\s*=\s*id/);
 assert.doesNotMatch(broadcast, /SET\s+plpgsql\.variable_conflict/);
 assert.match(migration, /DECLARE t text;\s*BEGIN[\s\S]*FOREACH t IN ARRAY ARRAY\['payroll_components'/);
+assert.match(migration, /Clinic\/medical records:[\s\S]*?DO \$\$\s*DECLARE t text;\s*BEGIN[\s\S]*?FOREACH t IN ARRAY ARRAY\['clinic_medications_inventory'/);
 assert.match(broadcast, /DROP FUNCTION IF EXISTS public\.broadcast_announcement_to_inbox\(text, text, text, uuid\)/);
 assert.match(dashboardGuard, /redirect\("\/dashboard"\)/);
 assert.match(dashboardGuard, /org_memberships/);

@@ -614,6 +614,7 @@ END $$;
 -- dispensing logs remain clinic-staff-only.
 -- ---------------------------------------------------------------------------
 DO $$
+DECLARE t text;
 BEGIN
   PERFORM public._reset_policies('clinic_patient_records');
   CREATE POLICY phase1_clinic_patients_staff_all ON public.clinic_patient_records FOR ALL
