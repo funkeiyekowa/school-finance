@@ -31,7 +31,7 @@ import {
 
 interface LessonRow { id: string; course_id: string; title: string; content: string | null; estimated_minutes: number | null; }
 interface QuizRow { id: string; title: string; pass_mark_percent: number; max_attempts: number; }
-interface QuestionRow { id: string; question_text: string; options: { id: string; text: string; is_correct: boolean }[]; explanation: string | null; marks: number; }
+interface QuestionRow { id: string; question_text: string; options: { id: string; text: string; is_correct?: boolean }[]; explanation: string | null; marks: number; }
 interface AttemptRow { id: string; attempt_number: number; score: number | null; percentage: number | null; passed: boolean | null; submitted_at: string | null; }
 interface AnswerRow { question_id: string; selected_option_id: string | null; is_correct: boolean | null; }
 interface DiscussionRow { id: string; title: string; body: string | null; student_id: string | null; staff_id: string | null; status: string; created_at: string; }
@@ -67,10 +67,6 @@ export default function LessonViewerPage() {
     let stuName = "";
     const { data: byProfile } = await supabase.from("students").select("id, full_name").eq("profile_id", user.id).maybeSingle();
     if (byProfile) { stuId = (byProfile as { id: string }).id; stuName = (byProfile as { full_name: string }).full_name; }
-    if (!stuId) {
-      const { data: byEmail } = await supabase.from("students").select("id, full_name").eq("guardian_email", user.email).eq("status", "active").limit(1).maybeSingle();
-      if (byEmail) { stuId = (byEmail as { id: string }).id; stuName = (byEmail as { full_name: string }).full_name; }
-    }
     if (!stuId) { setLoading(false); return; }
     setStudentId(stuId);
     setStudentName(stuName);
@@ -94,7 +90,7 @@ export default function LessonViewerPage() {
     setQuiz(quizRow);
     if (quizRow) {
       const [qqRes, attRes] = await Promise.all([
-        supabase.from("lms_quiz_questions").select("id, question_text, options, explanation, marks").eq("quiz_id", quizRow.id).order("sort_order"),
+        supabase.rpc("phase1_lms_get_quiz_questions", { p_quiz_id: quizRow.id }),
         supabase.from("lms_quiz_attempts").select("id, attempt_number, score, percentage, passed, submitted_at").eq("quiz_id", quizRow.id).eq("student_id", stuId).order("attempt_number", { ascending: false }),
       ]);
       setQuestions((qqRes.data as QuestionRow[]) ?? []);
@@ -130,7 +126,7 @@ export default function LessonViewerPage() {
     if (error) { notify(extractErrorMessage(error, "Failed to update progress."), "error"); return; }
     setProgressStatus("completed");
     notify("Lesson marked complete!");
-    const { data: awarded } = await supabase.rpc("lms_check_and_award_badges", { p_student_id: studentId });
+    const { data: awarded } = await supabase.rpc("phase1_lms_check_and_award_badges", { p_student_id: studentId });
     if (typeof awarded === "number" && awarded > 0) {
       const { data: myBadges } = await supabase
         .from("lms_student_badges")
@@ -164,7 +160,7 @@ export default function LessonViewerPage() {
     setSubmittingQuiz(true);
     try {
       const answers = questions.map((q) => ({ question_id: q.id, selected_option_id: selections[q.id] }));
-      const { data, error } = await supabase.rpc("lms_submit_quiz_attempt", { p_quiz_id: quiz.id, p_student_id: studentId, p_answers: answers }).maybeSingle();
+      const { data, error } = await supabase.rpc("phase1_lms_submit_quiz_attempt", { p_quiz_id: quiz.id, p_student_id: studentId, p_answers: answers }).maybeSingle();
       if (error) throw error;
       const result = data as { attempt_id: string; score_result: number; percentage_result: number; passed_result: boolean };
       setLastResult({ score: result.score_result, percentage: result.percentage_result, passed: result.passed_result });
@@ -172,7 +168,7 @@ export default function LessonViewerPage() {
       setTaking(false);
       setSelections({});
       await load();
-      const { data: awarded } = await supabase.rpc("lms_check_and_award_badges", { p_student_id: studentId });
+      const { data: awarded } = await supabase.rpc("phase1_lms_check_and_award_badges", { p_student_id: studentId });
       if (typeof awarded === "number" && awarded > 0) {
         const { data: myBadges } = await supabase.from("lms_student_badges").select("earned_at, lms_badges(id, name)").eq("student_id", studentId).order("earned_at", { ascending: false }).limit(awarded);
         const rows = ((myBadges as unknown[]) ?? []).map((row) => (row as { lms_badges: { id: string; name: string } | null }).lms_badges).filter((b): b is BadgeAward => b !== null);
@@ -338,7 +334,7 @@ export default function LessonViewerPage() {
                   return (
                     <div key={q.id} className="text-xs bg-gray-50 rounded-lg px-3 py-2">
                       <p className={cn("font-medium", ans?.is_correct ? "text-emerald-600" : "text-red-500")}>{q.question_text}</p>
-                      <p className="text-gray-500 mt-0.5">Correct answer: {q.options.find((o) => o.is_correct)?.text}</p>
+                      <p className="text-gray-500 mt-0.5">Review the explanation above and try the question again.</p>
                       {q.explanation && <p className="text-gray-400 mt-0.5 italic">{q.explanation}</p>}
                     </div>
                   );

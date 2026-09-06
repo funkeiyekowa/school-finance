@@ -68,7 +68,7 @@ export default function LmsHomePage() {
       supabase.from("subjects").select("id, name").order("name"),
       supabase.from("classes").select("id, name").order("name"),
       supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name"),
-      supabase.rpc("lms_course_stats"),
+      supabase.rpc("phase1_lms_course_stats"),
       supabase.from("lms_lessons").select("course_id"),
       supabase.from("lms_enrollments").select("course_id").eq("status", "active"),
     ]);

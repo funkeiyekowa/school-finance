@@ -8,10 +8,11 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit --incremental false",
-    "test": "npm run test:alerts && npm run test:website && npm run test:tenant-spec",
+    "test": "npm run test:alerts && npm run test:website && npm run test:tenant-spec && npm run test:authorization",
     "test:alerts": "tsx src/lib/alerts/dedup.test.ts && tsx src/lib/alerts/matcher.test.ts",
     "test:website": "tsx test.config.ts",
-    "test:tenant-spec": "tsx src/lib/tests/tenant-isolation.test.ts"
+    "test:tenant-spec": "tsx src/lib/tests/tenant-isolation.test.ts",
+    "test:authorization": "tsx src/lib/tests/phase1-authorization.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

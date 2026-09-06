@@ -134,7 +134,7 @@ export default function CourseDetailPage() {
     }
 
     if (c?.leaderboard_enabled) {
-      const { data: lb } = await supabase.rpc("lms_leaderboard", { p_course_id: courseId });
+      const { data: lb } = await supabase.rpc("phase1_lms_leaderboard", { p_course_id: courseId });
       setLeaderboard((lb as LeaderRow[]) ?? []);
     }
 
@@ -589,7 +589,7 @@ export default function CourseDetailPage() {
     (async () => {
       const active = enrollments.filter((e) => e.status === "active");
       const results = await Promise.all(active.map((e) =>
-        supabase.rpc("lms_student_course_progress", { p_course_id: courseId, p_student_id: e.student_id })
+        supabase.rpc("phase1_lms_student_course_progress", { p_course_id: courseId, p_student_id: e.student_id })
       ));
       if (cancelled) return;
       const map: Record<string, ProgressRow> = {};

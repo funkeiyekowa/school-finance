@@ -31,7 +31,7 @@ import { listCustomProviderRows } from "@/lib/ai/customProviders";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET() {
-  const guard = await requireStaffSession();
+  const guard = await requireStaffSession({ permission: "setup" });
   if (guard) return guard;
 
   const supabase = await createClient();

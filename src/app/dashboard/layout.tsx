@@ -15,45 +15,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .select("id, email, full_name, role, active, organization_id, must_change_password")
     .eq("id", user.id).maybeSingle();
 
-  // If no profile found — could be RLS issue or trigger didn't fire
-  // Try to insert one (will succeed if RLS allows, fail silently if not)
   if (!profile) {
-    // Check total profiles to determine if first user
-    const { count } = await supabase
-      .from("profiles")
-      .select("*", { count: "exact", head: true });
-
-    const isFirst = (count ?? 0) === 0;
-
-    // Try to insert — RLS policy "Service can insert profiles" uses `with check (true)`
-    await supabase.from("profiles").insert({
-      id: user.id,
-      email: user.email || "",
-      full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
-      role: isFirst ? "admin" : "pending",
-      active: isFirst,
-    });
-
-    // Re-fetch just the fields the shell needs.
-    const { data: newProfile } = await supabase
-      .from("profiles")
-      .select("id, email, full_name, role, active, organization_id, must_change_password")
-      .eq("id", user.id).maybeSingle();
-
-    if (!newProfile) {
-      // RLS is blocking everything — redirect to pending with explanation
-      redirect("/auth/pending");
-    }
-
-    const _legitimateRolesN = ["student","parent","teacher","admin","owner","super_admin","developer","editor","staff"];
-    const _newOrgId = (newProfile as { organization_id?: string | null }).organization_id ?? null;
-    if (!newProfile.active && !(_legitimateRolesN.includes(newProfile.role ?? "") && Boolean(_newOrgId))) redirect("/auth/pending");
-
-    return (
-      <AuthProvider>
-        <AppShell>{children}</AppShell>
-      </AuthProvider>
-    );
+    // Profiles and memberships are provisioned by trusted server/database flows.
+    // Never bootstrap the first browser user as an administrator.
+    redirect("/auth/pending");
   }
 
   const _legitimateRoles = ["student","parent","teacher","admin","owner","super_admin","developer","editor","staff"];

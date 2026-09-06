@@ -27,6 +27,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireActiveSession } from "@/lib/api/requireSession";
 import { rateLimit, callerKey } from "@/lib/api/rateLimit";
 import { logError, requestContext } from "@/lib/errors/logError";
 import { resolveProviderForOrg } from "@/lib/ai/resolve";
@@ -64,31 +65,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Question is too long -- keep it under 600 characters." }, { status: 400 });
   }
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  const session = await requireActiveSession();
+  if (session instanceof Response) return session;
+  if (session.role !== "student") {
+    return NextResponse.json({ error: "Student access required." }, { status: 403 });
   }
+  const supabase = await createClient();
 
-  // Resolve the caller's student record. Mirrors the pattern already
-  // used by the Student Portal's exam page: students.profile_id first,
-  // guardian_email as a legacy fallback.
+  // Resolve only the student profile linked to the authenticated user.
+  // Guardian email is not an identity boundary and is intentionally rejected.
   const { data: byProfile } = await supabase
     .from("students")
     .select("id, organization_id, full_name")
-    .eq("profile_id", user.id)
+    .eq("profile_id", session.user.id)
+    .eq("organization_id", session.organizationId)
     .maybeSingle();
-  let student = byProfile as { id: string; organization_id: string | null; full_name: string } | null;
-  if (!student) {
-    const { data: byEmail } = await supabase
-      .from("students")
-      .select("id, organization_id, full_name")
-      .eq("guardian_email", user.email)
-      .eq("status", "active")
-      .limit(1)
-      .maybeSingle();
-    student = byEmail as { id: string; organization_id: string | null; full_name: string } | null;
-  }
+  const student = byProfile as { id: string; organization_id: string | null; full_name: string } | null;
   if (!student) {
     return NextResponse.json({ error: "No student record found for this account." }, { status: 403 });
   }

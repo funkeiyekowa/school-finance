@@ -7,7 +7,7 @@
 
 ## Phase 0 outcome
 
-The application builds and the existing local checks pass, but the project is **not yet security-clear for Phase 1**. A private ED25519 SSH key was copied into the repository working tree. The key is not present in Git history, but it is still present at the user's SSH path, referenced by the user's SSH config, and successfully authenticates to GitHub. It must be revoked/rotated before treating the credential exposure as resolved.
+The application builds and the existing local checks pass, but the project is **not yet security-clear for Phase 1**. A private ED25519 SSH key was copied into the repository working tree. The key is not present in Git history, but it is still present at the user's SSH path, referenced by the user's SSH config, and successfully authenticates to GitHub. The user explicitly accepts this residual credential risk for now; the key remains valid and unchanged, and Phase 1 proceeds without modifying it.
 
 No key contents are stored in this document.
 
@@ -23,7 +23,7 @@ No key contents are stored in this document.
 - `git ls-files`, `git log --all`, and object-path searches found no tracked or historical copy of `github_claude`.
 - Repository workflows, `vercel.json`, and package/deployment configuration contain no reference to this private key.
 
-**Required action:** revoke the corresponding GitHub SSH key and create a replacement outside the repository. This has deliberately not been performed without explicit confirmation. The GitHub account and any other service that accepted this key should be reviewed for recent activity.
+**Outstanding risk / future action:** revoke the corresponding GitHub SSH key and create a replacement outside the repository when the user authorizes remediation. This was deliberately not performed per the user's explicit instruction. The GitHub account and any other service that accepted this key should be reviewed for recent activity.
 
 ## Tenant and organization model
 
@@ -60,7 +60,7 @@ Feature permissions are represented by `APP_FEATURES`, role presets, and organiz
 - Dashboard layout performs a server-side `auth.getUser()` check.
 - Sensitive data access is expected to be enforced again by Postgres RLS.
 
-Known validation concern: dashboard fallback provisioning can attempt to create a profile and assign the first profile an admin role. This requires correction in Phase 1; it must not be treated as a safe provisioning boundary.
+Phase 1 removes the dashboard fallback provisioning path that could attempt to create a profile and assign the first profile an admin role. Trusted database/server provisioning remains the required boundary.
 
 ## RLS and sensitive data surface
 
@@ -116,12 +116,10 @@ The photo and proctoring routes construct server-controlled paths. Website media
 
 ## Remaining Phase 0 risks
 
-1. The GitHub SSH credential remains valid and must be revoked/rotated.
-2. Sensitive module RLS is not yet proven role-scoped.
-3. Live cross-tenant and role-based tests have not yet been executed.
-4. First-user admin provisioning is unsafe until corrected.
-5. Production deployment and Supabase migrations remain intentionally unchanged.
+1. The GitHub SSH credential remains valid by explicit user choice; it is an outstanding security risk requiring future remediation.
+2. Live cross-tenant and role-based tests have not yet been executed.
+3. Production deployment and Supabase migrations remain intentionally unchanged.
 
 ## Next phase gate
 
-Phase 1 may begin only after the SSH key is revoked/rotated or the user explicitly accepts the documented residual credential risk. Phase 1 will address RLS, server authorization, tenant isolation tests, and the ambiguous LMS identity fallback before any AI feature work.
+Phase 1 was authorized with the documented residual SSH credential risk. It addresses RLS, server authorization, tenant isolation tests, and the ambiguous LMS identity fallback before any AI feature work.

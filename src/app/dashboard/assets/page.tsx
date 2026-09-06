@@ -93,13 +93,13 @@ export default function AssetsPage() {
     setLoading(true);
     const [aRes, bvRes, asgRes, mRes, dRes, sRes, vRes, statsRes] = await Promise.all([
       supabase.from("assets").select("*").order("asset_code"),
-      supabase.rpc("assets_with_book_value"),
+      supabase.rpc("phase1_assets_with_book_value"),
       supabase.from("asset_assignments").select("*").order("assigned_at", { ascending: false }),
       supabase.from("asset_maintenance").select("*").order("created_at", { ascending: false }),
       supabase.from("asset_disposals").select("*").order("disposal_date", { ascending: false }),
       supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name"),
       supabase.from("vendors").select("id, name").order("name"),
-      supabase.rpc("assets_stats"),
+      supabase.rpc("phase1_assets_stats"),
     ]);
     setAssets((aRes.data as AssetRow[]) ?? []);
     setBookValues((bvRes.data as BookValueRow[]) ?? []);

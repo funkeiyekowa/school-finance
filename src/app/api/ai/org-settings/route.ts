@@ -36,7 +36,7 @@ interface PostBody {
 }
 
 export async function GET(request: Request) {
-  const guard = await requireStaffSession();
+  const guard = await requireStaffSession({ permission: "setup" });
   if (guard) return guard;
 
   const url = new URL(request.url);
@@ -66,7 +66,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const guard = await requireStaffSession();
+  const guard = await requireStaffSession({ permission: "setup" });
   if (guard) return guard;
 
   let body: PostBody;

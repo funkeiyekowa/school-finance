@@ -89,7 +89,7 @@ export default function HostelPage() {
       supabase.from("hostel_incidents").select("*").order("created_at", { ascending: false }),
       supabase.from("students").select("id, full_name, student_code, gender").eq("status", "active").order("full_name"),
       supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name"),
-      supabase.rpc("hostel_stats"),
+      supabase.rpc("phase1_hostel_stats"),
     ]);
     setHouses((hRes.data as HouseRow[]) ?? []);
     setRooms((rRes.data as RoomRow[]) ?? []);

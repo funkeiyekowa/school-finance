@@ -1,5 +1,3 @@
-"use client";
+import { requireDashboardAccess } from "@/lib/api/requireDashboardAccess";
 import { ModuleGuard } from "@/lib/guards/module-guard";
-export default function Layout({ children }: { children: React.ReactNode }) {
-  return <ModuleGuard module="inventory">{children}</ModuleGuard>;
-}
+export default async function InventoryLayout({ children }: { children: React.ReactNode }) { await requireDashboardAccess({ roles: ["owner", "admin", "editor", "staff", "bursar", "accountant", "developer", "super_admin"], permissions: ["inventory"] }); return <ModuleGuard module="inventory">{children}</ModuleGuard>; }

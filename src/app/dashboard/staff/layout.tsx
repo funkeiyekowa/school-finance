@@ -1,12 +1,8 @@
-"use client";
+import { requireDashboardAccess } from "@/lib/api/requireDashboardAccess";
 import { ModuleGuard } from "@/lib/guards/module-guard";
 import { RoleGuard, STAFF_MANAGEMENT_ROLES } from "@/lib/guards/role-guard";
-export default function Layout({ children }: { children: React.ReactNode }) {
-  // Staff HR data — school-wide people management. Not for students/parents;
-  // gate to management roles on top of the org's hr module.
-  return (
-    <ModuleGuard module="hr">
-      <RoleGuard allowedRoles={STAFF_MANAGEMENT_ROLES}>{children}</RoleGuard>
-    </ModuleGuard>
-  );
+
+export default async function StaffLayout({ children }: { children: React.ReactNode }) {
+  await requireDashboardAccess({ roles: ["owner", "admin", "editor", "bursar", "accountant", "developer", "super_admin"], adminOnly: true });
+  return <ModuleGuard module="hr"><RoleGuard allowedRoles={STAFF_MANAGEMENT_ROLES}>{children}</RoleGuard></ModuleGuard>;
 }

@@ -47,7 +47,7 @@ interface Body {
 }
 
 export async function POST(request: Request) {
-  const guard = await requireStaffSession();
+  const guard = await requireStaffSession({ permission: "setup" });
   if (guard) return guard;
 
   const ip = callerKey(request);

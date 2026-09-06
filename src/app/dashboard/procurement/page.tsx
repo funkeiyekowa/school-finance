@@ -85,7 +85,7 @@ export default function ProcurementPage() {
       supabase.from("departments").select("id, name").order("name"),
       supabase.from("vendors").select("id, name, vendor_code").order("name"),
       supabase.from("inventory_items").select("id, name").eq("active", true).order("name"),
-      supabase.rpc("procurement_stats"),
+      supabase.rpc("phase1_procurement_stats"),
     ]);
     setRequests((rRes.data as RequestRow[]) ?? []);
     setRequestItems((riRes.data as RequestItemRow[]) ?? []);

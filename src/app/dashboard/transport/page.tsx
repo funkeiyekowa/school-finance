@@ -89,7 +89,7 @@ export default function TransportPage() {
       supabase.from("transport_student_assignments").select("*").order("created_at", { ascending: false }),
       supabase.from("students").select("id, full_name, student_code").eq("status", "active").order("full_name"),
       supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name"),
-      supabase.rpc("transport_stats"),
+      supabase.rpc("phase1_transport_stats"),
     ]);
     setVehicles((vRes.data as VehicleRow[]) ?? []);
     setRoutes((rRes.data as RouteRow[]) ?? []);

@@ -4,9 +4,7 @@
  * Student LMS home — browse published courses, see enrolled courses
  * with progress, and view earned badges.
  *
- * Student identity resolution follows the same pattern as
- * /dashboard/my-exams: students.profile_id first, guardian_email as a
- * legacy fallback.
+ * Student identity is the authenticated user's linked students.profile_id.
  */
 
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -48,10 +46,6 @@ export default function MyCoursesPage() {
     let stuId: string | null = null;
     const { data: byProfile } = await supabase.from("students").select("id").eq("profile_id", user.id).maybeSingle();
     stuId = (byProfile as { id: string } | null)?.id ?? null;
-    if (!stuId) {
-      const { data: byEmail } = await supabase.from("students").select("id").eq("guardian_email", user.email).eq("status", "active").limit(1).maybeSingle();
-      stuId = (byEmail as { id: string } | null)?.id ?? null;
-    }
     if (!stuId) { setLoading(false); return; }
     setStudentId(stuId);
 
@@ -72,7 +66,7 @@ export default function MyCoursesPage() {
 
     const active = enrollRows.filter((e) => e.status === "active");
     if (active.length > 0) {
-      const results = await Promise.all(active.map((e) => supabase.rpc("lms_student_course_progress", { p_course_id: e.course_id, p_student_id: stuId })));
+      const results = await Promise.all(active.map((e) => supabase.rpc("phase1_lms_student_course_progress", { p_course_id: e.course_id, p_student_id: stuId })));
       const map: Record<string, ProgressRow> = {};
       active.forEach((e, i) => {
         const row = results[i].data?.[0] as ProgressRow | undefined;

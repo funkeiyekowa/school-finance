@@ -87,7 +87,7 @@ export default function LibraryPage() {
       supabase.from("library_reservations").select("*").order("reserved_at", { ascending: false }),
       supabase.from("students").select("id, full_name, student_code").eq("status", "active").order("full_name"),
       supabase.from("staff_members").select("id, full_name, staff_code").eq("status", "active").order("full_name"),
-      supabase.rpc("library_stats"),
+      supabase.rpc("phase1_library_stats"),
     ]);
     setBooks((bRes.data as BookRow[]) ?? []);
     setCopies((cRes.data as CopyRow[]) ?? []);

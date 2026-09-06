@@ -152,7 +152,7 @@ export default function ClinicPage() {
       supabase.from("clinic_medications_inventory").select("*").order("name"),
       supabase.from("clinic_vaccinations").select("*").order("administered_date", { ascending: false }),
       supabase.from("clinic_health_incidents").select("*").order("incident_date", { ascending: false }),
-      supabase.rpc("clinic_stats"),
+      supabase.rpc("phase1_clinic_stats"),
     ]);
     setStudents((stRes.data as StudentOption[]) ?? []);
     setStaff((sfRes.data as StaffOption[]) ?? []);

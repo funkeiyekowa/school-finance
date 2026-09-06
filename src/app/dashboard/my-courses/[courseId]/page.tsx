@@ -43,18 +43,14 @@ export default function StudentCoursePage() {
     let stuId: string | null = null;
     const { data: byProfile } = await supabase.from("students").select("id").eq("profile_id", user.id).maybeSingle();
     stuId = (byProfile as { id: string } | null)?.id ?? null;
-    if (!stuId) {
-      const { data: byEmail } = await supabase.from("students").select("id").eq("guardian_email", user.email).eq("status", "active").limit(1).maybeSingle();
-      stuId = (byEmail as { id: string } | null)?.id ?? null;
-    }
     if (!stuId) { setLoading(false); return; }
     setStudentId(stuId);
 
     const [cRes, lRes, progRes, lbRes] = await Promise.all([
       supabase.from("lms_courses").select("id, title, description, cover_color, leaderboard_enabled").eq("id", courseId).maybeSingle(),
       supabase.from("lms_lessons").select("id, title, sort_order, estimated_minutes").eq("course_id", courseId).eq("status", "published").order("sort_order"),
-      supabase.rpc("lms_student_course_progress", { p_course_id: courseId, p_student_id: stuId }),
-      supabase.rpc("lms_leaderboard", { p_course_id: courseId }),
+      supabase.rpc("phase1_lms_student_course_progress", { p_course_id: courseId, p_student_id: stuId }),
+      supabase.rpc("phase1_lms_leaderboard", { p_course_id: courseId }),
     ]);
     const c = cRes.data as CourseRow | null;
     setCourse(c);

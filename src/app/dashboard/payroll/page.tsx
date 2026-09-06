@@ -80,7 +80,7 @@ export default function PayrollPage() {
       supabase.from("payroll_components").select("*").order("type").order("name"),
       supabase.from("payroll_staff_components").select("*"),
       supabase.from("staff_members").select("id, full_name, staff_code, salary, status").eq("status", "active").order("full_name"),
-      supabase.rpc("payroll_stats"),
+      supabase.rpc("phase1_payroll_stats"),
     ]);
     setRuns((rRes.data as RunRow[]) ?? []);
     setComponents((cRes.data as ComponentRow[]) ?? []);
