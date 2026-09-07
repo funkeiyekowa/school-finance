@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Save, CheckCircle2, Users, ClipboardCheck, Printer } from "lucide-react";
+import { Save, CheckCircle2, Users, ClipboardCheck, Printer, User } from "lucide-react";
 
 interface ClassRow { id: string; name: string; short_code: string; sequence: number; }
 interface StatusRow { id: string; code: string; label: string; color: string; counts_as_present: boolean; is_default: boolean; sort_order: number; }
@@ -193,6 +193,13 @@ export default function AttendancePage() {
               title="Printable attendance summary — per-class attendance % across a date range"
             >
               <Printer size={10} /> Summary report
+            </button>
+            <button
+              onClick={() => window.open("/dashboard/attendance/student", "_blank")}
+              className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#0F2A47] text-[#0F2A47] hover:bg-gray-50 flex items-center gap-1"
+              title="Per-student attendance report — view attendance history and rate for an individual student"
+            >
+              <User size={10} /> Student report
             </button>
             {selectedClassId && students.length > 0 && (
               <div className="flex items-center gap-2 ml-auto flex-wrap">
