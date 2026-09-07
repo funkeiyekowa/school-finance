@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Save, CheckCircle2, Users, ClipboardCheck, Printer, User } from "lucide-react";
+import { Save, CheckCircle2, Users, ClipboardCheck, Printer, User, QrCode, ScanLine } from "lucide-react";
+import Link from "next/link";
 
 interface ClassRow { id: string; name: string; short_code: string; sequence: number; organization_id: string; }
 interface StatusRow { id: string; code: string; label: string; color: string; counts_as_present: boolean; is_default: boolean; sort_order: number; }
@@ -206,6 +207,22 @@ export default function AttendancePage() {
             >
               <User size={10} /> Student report
             </button>
+            <Link href="/dashboard/attendance/qr-print">
+              <button
+                className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#C9A227] text-[#C9A227] hover:bg-yellow-50 flex items-center gap-1"
+                title="Print student QR codes for scanning"
+              >
+                <QrCode size={10} /> QR Print
+              </button>
+            </Link>
+            <Link href="/dashboard/attendance/scan">
+              <button
+                className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#C9A227] text-[#C9A227] hover:bg-yellow-50 flex items-center gap-1"
+                title="Scan QR codes to record attendance"
+              >
+                <ScanLine size={10} /> QR Scan
+              </button>
+            </Link>
             {selectedClassId && students.length > 0 && (
               <div className="flex items-center gap-2 ml-auto flex-wrap">
                 <span className="text-xs text-gray-500">Quick:</span>
