@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Save, CheckCircle2, Users, ClipboardCheck, Printer, User } from "lucide-react";
 
-interface ClassRow { id: string; name: string; short_code: string; sequence: number; }
+interface ClassRow { id: string; name: string; short_code: string; sequence: number; organization_id: string; }
 interface StatusRow { id: string; code: string; label: string; color: string; counts_as_present: boolean; is_default: boolean; sort_order: number; }
 interface StudentRow { id: string; student_code: string; full_name: string; grade: string | null; }
 interface RecordRow { id: string; student_id: string; status_code: string; remarks: string | null; }
@@ -35,7 +35,7 @@ export default function AttendancePage() {
 
   const loadBase = useCallback(async () => {
     const [clsRes, statusRes] = await Promise.all([
-      supabase.from("classes").select("id, name, short_code, sequence").eq("active", true).order("sequence"),
+      supabase.from("classes").select("id, name, short_code, sequence, organization_id").eq("active", true).order("sequence"),
       supabase.from("attendance_statuses").select("*").eq("active", true).order("sort_order"),
     ]);
 
@@ -69,11 +69,16 @@ export default function AttendancePage() {
     const selectedClass = classes.find(c => c.id === selectedClassId);
     if (!selectedClass) return;
 
-    // Students matching this class (by grade name or enrollment)
+    // Students matching this class (by grade name or enrollment).
+    // Filter by the class's own organization_id so that platform admins
+    // (whose RLS bypasses org isolation) only see students belonging to
+    // the school that owns the selected class — exactly matching what
+    // record_attendance_batch() validates against server-side.
     const { data: stuData } = await supabase
       .from("students")
       .select("id, student_code, full_name, grade")
       .eq("status", "active")
+      .eq("organization_id", selectedClass.organization_id)
       .or(`grade.eq.${selectedClass.name},grade.eq.${selectedClass.short_code}`)
       .order("full_name");
 
