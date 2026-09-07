@@ -109,59 +109,28 @@ export default function AttendancePage() {
     if (!selectedClassId || students.length === 0) return;
     setSaving(true);
 
-    // Find the current academic year
-    const { data: yearData } = await supabase
-      .from("academic_years")
-      .select("id")
-      .eq("status", "current")
-      .limit(1)
-      .maybeSingle();
-    const yearId = yearData?.id || null;
-
-    // Upsert attendance records for each student
-    const records = students.map(stu => ({
+    // Build the marks array for the batch RPC.
+    // The RPC resolves org, academic year, and caller identity
+    // server-side — the client sends only the class, date,
+    // session, and per-student status selections.
+    const marksPayload = students.map(stu => ({
       student_id: stu.id,
-      class_id: selectedClassId,
-      academic_year_id: yearId,
-      subject_id: null,
-      date: selectedDate,
       status_code: marks[stu.id] || "present",
-      session,
-      recorded_by: profile?.full_name || profile?.email,
-      organization_id: orgId,
     }));
 
-    // Delete existing records for this class/date/session then insert fresh
-    // (upsert with the composite unique constraint)
-    const studentIds = students.map(s => s.id);
-    const { error: delErr } = await supabase
-      .from("attendance_records")
-      .delete()
-      .eq("date", selectedDate)
-      .eq("session", session)
-      .eq("class_id", selectedClassId)
-      .in("student_id", studentIds);
-    if (delErr) {
-      console.warn("attendance delete failed:", delErr.message);
-      alert(`Could not clear previous marks: ${delErr.message}`);
-      setSaving(false);
-      return;
-    }
-
-    const { error: insErr } = await supabase.from("attendance_records").insert(records);
-    if (insErr) {
-      alert(`Could not save attendance: ${insErr.message}`);
-      setSaving(false);
-      return;
-    }
-
-    await supabase.from("activity_log").insert({
-      user_email: profile?.email,
-      user_name: profile?.full_name,
-      action: "Record Attendance",
-      details: `${classes.find(c => c.id === selectedClassId)?.name} — ${selectedDate} — ${students.length} students`,
-      organization_id: orgId,
+    const { data, error } = await supabase.rpc("record_attendance_batch", {
+      p_class_id: selectedClassId,
+      p_date: selectedDate,
+      p_session: session,
+      p_marks: marksPayload,
     });
+
+    if (error) {
+      console.warn("record_attendance_batch failed:", error.message);
+      alert(`Could not save attendance: ${error.message}`);
+      setSaving(false);
+      return;
+    }
 
     setSaving(false);
     setSaved(true);
