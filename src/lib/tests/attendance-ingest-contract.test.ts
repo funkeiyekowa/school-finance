@@ -116,5 +116,8 @@ assert.doesNotMatch(route, /record_attendance_batch/, "route must NOT call recor
 assert.match(route, /Array\.isArray\(marks\)/, "route must validate marks is an array");
 assert.match(route, /marks\.length === 0/, "route must reject empty marks array");
 
+// httpStatusForDbError must map "not enrolled in device class" to 422
+assert.match(route, /not enrolled in device class/, "route must map unenrolled-student DB error to 422 (Phase 3)");
+
 console.log("Attendance ingest contract checks passed.");
 console.log("Live verification required: valid device token → 200 with correct capture_method; invalid token → 401; inactive device → 401; cross-org student → 422; manual attendance page unaffected.");

@@ -56,7 +56,8 @@ function httpStatusForDbError(message: string): number {
     message.includes("not found in") ||
     message.includes("not valid for") ||
     message.includes("marks array is empty") ||
-    message.includes("must have student_id")
+    message.includes("must have student_id") ||
+    message.includes("not enrolled in device class")
   )
     return 422;
   return 500;
