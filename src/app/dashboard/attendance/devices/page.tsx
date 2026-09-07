@@ -5,13 +5,18 @@
  *
  * Admin-only page for managing attendance capture devices (QR / RFID).
  *
+ * What it does:
+ *   - Lists all devices registered for the current organization.
+ *   - Lets an admin register a new device (choose type, class, label).
+ *   - Shows the one-time token immediately after registration.
+ *   - Lets an admin deactivate a device (active → false; no delete).
+ *
  * Authorization: isOrgAdmin from useAuth() — consistent with
  * /dashboard/setup/class-teachers/page.tsx and other setup pages.
  * All mutations go through authenticated API routes that independently
  * re-verify the caller's org and role server-side.
  *
- * The plaintext device token is never stored. It is shown once immediately
- * after registration and never retrievable again.
+ * token_hash is never fetched or displayed.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -35,7 +40,7 @@ interface DeviceRow {
   label: string | null;
   active: boolean;
   created_at: string;
-  class_name?: string;
+  class_name?: string; // joined client-side
 }
 
 interface ClassRow {
@@ -53,6 +58,7 @@ export default function AttendanceDevicesPage() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // Registration modal state
   const [showRegister, setShowRegister] = useState(false);
   const [form, setForm] = useState<{
     device_type: DeviceType;
@@ -62,9 +68,11 @@ export default function AttendanceDevicesPage() {
   const [registering, setRegistering] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // One-time token display modal
   const [newToken, setNewToken] = useState<string | null>(null);
   const [tokenCopied, setTokenCopied] = useState(false);
 
+  // Deactivation state
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -105,6 +113,7 @@ export default function AttendanceDevicesPage() {
     load();
   }, [load]);
 
+  // ---- Admin guard ----
   if (!isOrgAdmin) {
     return (
       <div className="p-6 text-gray-500">
@@ -115,6 +124,7 @@ export default function AttendanceDevicesPage() {
 
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
 
+  // ---- Register a new device ----
   async function handleRegister() {
     setFormError(null);
     if (!form.class_id) {
@@ -149,6 +159,7 @@ export default function AttendanceDevicesPage() {
     }
   }
 
+  // ---- Deactivate a device ----
   async function handleDeactivate(id: string) {
     setDeactivatingId(id);
     try {
@@ -178,22 +189,20 @@ export default function AttendanceDevicesPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto">
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => router.push("/dashboard/attendance")}
+          className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+        >
+          <ArrowLeft className="w-4 h-4" /> Attendance
+        </button>
+        <Button onClick={() => setShowRegister(true)} className="flex items-center gap-2">
+          <Plus className="w-4 h-4" /> Register Device
+        </Button>
+      </div>
       <PageHeader
         title="Attendance Capture Devices"
         subtitle="Manage QR and RFID devices that record student attendance."
-        left={
-          <button
-            onClick={() => router.push("/dashboard/attendance")}
-            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
-          >
-            <ArrowLeft className="w-4 h-4" /> Attendance
-          </button>
-        }
-        right={
-          <Button onClick={() => setShowRegister(true)} className="flex items-center gap-2">
-            <Plus className="w-4 h-4" /> Register Device
-          </Button>
-        }
       />
 
       {error && (
@@ -267,11 +276,12 @@ export default function AttendanceDevicesPage() {
         </CardContent>
       </Card>
 
-      {showRegister && (
-        <Modal
-          title="Register New Device"
-          onClose={() => { setShowRegister(false); setFormError(null); }}
-        >
+      {/* Registration modal */}
+      <Modal
+        open={showRegister}
+        title="Register New Device"
+        onClose={() => { setShowRegister(false); setFormError(null); }}
+      >
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -337,14 +347,14 @@ export default function AttendanceDevicesPage() {
               </Button>
             </div>
           </div>
-        </Modal>
-      )}
+      </Modal>
 
-      {newToken && (
-        <Modal
-          title="Device Registered — Save Your Token"
-          onClose={() => setNewToken(null)}
-        >
+      {/* One-time token display modal */}
+      <Modal
+        open={!!newToken}
+        title="Device Registered — Save Your Token"
+        onClose={() => setNewToken(null)}
+      >
           <div className="space-y-4">
             <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
               <strong>Important:</strong> This token will not be shown again. Copy it now
@@ -366,8 +376,7 @@ export default function AttendanceDevicesPage() {
               <Button onClick={() => setNewToken(null)}>Done</Button>
             </div>
           </div>
-        </Modal>
-      )}
+      </Modal>
     </div>
   );
 }
