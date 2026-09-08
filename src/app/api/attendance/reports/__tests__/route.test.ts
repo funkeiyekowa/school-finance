@@ -46,12 +46,13 @@ assert.ok(teacherCheck < recordsQuery, "teacher_assignments check must precede a
 console.log("PASS: teacher class scoping enforced before attendance query");
 
 // ------------------------------------------------------------------
-// 5. HR/admin roles bypass teacher check
+// 5. HR/admin/super_admin roles bypass teacher check
 // ------------------------------------------------------------------
 assert.match(routeSrc, /HR_ACCESS_ROLES/, "Route must define HR_ACCESS_ROLES");
 assert.match(routeSrc, /"admin"/, "HR_ACCESS_ROLES must include admin");
 assert.match(routeSrc, /"owner"/, "HR_ACCESS_ROLES must include owner");
-console.log("PASS: HR_ACCESS_ROLES bypass teacher class gate");
+assert.match(routeSrc, /"super_admin"/, "HR_ACCESS_ROLES must include super_admin");
+console.log("PASS: HR_ACCESS_ROLES bypass teacher class gate (admin/owner/super_admin)");
 
 // ------------------------------------------------------------------
 // 6. Class must belong to caller's org — no cross-org access
@@ -100,5 +101,35 @@ console.log("PASS: date format and range validation present");
 // ------------------------------------------------------------------
 assert.match(routeSrc, /phase1_active_role/, "Route must call phase1_active_role");
 console.log("PASS: phase1_active_role called for role determination");
+
+// ------------------------------------------------------------------
+// 11. SuperAdmin: is_platform_admin() called; class query skips org filter
+// ------------------------------------------------------------------
+assert.match(routeSrc, /is_platform_admin/, "Route must call is_platform_admin()");
+assert.match(routeSrc, /isPlatformAdmin/, "Route must use isPlatformAdmin flag");
+// The org filter on classes is conditional on !isPlatformAdmin
+assert.match(routeSrc, /if\s*\(!isPlatformAdmin\)/, "Org filter on classes must be conditional for platform admins");
+// effectiveOrgId must be derived from class row for platform admins
+assert.match(routeSrc, /effectiveOrgId/, "Route must use effectiveOrgId for cross-org platform admin access");
+assert.match(routeSrc, /organization_id.*effectiveOrgId|effectiveOrgId.*organization_id/, "Records must be scoped by effectiveOrgId");
+console.log("PASS: SuperAdmin bypasses class org filter via is_platform_admin()");
+
+// ------------------------------------------------------------------
+// 12. Role authorization matrix encoded correctly in source
+// ------------------------------------------------------------------
+// super_admin in HR_ACCESS_ROLES → passes role gate
+const hrRolesMatch = routeSrc.match(/HR_ACCESS_ROLES\s*=\s*new Set\(\[([^\]]+)\]\)/);
+assert.ok(hrRolesMatch, "HR_ACCESS_ROLES set must be parseable");
+const hrRoles = hrRolesMatch![1];
+assert.ok(hrRoles.includes('"super_admin"'), "super_admin must be in HR_ACCESS_ROLES");
+assert.ok(hrRoles.includes('"admin"'), "admin must be in HR_ACCESS_ROLES");
+assert.ok(hrRoles.includes('"owner"'), "owner must be in HR_ACCESS_ROLES");
+// teacher path — must check teacher_assignments before attendance_records
+const teacherGateIdx = routeSrc.indexOf('activeRole === "teacher"');
+const recordsQueryIdx = routeSrc.indexOf('.from("attendance_records")');
+assert.ok(teacherGateIdx < recordsQueryIdx, "teacher gate must precede attendance_records query");
+// unauthorized role — must return 403
+assert.match(routeSrc, /status: 403/, "Unauthorized roles must get 403 status");
+console.log("PASS: role authorization matrix correct (super_admin/admin/owner=full, teacher=scoped, other=403)");
 
 console.log("\n✓ All attendance reports route contract tests passed.");

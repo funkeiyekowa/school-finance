@@ -34,7 +34,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-const HR_ACCESS_ROLES = new Set(["admin", "owner", "principal", "hr_manager", "hr"]);
+const HR_ACCESS_ROLES = new Set(["admin", "owner", "principal", "hr_manager", "hr", "super_admin"]);
 
 
 
@@ -101,23 +101,33 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // 4. Verify class belongs to org
-  const { data: classRow, error: classErr } = await supabase
+  // 4. Verify class exists — platform admins (super_admin) may query any org's class.
+  //    All other roles must belong to the same org as the class.
+  const { data: isPlatformAdmin } = await supabase.rpc("is_platform_admin");
+  const classQuery = supabase
     .from("classes")
-    .select("id, name")
-    .eq("id", class_id)
-    .eq("organization_id", orgId)
-    .single();
+    .select("id, name, organization_id")
+    .eq("id", class_id);
+  if (!isPlatformAdmin) {
+    classQuery.eq("organization_id", orgId);
+  }
+  const { data: classRow, error: classErr } = await classQuery.single();
 
   if (classErr || !classRow) {
     return NextResponse.json({ error: "class not found" }, { status: 403 });
   }
 
+  // For platform admins the effective org is the class's own org.
+  // For all others it is (and must be) the caller's org.
+  const effectiveOrgId: string = isPlatformAdmin
+    ? (classRow as { id: string; name: string; organization_id: string }).organization_id
+    : orgId;
+
   // 5. Fetch attendance records
   const { data: records, error: recordsErr } = await supabase
     .from("attendance_records")
     .select("student_id, date, session, status_code")
-    .eq("organization_id", orgId)
+    .eq("organization_id", effectiveOrgId)
     .eq("class_id", class_id)
     .gte("date", date_from)
     .lte("date", date_to)
