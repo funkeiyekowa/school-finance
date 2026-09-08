@@ -7,9 +7,11 @@ import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Save, CheckCircle2, Users, ClipboardCheck, Printer } from "lucide-react";
+import { Save, CheckCircle2, Users, ClipboardCheck, Printer, User, QrCode, ScanLine, Radio, CreditCard } from "lucide-react";
+import Link from "next/link";
+import InsightsPanel from "./_components/InsightsPanel";
 
-interface ClassRow { id: string; name: string; short_code: string; sequence: number; }
+interface ClassRow { id: string; name: string; short_code: string; sequence: number; organization_id: string; }
 interface StatusRow { id: string; code: string; label: string; color: string; counts_as_present: boolean; is_default: boolean; sort_order: number; }
 interface StudentRow { id: string; student_code: string; full_name: string; grade: string | null; }
 interface RecordRow { id: string; student_id: string; status_code: string; remarks: string | null; }
@@ -33,11 +35,16 @@ export default function AttendancePage() {
   // Attendance state: student_id → status_code
   const [marks, setMarks] = useState<Record<string, string>>({});
 
+  // Capture config — which methods this org has enabled
+  const [captureConfig, setCaptureConfig] = useState<{ enabled_capture_methods: string[]; ai_insights_enabled: boolean }>({ enabled_capture_methods: ["manual"], ai_insights_enabled: false });
+
   const loadBase = useCallback(async () => {
-    const [clsRes, statusRes] = await Promise.all([
-      supabase.from("classes").select("id, name, short_code, sequence").eq("active", true).order("sequence"),
+    const [clsRes, statusRes, cfgRes] = await Promise.all([
+      supabase.from("classes").select("id, name, short_code, sequence, organization_id").eq("active", true).order("sequence"),
       supabase.from("attendance_statuses").select("*").eq("active", true).order("sort_order"),
+      supabase.rpc("get_my_attendance_capture_settings"),
     ]);
+    if (cfgRes.data) setCaptureConfig(cfgRes.data as { enabled_capture_methods: string[]; ai_insights_enabled: boolean });
 
     let allClasses = (clsRes.data as ClassRow[]) ?? [];
 
@@ -69,11 +76,16 @@ export default function AttendancePage() {
     const selectedClass = classes.find(c => c.id === selectedClassId);
     if (!selectedClass) return;
 
-    // Students matching this class (by grade name or enrollment)
+    // Students matching this class (by grade name or enrollment).
+    // Filter by the class's own organization_id so that platform admins
+    // (whose RLS bypasses org isolation) only see students belonging to
+    // the school that owns the selected class — exactly matching what
+    // record_attendance_batch() validates against server-side.
     const { data: stuData } = await supabase
       .from("students")
       .select("id, student_code, full_name, grade")
       .eq("status", "active")
+      .eq("organization_id", selectedClass.organization_id)
       .or(`grade.eq.${selectedClass.name},grade.eq.${selectedClass.short_code}`)
       .order("full_name");
 
@@ -109,59 +121,28 @@ export default function AttendancePage() {
     if (!selectedClassId || students.length === 0) return;
     setSaving(true);
 
-    // Find the current academic year
-    const { data: yearData } = await supabase
-      .from("academic_years")
-      .select("id")
-      .eq("status", "current")
-      .limit(1)
-      .maybeSingle();
-    const yearId = yearData?.id || null;
-
-    // Upsert attendance records for each student
-    const records = students.map(stu => ({
+    // Build the marks array for the batch RPC.
+    // The RPC resolves org, academic year, and caller identity
+    // server-side — the client sends only the class, date,
+    // session, and per-student status selections.
+    const marksPayload = students.map(stu => ({
       student_id: stu.id,
-      class_id: selectedClassId,
-      academic_year_id: yearId,
-      subject_id: null,
-      date: selectedDate,
       status_code: marks[stu.id] || "present",
-      session,
-      recorded_by: profile?.full_name || profile?.email,
-      organization_id: orgId,
     }));
 
-    // Delete existing records for this class/date/session then insert fresh
-    // (upsert with the composite unique constraint)
-    const studentIds = students.map(s => s.id);
-    const { error: delErr } = await supabase
-      .from("attendance_records")
-      .delete()
-      .eq("date", selectedDate)
-      .eq("session", session)
-      .eq("class_id", selectedClassId)
-      .in("student_id", studentIds);
-    if (delErr) {
-      console.warn("attendance delete failed:", delErr.message);
-      alert(`Could not clear previous marks: ${delErr.message}`);
-      setSaving(false);
-      return;
-    }
-
-    const { error: insErr } = await supabase.from("attendance_records").insert(records);
-    if (insErr) {
-      alert(`Could not save attendance: ${insErr.message}`);
-      setSaving(false);
-      return;
-    }
-
-    await supabase.from("activity_log").insert({
-      user_email: profile?.email,
-      user_name: profile?.full_name,
-      action: "Record Attendance",
-      details: `${classes.find(c => c.id === selectedClassId)?.name} — ${selectedDate} — ${students.length} students`,
-      organization_id: orgId,
+    const { data, error } = await supabase.rpc("record_attendance_batch", {
+      p_class_id: selectedClassId,
+      p_date: selectedDate,
+      p_session: session,
+      p_marks: marksPayload,
     });
+
+    if (error) {
+      console.warn("record_attendance_batch failed:", error.message);
+      alert(`Could not save attendance: ${error.message}`);
+      setSaving(false);
+      return;
+    }
 
     setSaving(false);
     setSaved(true);
@@ -225,6 +206,53 @@ export default function AttendancePage() {
             >
               <Printer size={10} /> Summary report
             </button>
+            <button
+              onClick={() => window.open("/dashboard/attendance/student", "_blank")}
+              className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#0F2A47] text-[#0F2A47] hover:bg-gray-50 flex items-center gap-1"
+              title="Per-student attendance report — view attendance history and rate for an individual student"
+            >
+              <User size={10} /> Student report
+            </button>
+            {captureConfig.enabled_capture_methods.includes("qr") && (
+              <>
+                <Link href="/dashboard/attendance/qr-print">
+                  <button
+                    className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#C9A227] text-[#C9A227] hover:bg-yellow-50 flex items-center gap-1"
+                    title="Print student QR codes for scanning"
+                  >
+                    <QrCode size={10} /> QR Print
+                  </button>
+                </Link>
+                <Link href="/dashboard/attendance/scan">
+                  <button
+                    className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#C9A227] text-[#C9A227] hover:bg-yellow-50 flex items-center gap-1"
+                    title="Scan QR codes to record attendance"
+                  >
+                    <ScanLine size={10} /> QR Scan
+                  </button>
+                </Link>
+              </>
+            )}
+            {captureConfig.enabled_capture_methods.includes("rfid") && (
+              <>
+                <Link href="/dashboard/attendance/rfid-scan">
+                  <button
+                    className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#C9A227] text-[#C9A227] hover:bg-yellow-50 flex items-center gap-1"
+                    title="Scan RFID/NFC cards to record attendance"
+                  >
+                    <Radio size={10} /> RFID Scan
+                  </button>
+                </Link>
+                <Link href="/dashboard/attendance/rfid-cards">
+                  <button
+                    className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#0F2A47] text-[#0F2A47] hover:bg-gray-50 flex items-center gap-1"
+                    title="Assign RFID/NFC cards to students"
+                  >
+                    <CreditCard size={10} /> RFID Cards
+                  </button>
+                </Link>
+              </>
+            )}
             {selectedClassId && students.length > 0 && (
               <div className="flex items-center gap-2 ml-auto flex-wrap">
                 <span className="text-xs text-gray-500">Quick:</span>
@@ -357,6 +385,13 @@ export default function AttendancePage() {
           )}
         </div>
       )}
+
+      {/* AI Insights Panel */}
+      <InsightsPanel
+        captureConfig={captureConfig}
+        allowedClassIds={classes.map(c => c.id)}
+        classes={classes}
+      />
     </div>
   );
 }
