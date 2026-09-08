@@ -39,7 +39,27 @@ export default function AttendancePage() {
   const [marks, setMarks] = useState<Record<string, string>>({});
 
   // Capture config — which methods this org has enabled
-  const [captureConfig, setCaptureConfig] = useState<{ enabled_capture_methods: string[]; ai_insights_enabled: boolean }>({ enabled_capture_methods: ["manual"], ai_insights_enabled: false });
+  const [captureConfig, setCaptureConfig] = useState<{
+    enabled_capture_methods: string[];
+    ai_insights_enabled: boolean;
+    subject_attendance_enabled: boolean;
+    period_selection_enabled: boolean;
+    class_level_attendance_enabled: boolean;
+    subject_required_for_attendance: boolean;
+    manual_session_enabled: boolean;
+    attendance_reports_enabled: boolean;
+    attendance_csv_export_enabled: boolean;
+  }>({
+    enabled_capture_methods: ["manual"],
+    ai_insights_enabled: false,
+    subject_attendance_enabled: true,
+    period_selection_enabled: true,
+    class_level_attendance_enabled: true,
+    subject_required_for_attendance: false,
+    manual_session_enabled: true,
+    attendance_reports_enabled: true,
+    attendance_csv_export_enabled: true,
+  });
 
   const loadBase = useCallback(async () => {
     const [clsRes, statusRes, cfgRes] = await Promise.all([
@@ -47,7 +67,20 @@ export default function AttendancePage() {
       supabase.from("attendance_statuses").select("*").eq("active", true).order("sort_order"),
       supabase.rpc("get_my_attendance_capture_settings"),
     ]);
-    if (cfgRes.data) setCaptureConfig(cfgRes.data as { enabled_capture_methods: string[]; ai_insights_enabled: boolean });
+    if (cfgRes.data) {
+      const cfgRow = (Array.isArray(cfgRes.data) ? cfgRes.data[0] : cfgRes.data) as typeof captureConfig;
+      setCaptureConfig({
+        enabled_capture_methods:         cfgRow.enabled_capture_methods         ?? ["manual"],
+        ai_insights_enabled:             cfgRow.ai_insights_enabled             ?? false,
+        subject_attendance_enabled:      cfgRow.subject_attendance_enabled      ?? true,
+        period_selection_enabled:        cfgRow.period_selection_enabled        ?? true,
+        class_level_attendance_enabled:  cfgRow.class_level_attendance_enabled  ?? true,
+        subject_required_for_attendance: cfgRow.subject_required_for_attendance ?? false,
+        manual_session_enabled:          cfgRow.manual_session_enabled          ?? true,
+        attendance_reports_enabled:      cfgRow.attendance_reports_enabled      ?? true,
+        attendance_csv_export_enabled:   cfgRow.attendance_csv_export_enabled   ?? true,
+      });
+    }
 
     let allClasses = (clsRes.data as ClassRow[]) ?? [];
 
@@ -72,16 +105,16 @@ export default function AttendancePage() {
 
   useEffect(() => { loadBase(); }, [loadBase]);
 
-  // Fetch subjects when a class is selected
+  // Fetch subjects when a class is selected (only when subject attendance is enabled)
   useEffect(() => {
     setSelectedSubjectId("");
     setSubjects([]);
-    if (!selectedClassId) return;
+    if (!selectedClassId || !captureConfig.subject_attendance_enabled) return;
     fetch(`/api/attendance/subjects?class_id=${selectedClassId}`)
       .then(r => r.json())
       .then(d => setSubjects(d.subjects ?? []))
       .catch(() => setSubjects([]));
-  }, [selectedClassId]);
+  }, [selectedClassId, captureConfig.subject_attendance_enabled]);
 
   // Load students for selected class + existing records for selected date
   const loadClassData = useCallback(async () => {
@@ -139,6 +172,11 @@ export default function AttendancePage() {
 
   async function saveAttendance() {
     if (!selectedClassId || students.length === 0) return;
+    // Phase 8.1: if subject is required, block save without one
+    if (captureConfig.subject_required_for_attendance && captureConfig.subject_attendance_enabled && !selectedSubjectId) {
+      alert("Please select a subject before saving attendance.");
+      return;
+    }
     setSaving(true);
 
     // Build the marks array for the batch RPC.
@@ -218,21 +256,30 @@ export default function AttendancePage() {
               <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
                 className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]" />
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Session</label>
-              <select value={session} onChange={e => setSession(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]">
-                <option value="full_day">Full Day</option>
-                <option value="morning">Morning</option>
-                <option value="afternoon">Afternoon</option>
-              </select>
-            </div>
-            {selectedClassId && subjects.length > 0 && (
+            {captureConfig.period_selection_enabled && (
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Subject <span className="font-normal text-gray-400">(optional)</span></label>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Session</label>
+                <select value={session} onChange={e => setSession(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]">
+                  <option value="full_day">Full Day</option>
+                  <option value="morning">Morning</option>
+                  <option value="afternoon">Afternoon</option>
+                </select>
+              </div>
+            )}
+            {selectedClassId && captureConfig.subject_attendance_enabled && subjects.length > 0 && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">
+                  Subject{" "}
+                  {captureConfig.subject_required_for_attendance
+                    ? <span className="font-normal text-red-400">(required)</span>
+                    : <span className="font-normal text-gray-400">(optional)</span>}
+                </label>
                 <select value={selectedSubjectId} onChange={e => setSelectedSubjectId(e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] min-w-[160px]">
-                  <option value="">Class-level (no subject)</option>
+                  {captureConfig.class_level_attendance_enabled && !captureConfig.subject_required_for_attendance && (
+                    <option value="">Class-level (no subject)</option>
+                  )}
                   {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
@@ -291,14 +338,16 @@ export default function AttendancePage() {
                 </Link>
               </>
             )}
-            <Link href="/dashboard/attendance/reports">
-              <button
-                className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center gap-1"
-                title="View attendance summary report and export CSV"
-              >
-                <BarChart3 size={10} /> Reports
-              </button>
-            </Link>
+            {captureConfig.attendance_reports_enabled && (
+              <Link href="/dashboard/attendance/reports">
+                <button
+                  className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center gap-1"
+                  title="View attendance summary report and export CSV"
+                >
+                  <BarChart3 size={10} /> Reports
+                </button>
+              </Link>
+            )}
             {selectedClassId && students.length > 0 && (
               <div className="flex items-center gap-2 ml-auto flex-wrap">
                 <span className="text-xs text-gray-500">Quick:</span>

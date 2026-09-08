@@ -3,8 +3,8 @@
 /**
  * /dashboard/setup/attendance-capture
  *
- * Lets an org admin configure which attendance capture methods are
- * enabled for their school, and toggle the AI insights layer.
+ * Lets an org admin configure attendance capture methods, the AI insights
+ * layer, and the Phase 8.1 subject/session/reporting flags.
  *
  * Backed by attendance_capture_settings (one row per org).
  * RLS: any org member can read; only org admins can write.
@@ -35,7 +35,58 @@ interface ACSRow {
   organization_id: string;
   enabled_capture_methods: CaptureMethod[];
   ai_insights_enabled: boolean;
+  subject_attendance_enabled: boolean;
+  period_selection_enabled: boolean;
+  class_level_attendance_enabled: boolean;
+  subject_required_for_attendance: boolean;
+  manual_session_enabled: boolean;
+  attendance_reports_enabled: boolean;
+  attendance_csv_export_enabled: boolean;
 }
+
+interface BoolToggle {
+  key: keyof ACSRow;
+  label: string;
+  description: string;
+}
+
+const BOOL_TOGGLES: BoolToggle[] = [
+  {
+    key: "subject_attendance_enabled",
+    label: "Subject-Level Attendance",
+    description: "Allow teachers to record attendance per subject, in addition to the whole-class daily register.",
+  },
+  {
+    key: "class_level_attendance_enabled",
+    label: "Class-Level Attendance",
+    description: "Allow class-level (no subject) attendance records. When turned off, a subject must always be selected.",
+  },
+  {
+    key: "subject_required_for_attendance",
+    label: "Require Subject Selection",
+    description: "Force teachers to pick a subject before saving attendance. Only meaningful when subject-level attendance is enabled.",
+  },
+  {
+    key: "period_selection_enabled",
+    label: "Period / Session Selection",
+    description: "Show the session dropdown (Full Day / Morning / Afternoon) on the capture page.",
+  },
+  {
+    key: "manual_session_enabled",
+    label: "Manual Entry Session",
+    description: "Include Manual as a capture method in the session dropdown. Disable only if you want all sessions driven by hardware devices.",
+  },
+  {
+    key: "attendance_reports_enabled",
+    label: "Attendance Reports",
+    description: "Show the Reports link on the attendance page and allow generating class attendance reports.",
+  },
+  {
+    key: "attendance_csv_export_enabled",
+    label: "CSV Export",
+    description: "Show the Export CSV button on the reports page. Requires Attendance Reports to be enabled.",
+  },
+];
 
 export default function AttendanceCaptureSettingsPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -46,6 +97,15 @@ export default function AttendanceCaptureSettingsPage() {
   const [rowId, setRowId] = useState<string | null>(null);
   const [enabled, setEnabled] = useState<Set<CaptureMethod>>(new Set(["manual"]));
   const [aiEnabled, setAiEnabled] = useState(false);
+  const [boolFlags, setBoolFlags] = useState<Record<string, boolean>>({
+    subject_attendance_enabled: true,
+    period_selection_enabled: true,
+    class_level_attendance_enabled: true,
+    subject_required_for_attendance: false,
+    manual_session_enabled: true,
+    attendance_reports_enabled: true,
+    attendance_csv_export_enabled: true,
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,23 +114,37 @@ export default function AttendanceCaptureSettingsPage() {
     if (err || !data) {
       setError(err?.message ?? "Could not load settings.");
     } else {
-      const row = data as unknown as ACSRow;
+      // RPC now returns TABLE — data is an array with one row
+      const row = (Array.isArray(data) ? data[0] : data) as ACSRow;
       setRowId(row.id);
       setEnabled(new Set((row.enabled_capture_methods ?? ["manual"]) as CaptureMethod[]));
       setAiEnabled(row.ai_insights_enabled ?? false);
+      setBoolFlags({
+        subject_attendance_enabled:      row.subject_attendance_enabled      ?? true,
+        period_selection_enabled:        row.period_selection_enabled        ?? true,
+        class_level_attendance_enabled:  row.class_level_attendance_enabled  ?? true,
+        subject_required_for_attendance: row.subject_required_for_attendance ?? false,
+        manual_session_enabled:          row.manual_session_enabled          ?? true,
+        attendance_reports_enabled:      row.attendance_reports_enabled      ?? true,
+        attendance_csv_export_enabled:   row.attendance_csv_export_enabled   ?? true,
+      });
     }
     setLoading(false);
   }, [supabase]);
 
   useEffect(() => { load(); }, [load]);
 
-  function toggle(code: CaptureMethod) {
+  function toggleMethod(code: CaptureMethod) {
     if (code === "manual") return; // always on
     setEnabled(prev => {
       const next = new Set(prev);
       if (next.has(code)) next.delete(code); else next.add(code);
       return next;
     });
+  }
+
+  function toggleBool(key: string) {
+    setBoolFlags(prev => ({ ...prev, [key]: !prev[key] }));
   }
 
   async function save() {
@@ -82,6 +156,7 @@ export default function AttendanceCaptureSettingsPage() {
       .update({
         enabled_capture_methods: Array.from(enabled),
         ai_insights_enabled: aiEnabled,
+        ...boolFlags,
         updated_at: new Date().toISOString(),
       })
       .eq("id", rowId);
@@ -100,7 +175,7 @@ export default function AttendanceCaptureSettingsPage() {
         icon={<ScanLine size={22} />}
         gradient="emerald"
         title="Attendance Capture"
-        subtitle="Configure which capture methods your school uses"
+        subtitle="Configure which capture methods and attendance features your school uses"
       />
       <div className="flex items-center gap-3">
         <Link href="/dashboard/setup">
@@ -110,6 +185,8 @@ export default function AttendanceCaptureSettingsPage() {
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">{error}</div>
       )}
+
+      {/* Capture Methods */}
       <Card>
         <CardHeader><CardTitle>Capture Methods</CardTitle></CardHeader>
         <CardContent className="space-y-3">
@@ -122,7 +199,7 @@ export default function AttendanceCaptureSettingsPage() {
                   <button
                     type="button"
                     disabled={isLocked}
-                    onClick={() => toggle(m.code)}
+                    onClick={() => toggleMethod(m.code)}
                     className={`w-11 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#C9A227] ${isOn ? "bg-emerald-500" : "bg-gray-300"} ${isLocked ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
                     aria-checked={isOn}
                     role="switch"
@@ -146,6 +223,36 @@ export default function AttendanceCaptureSettingsPage() {
         </CardContent>
       </Card>
 
+      {/* Attendance Feature Flags */}
+      <Card>
+        <CardHeader><CardTitle>Attendance Features</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {BOOL_TOGGLES.map(t => {
+            const isOn = boolFlags[t.key as string] ?? true;
+            return (
+              <div key={t.key as string} className={`flex items-start gap-4 rounded-lg border p-4 transition-colors ${isOn ? "border-emerald-200 bg-emerald-50" : "border-gray-200 bg-white"}`}>
+                <div className="mt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => toggleBool(t.key as string)}
+                    className={`w-11 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#C9A227] ${isOn ? "bg-emerald-500" : "bg-gray-300"} cursor-pointer`}
+                    aria-checked={isOn}
+                    role="switch"
+                  >
+                    <span className={`block w-5 h-5 rounded-full bg-white shadow transform transition-transform mx-0.5 ${isOn ? "translate-x-5" : "translate-x-0"}`} />
+                  </button>
+                </div>
+                <div>
+                  <div className="font-semibold text-sm text-gray-800">{t.label}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{t.description}</div>
+                </div>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      {/* AI Intelligence */}
       <Card>
         <CardHeader><CardTitle>AI Attendance Intelligence</CardTitle></CardHeader>
         <CardContent>

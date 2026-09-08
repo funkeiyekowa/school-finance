@@ -12,6 +12,9 @@
  *   2. current_user_org_id() → 403  (is_platform_admin() → use class org)
  *   3. phase1_active_role() → teacher: must be assigned to class; admin/super_admin: all
  *
+ * Phase 8.1 enforcement:
+ *   4. subject_attendance_enabled → 403 when disabled
+ *
  * Response:
  *   { subjects: [{ id, name, short_code }] }
  *   Subjects are active, belong to the resolved org, and — for teachers — match
@@ -22,6 +25,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 const HR_ACCESS_ROLES = new Set(["admin", "owner", "principal", "hr_manager", "hr", "super_admin"]);
+
+interface ACSConfig {
+  subject_attendance_enabled: boolean;
+}
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(req.url);
@@ -60,7 +67,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     effectiveOrgId = (classRow as { organization_id: string }).organization_id;
   }
 
-  // 4. Role
+  // 4. Phase 8.1 — check subject_attendance_enabled for the resolved org
+  const { data: cfgData } = await supabase.rpc("get_my_attendance_capture_settings");
+  const cfgRow = (Array.isArray(cfgData) ? cfgData[0] : cfgData) as ACSConfig | null;
+  const subjectAttendanceEnabled = cfgRow?.subject_attendance_enabled ?? true;
+
+  if (!subjectAttendanceEnabled) {
+    return NextResponse.json({ error: "subject-level attendance is disabled for this organisation" }, { status: 403 });
+  }
+
+  // 5. Role
   const { data: roleData } = await supabase.rpc("phase1_active_role");
   const activeRole = (roleData as string | null) ?? "";
 
@@ -68,7 +84,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "not authorized" }, { status: 403 });
   }
 
-  // 5. Teacher: must be assigned to this class
+  // 6. Teacher: must be assigned to this class
   if (activeRole === "teacher") {
     const { data: assignments } = await supabase
       .from("teacher_assignments")
@@ -103,7 +119,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ subjects: subjects ?? [] });
   }
 
-  // 6. Admin / super_admin: all active subjects in the org
+  // 7. Admin / super_admin: all active subjects in the org
   const { data: subjects } = await supabase
     .from("subjects")
     .select("id, name, short_code")

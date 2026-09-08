@@ -17,6 +17,8 @@
  *   3. phase1_active_role() → teacher: must be assigned to this class
  *      hr_access roles (admin/owner/hr/principal): all classes
  *   4. class must belong to caller's org → 403
+ *   5. attendance_reports_enabled check → 403 (Phase 8.1)
+ *   6. attendance_csv_export_enabled check for CSV → 403 (Phase 8.1)
  *
  * Response JSON:
  *   {
@@ -38,7 +40,10 @@ import { createClient } from "@/lib/supabase/server";
 
 const HR_ACCESS_ROLES = new Set(["admin", "owner", "principal", "hr_manager", "hr", "super_admin"]);
 
-
+interface ACSConfig {
+  attendance_reports_enabled: boolean;
+  attendance_csv_export_enabled: boolean;
+}
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(req.url);
@@ -126,7 +131,23 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     ? (classRow as { id: string; name: string; organization_id: string }).organization_id
     : orgId;
 
-  // 5. Fetch attendance records — class-level (subject_id IS NULL) or subject-level
+  // 5. Phase 8.1 — check org-level attendance config flags
+  const { data: cfgData } = await supabase.rpc("get_my_attendance_capture_settings");
+  const cfgRow = (Array.isArray(cfgData) ? cfgData[0] : cfgData) as ACSConfig | null;
+  const cfg: ACSConfig = {
+    attendance_reports_enabled:    cfgRow?.attendance_reports_enabled    ?? true,
+    attendance_csv_export_enabled: cfgRow?.attendance_csv_export_enabled ?? true,
+  };
+
+  if (!cfg.attendance_reports_enabled) {
+    return NextResponse.json({ error: "attendance reports are disabled for this organisation" }, { status: 403 });
+  }
+
+  if (format === "csv" && !cfg.attendance_csv_export_enabled) {
+    return NextResponse.json({ error: "CSV export is disabled for this organisation" }, { status: 403 });
+  }
+
+  // 6. Fetch attendance records — class-level (subject_id IS NULL) or subject-level
   let recordsQuery = supabase
     .from("attendance_records")
     .select("student_id, date, session, status_code")
@@ -152,7 +173,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     student_id: string; date: string; session: string; status_code: string;
   }[];
 
-  // 6. Fetch students enrolled in this class
+  // 7. Fetch students enrolled in this class
   const { data: enrollments } = await supabase
     .from("class_enrollments")
     .select("student_id, students(id, student_code, first_name, last_name)")
@@ -173,7 +194,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
-  // 7. Fetch status labels
+  // 8. Fetch status labels
   const { data: statusRows } = await supabase
     .from("attendance_statuses")
     .select("code, label, counts_as_present")
@@ -184,7 +205,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // Unique sorted dates
   const dates = [...new Set(allRecords.map(r => r.date))].sort();
 
-  // 8. Return
+  // 9. Return
   if (format === "csv") {
     const statusMap = new Map(statuses.map(s => [s.code, s.label]));
     const studentMap = new Map(students.map(s => [s.student_id, s]));

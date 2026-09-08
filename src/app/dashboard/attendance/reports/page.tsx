@@ -64,12 +64,20 @@ export default function AttendanceReportsPage() {
   const [report, setReport] = useState<ReportData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [csvExportEnabled, setCsvExportEnabled] = useState(true);
 
   // Load classes the user can see (teacher: assigned only; admin: all)
   const loadClasses = useCallback(async () => {
     if (!user) return;
-    const { data: roleData } = await supabase.rpc("phase1_active_role");
-    const role = (roleData as string | null) ?? "";
+    const [roleRes, cfgRes] = await Promise.all([
+      supabase.rpc("phase1_active_role"),
+      supabase.rpc("get_my_attendance_capture_settings"),
+    ]);
+    const role = (roleRes.data as string | null) ?? "";
+
+    // Phase 8.1 — read CSV export flag
+    const cfgRow = (Array.isArray(cfgRes.data) ? cfgRes.data[0] : cfgRes.data) as { attendance_csv_export_enabled?: boolean } | null;
+    setCsvExportEnabled(cfgRow?.attendance_csv_export_enabled ?? true);
 
     let q = supabase.from("classes").select("id, name").order("name");
 
@@ -225,7 +233,7 @@ export default function AttendanceReportsPage() {
           <Button variant="gold" size="sm" onClick={fetchReport} disabled={!classId || loading}>
             {loading ? "Loading…" : "Generate Report"}
           </Button>
-          {report && (
+          {report && csvExportEnabled && (
             <Button variant="ghost" size="sm" onClick={exportCsv} disabled={exporting}>
               <Download size={14} /> {exporting ? "Exporting…" : "Export CSV"}
             </Button>
