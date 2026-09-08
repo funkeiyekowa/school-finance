@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Save, CheckCircle2, Users, ClipboardCheck, Printer, User, QrCode, ScanLine } from "lucide-react";
+import { Save, CheckCircle2, Users, ClipboardCheck, Printer, User, QrCode, ScanLine, Radio, CreditCard } from "lucide-react";
 import Link from "next/link";
 import InsightsPanel from "./_components/InsightsPanel";
 
@@ -229,6 +229,26 @@ export default function AttendancePage() {
                     title="Scan QR codes to record attendance"
                   >
                     <ScanLine size={10} /> QR Scan
+                  </button>
+                </Link>
+              </>
+            )}
+            {captureConfig.enabled_capture_methods.includes("rfid") && (
+              <>
+                <Link href="/dashboard/attendance/rfid-scan">
+                  <button
+                    className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#C9A227] text-[#C9A227] hover:bg-yellow-50 flex items-center gap-1"
+                    title="Scan RFID/NFC cards to record attendance"
+                  >
+                    <Radio size={10} /> RFID Scan
+                  </button>
+                </Link>
+                <Link href="/dashboard/attendance/rfid-cards">
+                  <button
+                    className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#0F2A47] text-[#0F2A47] hover:bg-gray-50 flex items-center gap-1"
+                    title="Assign RFID/NFC cards to students"
+                  >
+                    <CreditCard size={10} /> RFID Cards
                   </button>
                 </Link>
               </>
