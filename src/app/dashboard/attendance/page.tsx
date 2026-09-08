@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Save, CheckCircle2, Users, ClipboardCheck, Printer, User, QrCode, ScanLine } from "lucide-react";
 import Link from "next/link";
+import InsightsPanel from "./_components/InsightsPanel";
 
 interface ClassRow { id: string; name: string; short_code: string; sequence: number; organization_id: string; }
 interface StatusRow { id: string; code: string; label: string; color: string; counts_as_present: boolean; is_default: boolean; sort_order: number; }
@@ -35,7 +36,7 @@ export default function AttendancePage() {
   const [marks, setMarks] = useState<Record<string, string>>({});
 
   // Capture config — which methods this org has enabled
-  const [captureConfig, setCaptureConfig] = useState<{ enabled_capture_methods: string[] }>({ enabled_capture_methods: ["manual"] });
+  const [captureConfig, setCaptureConfig] = useState<{ enabled_capture_methods: string[]; ai_insights_enabled: boolean }>({ enabled_capture_methods: ["manual"], ai_insights_enabled: false });
 
   const loadBase = useCallback(async () => {
     const [clsRes, statusRes, cfgRes] = await Promise.all([
@@ -43,7 +44,7 @@ export default function AttendancePage() {
       supabase.from("attendance_statuses").select("*").eq("active", true).order("sort_order"),
       supabase.rpc("get_my_attendance_capture_settings"),
     ]);
-    if (cfgRes.data) setCaptureConfig(cfgRes.data as { enabled_capture_methods: string[] });
+    if (cfgRes.data) setCaptureConfig(cfgRes.data as { enabled_capture_methods: string[]; ai_insights_enabled: boolean });
 
     let allClasses = (clsRes.data as ClassRow[]) ?? [];
 
@@ -364,6 +365,13 @@ export default function AttendancePage() {
           )}
         </div>
       )}
+
+      {/* AI Insights Panel */}
+      <InsightsPanel
+        captureConfig={captureConfig}
+        allowedClassIds={classes.map(c => c.id)}
+        classes={classes}
+      />
     </div>
   );
 }

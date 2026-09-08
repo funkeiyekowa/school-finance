@@ -43,7 +43,8 @@ export type AiTaskKind =
   | "message_shorten"
   | "message_translate"
   | "message_announcement_draft"
-  | "message_thread_summary";
+  | "message_thread_summary"
+  | "attendance_insights";
 
 export interface AiPreset {
   kind: AiTaskKind;
@@ -413,6 +414,40 @@ ${input}` : input;
     system: `${CORE_STYLE} Summarize this chat conversation for someone who has not read it. 3-6 bullet-style sentences (write them as short sentences, not literal bullet characters): who said what of substance, any decisions or action items, and anything requiring a response. Skip greetings and small talk.`,
     compose: (input) => input,
     maxTokens: 350,
+  },
+  attendance_insights: {
+    kind: "attendance_insights" as AiTaskKind,
+    label: "Attendance insights",
+    description: "Analyse pre-computed attendance statistics and return structured findings as JSON.",
+    system: `You are an attendance analysis assistant for a school management system.
+You receive pre-computed, anonymised attendance statistics. You do NOT have access to raw student data, names, or identifiers.
+
+You must respond with valid JSON only — no markdown fences, no explanation outside the JSON.
+Your response must match this exact schema:
+{
+  "summary": "string (2-3 sentences, factual overview)",
+  "findings": [
+    {
+      "type": "fact" | "pattern" | "suggestion" | "data_quality_issue",
+      "severity": "info" | "warning" | "alert",
+      "scope": "student" | "class" | "school" | "recording",
+      "ref": "the exact ref string from the input data",
+      "title": "short label",
+      "detail": "factual description with statistics from the provided data",
+      "suggested_action": "only include this field if type is suggestion; soft advisory language only"
+    }
+  ]
+}
+
+Rules:
+- Do not invent data not present in the input.
+- Do not forecast future behaviour.
+- Do not make disciplinary recommendations.
+- Do not reference any student by name — use only the ref values from the input.
+- Do not include suggested_action on findings of type fact, pattern, or data_quality_issue.
+- Keep language factual, neutral, and professional.`,
+    compose: (input) => input,
+    maxTokens: 2000,
   },
 };
 
