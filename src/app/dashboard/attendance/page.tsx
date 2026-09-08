@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Save, CheckCircle2, Users, ClipboardCheck, Printer, User, QrCode, ScanLine, Radio, CreditCard } from "lucide-react";
+import { Save, CheckCircle2, Users, ClipboardCheck, Printer, User, QrCode, ScanLine, Radio, CreditCard, BarChart3 } from "lucide-react";
 import Link from "next/link";
 import InsightsPanel from "./_components/InsightsPanel";
 
@@ -253,6 +253,14 @@ export default function AttendancePage() {
                 </Link>
               </>
             )}
+            <Link href="/dashboard/attendance/reports">
+              <button
+                className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center gap-1"
+                title="View attendance summary report and export CSV"
+              >
+                <BarChart3 size={10} /> Reports
+              </button>
+            </Link>
             {selectedClassId && students.length > 0 && (
               <div className="flex items-center gap-2 ml-auto flex-wrap">
                 <span className="text-xs text-gray-500">Quick:</span>
