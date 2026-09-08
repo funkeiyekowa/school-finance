@@ -4,23 +4,32 @@
 --
 -- default_session      — which session the capture page pre-selects
 --                        ('full_day' | 'morning' | 'afternoon')
--- default_attendance_mode — 'class' (class-level, no subject pre-selected)
---                           'subject' (subject selector pre-selected)
+-- default_attendance_mode — 'class' or 'subject'
 --
--- Both columns have permissive defaults that preserve current behaviour
--- for all existing schools.
+-- Both columns use IF NOT EXISTS so this migration is safe to re-run
+-- after the previous failed attempt (which may have partially applied
+-- the ALTER TABLE before the function replacement was rejected).
+--
+-- The function replacement uses DROP + CREATE (not CREATE OR REPLACE)
+-- because PostgreSQL disallows changing a RETURNS TABLE column list
+-- via CREATE OR REPLACE, even when the language and body are identical.
+-- The existing Phase 8.1 function signature is dropped explicitly.
 -- ============================================================
 
+-- Step 1: Add columns (safe to re-run — IF NOT EXISTS is idempotent)
 ALTER TABLE public.attendance_capture_settings
   ADD COLUMN IF NOT EXISTS default_session          text NOT NULL DEFAULT 'full_day'
     CHECK (default_session IN ('full_day', 'morning', 'afternoon')),
   ADD COLUMN IF NOT EXISTS default_attendance_mode  text NOT NULL DEFAULT 'class'
     CHECK (default_attendance_mode IN ('class', 'subject'));
 
--- ============================================================
--- Replace get_my_attendance_capture_settings to expose new columns.
--- ============================================================
-CREATE OR REPLACE FUNCTION public.get_my_attendance_capture_settings()
+-- Step 2: Drop the Phase 8.1 function (exact signature).
+-- This is safe: the new function immediately below restores it with the
+-- two new columns added. GRANT is re-applied in Step 3.
+DROP FUNCTION IF EXISTS public.get_my_attendance_capture_settings();
+
+-- Step 3: Re-create with both new columns in the return type.
+CREATE FUNCTION public.get_my_attendance_capture_settings()
 RETURNS TABLE (
   id                              uuid,
   organization_id                 uuid,
