@@ -34,11 +34,16 @@ export default function AttendancePage() {
   // Attendance state: student_id → status_code
   const [marks, setMarks] = useState<Record<string, string>>({});
 
+  // Capture config — which methods this org has enabled
+  const [captureConfig, setCaptureConfig] = useState<{ enabled_capture_methods: string[] }>({ enabled_capture_methods: ["manual"] });
+
   const loadBase = useCallback(async () => {
-    const [clsRes, statusRes] = await Promise.all([
+    const [clsRes, statusRes, cfgRes] = await Promise.all([
       supabase.from("classes").select("id, name, short_code, sequence, organization_id").eq("active", true).order("sequence"),
       supabase.from("attendance_statuses").select("*").eq("active", true).order("sort_order"),
+      supabase.rpc("get_my_attendance_capture_settings"),
     ]);
+    if (cfgRes.data) setCaptureConfig(cfgRes.data as { enabled_capture_methods: string[] });
 
     let allClasses = (clsRes.data as ClassRow[]) ?? [];
 
@@ -207,22 +212,26 @@ export default function AttendancePage() {
             >
               <User size={10} /> Student report
             </button>
-            <Link href="/dashboard/attendance/qr-print">
-              <button
-                className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#C9A227] text-[#C9A227] hover:bg-yellow-50 flex items-center gap-1"
-                title="Print student QR codes for scanning"
-              >
-                <QrCode size={10} /> QR Print
-              </button>
-            </Link>
-            <Link href="/dashboard/attendance/scan">
-              <button
-                className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#C9A227] text-[#C9A227] hover:bg-yellow-50 flex items-center gap-1"
-                title="Scan QR codes to record attendance"
-              >
-                <ScanLine size={10} /> QR Scan
-              </button>
-            </Link>
+            {captureConfig.enabled_capture_methods.includes("qr") && (
+              <>
+                <Link href="/dashboard/attendance/qr-print">
+                  <button
+                    className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#C9A227] text-[#C9A227] hover:bg-yellow-50 flex items-center gap-1"
+                    title="Print student QR codes for scanning"
+                  >
+                    <QrCode size={10} /> QR Print
+                  </button>
+                </Link>
+                <Link href="/dashboard/attendance/scan">
+                  <button
+                    className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#C9A227] text-[#C9A227] hover:bg-yellow-50 flex items-center gap-1"
+                    title="Scan QR codes to record attendance"
+                  >
+                    <ScanLine size={10} /> QR Scan
+                  </button>
+                </Link>
+              </>
+            )}
             {selectedClassId && students.length > 0 && (
               <div className="flex items-center gap-2 ml-auto flex-wrap">
                 <span className="text-xs text-gray-500">Quick:</span>

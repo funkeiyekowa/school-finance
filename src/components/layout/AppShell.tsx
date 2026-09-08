@@ -202,6 +202,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/setup/subject-teachers", label: "Subject Teachers", icon: <GraduationCap size={17} />, adminOnly: true },
       { href: "/dashboard/setup/class-teachers", label: "Class Teachers", icon: <Users size={17} />, adminOnly: true },
       { href: "/dashboard/setup/timetable", label: "Timetable Setup", icon: <Printer size={17} />, adminOnly: true },
+      { href: "/dashboard/setup/attendance-capture", label: "Attendance Capture", icon: <Camera size={17} />, adminOnly: true },
       { href: "/dashboard/ai-assistant-settings", label: "AI Assistant Settings", icon: <Sparkles size={17} />, adminOnly: true },
     ],
   },
