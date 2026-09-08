@@ -26,6 +26,7 @@ import Link from "next/link";
 const supabase = createClient();
 
 interface ClassRow { id: string; name: string; }
+interface SubjectRow { id: string; name: string; short_code: string; }
 interface StatusMeta { code: string; label: string; counts_as_present: boolean; }
 interface StudentSummary {
   student_id: string; student_code: string; full_name: string;
@@ -54,6 +55,8 @@ export default function AttendanceReportsPage() {
   const { user } = useAuth();
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [classId, setClassId] = useState("");
+  const [subjects, setSubjects] = useState<SubjectRow[]>([]);
+  const [subjectId, setSubjectId] = useState("");
   const range = defaultDateRange();
   const [dateFrom, setDateFrom] = useState(range.from);
   const [dateTo, setDateTo] = useState(range.to);
@@ -88,13 +91,25 @@ export default function AttendanceReportsPage() {
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
 
+  // Fetch subjects for the selected class
+  useEffect(() => {
+    setSubjectId("");
+    setSubjects([]);
+    if (!classId) return;
+    fetch(`/api/attendance/subjects?class_id=${classId}`)
+      .then(r => r.json())
+      .then(d => setSubjects(d.subjects ?? []))
+      .catch(() => setSubjects([]));
+  }, [classId]);
+
   const fetchReport = useCallback(async () => {
     if (!classId) return;
     setLoading(true);
     setError(null);
     setReport(null);
     try {
-      const url = `/api/attendance/reports?class_id=${encodeURIComponent(classId)}&date_from=${dateFrom}&date_to=${dateTo}`;
+      const subjectParam = subjectId ? `&subject_id=${encodeURIComponent(subjectId)}` : "";
+      const url = `/api/attendance/reports?class_id=${encodeURIComponent(classId)}&date_from=${dateFrom}&date_to=${dateTo}${subjectParam}`;
       const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? `Error ${res.status}`); return; }
@@ -104,13 +119,14 @@ export default function AttendanceReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [classId, dateFrom, dateTo]);
+  }, [classId, subjectId, dateFrom, dateTo]);
 
   async function exportCsv() {
     if (!classId) return;
     setExporting(true);
     try {
-      const url = `/api/attendance/reports?class_id=${encodeURIComponent(classId)}&date_from=${dateFrom}&date_to=${dateTo}&format=csv`;
+      const subjectParam = subjectId ? `&subject_id=${encodeURIComponent(subjectId)}` : "";
+      const url = `/api/attendance/reports?class_id=${encodeURIComponent(classId)}&date_from=${dateFrom}&date_to=${dateTo}${subjectParam}&format=csv`;
       const res = await fetch(url);
       if (!res.ok) { setError("Export failed."); return; }
       const blob = await res.blob();
@@ -183,6 +199,19 @@ export default function AttendanceReportsPage() {
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
+          {subjects.length > 0 && (
+            <div className="flex flex-col gap-1 min-w-[160px]">
+              <label className="text-xs font-medium text-gray-600">Subject <span className="font-normal text-gray-400">(optional)</span></label>
+              <select
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]"
+                value={subjectId}
+                onChange={e => setSubjectId(e.target.value)}
+              >
+                <option value="">Class-level (no subject)</option>
+                {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-gray-600">From</label>
             <input type="date" className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227]"

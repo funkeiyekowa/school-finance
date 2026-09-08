@@ -14,6 +14,7 @@ import InsightsPanel from "./_components/InsightsPanel";
 interface ClassRow { id: string; name: string; short_code: string; sequence: number; organization_id: string; }
 interface StatusRow { id: string; code: string; label: string; color: string; counts_as_present: boolean; is_default: boolean; sort_order: number; }
 interface StudentRow { id: string; student_code: string; full_name: string; grade: string | null; }
+interface SubjectRow { id: string; name: string; short_code: string; }
 interface RecordRow { id: string; student_id: string; status_code: string; remarks: string | null; }
 
 export default function AttendancePage() {
@@ -31,6 +32,8 @@ export default function AttendancePage() {
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().substring(0, 10));
   const [session, setSession] = useState("full_day");
+  const [subjects, setSubjects] = useState<SubjectRow[]>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>("");
 
   // Attendance state: student_id → status_code
   const [marks, setMarks] = useState<Record<string, string>>({});
@@ -69,6 +72,17 @@ export default function AttendancePage() {
 
   useEffect(() => { loadBase(); }, [loadBase]);
 
+  // Fetch subjects when a class is selected
+  useEffect(() => {
+    setSelectedSubjectId("");
+    setSubjects([]);
+    if (!selectedClassId) return;
+    fetch(`/api/attendance/subjects?class_id=${selectedClassId}`)
+      .then(r => r.json())
+      .then(d => setSubjects(d.subjects ?? []))
+      .catch(() => setSubjects([]));
+  }, [selectedClassId]);
+
   // Load students for selected class + existing records for selected date
   const loadClassData = useCallback(async () => {
     if (!selectedClassId) { setStudents([]); setExistingRecords([]); setMarks({}); return; }
@@ -94,12 +108,18 @@ export default function AttendancePage() {
 
     // Load existing records for this date/session/class
     if (stuList.length > 0) {
-      const { data: recData } = await supabase
+      let recQuery = supabase
         .from("attendance_records")
         .select("id, student_id, status_code, remarks")
         .eq("date", selectedDate)
         .eq("session", session)
         .eq("class_id", selectedClassId);
+      if (selectedSubjectId) {
+        recQuery = recQuery.eq("subject_id", selectedSubjectId);
+      } else {
+        recQuery = recQuery.is("subject_id", null);
+      }
+      const { data: recData } = await recQuery;
 
       const records = recData as RecordRow[] ?? [];
       setExistingRecords(records);
@@ -113,7 +133,7 @@ export default function AttendancePage() {
       }
       setMarks(newMarks);
     }
-  }, [selectedClassId, selectedDate, session, classes, statuses, supabase]);
+  }, [selectedClassId, selectedDate, session, selectedSubjectId, classes, statuses, supabase]);
 
   useEffect(() => { loadClassData(); }, [loadClassData]);
 
@@ -130,12 +150,20 @@ export default function AttendancePage() {
       status_code: marks[stu.id] || "present",
     }));
 
-    const { data, error } = await supabase.rpc("record_attendance_batch", {
-      p_class_id: selectedClassId,
-      p_date: selectedDate,
-      p_session: session,
-      p_marks: marksPayload,
-    });
+    const { data, error } = selectedSubjectId
+      ? await supabase.rpc("record_attendance_subject_batch", {
+          p_class_id: selectedClassId,
+          p_subject_id: selectedSubjectId,
+          p_date: selectedDate,
+          p_session: session,
+          p_marks: marksPayload,
+        })
+      : await supabase.rpc("record_attendance_batch", {
+          p_class_id: selectedClassId,
+          p_date: selectedDate,
+          p_session: session,
+          p_marks: marksPayload,
+        });
 
     if (error) {
       console.warn("record_attendance_batch failed:", error.message);
@@ -199,6 +227,16 @@ export default function AttendancePage() {
                 <option value="afternoon">Afternoon</option>
               </select>
             </div>
+            {selectedClassId && subjects.length > 0 && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Subject <span className="font-normal text-gray-400">(optional)</span></label>
+                <select value={selectedSubjectId} onChange={e => setSelectedSubjectId(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] min-w-[160px]">
+                  <option value="">Class-level (no subject)</option>
+                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
             <button
               onClick={() => window.open("/dashboard/attendance/summary", "_blank")}
               className="mb-0.5 px-2 py-1 rounded text-[10px] font-bold border border-[#0F2A47] text-[#0F2A47] hover:bg-gray-50 flex items-center gap-1"

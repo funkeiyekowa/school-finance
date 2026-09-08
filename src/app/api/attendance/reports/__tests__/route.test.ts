@@ -132,4 +132,27 @@ assert.ok(teacherGateIdx < recordsQueryIdx, "teacher gate must precede attendanc
 assert.match(routeSrc, /status: 403/, "Unauthorized roles must get 403 status");
 console.log("PASS: role authorization matrix correct (super_admin/admin/owner=full, teacher=scoped, other=403)");
 
+// ------------------------------------------------------------------
+// 13. Phase 8: subject_id param — conditional subject/class filter
+// ------------------------------------------------------------------
+assert.match(routeSrc, /subject_id/, "Route must handle subject_id param");
+// When subject_id present → .eq("subject_id", subject_id)
+assert.match(routeSrc, /\.eq\("subject_id", subject_id\)/, "Must filter by subject_id when present");
+// When absent → .is("subject_id", null)
+assert.match(routeSrc, /\.is\("subject_id", null\)/, "Must filter subject_id IS NULL when absent");
+// Both branches guarded — if/else on subject_id
+assert.match(routeSrc, /if\s*\(subject_id\)/, "subject_id filter must be conditional (if/else)");
+console.log("PASS: subject_id param switches between subject-level and class-level filter");
+
+// ------------------------------------------------------------------
+// 14. Phase 8: subject_id cannot bypass org/class authorization
+// ------------------------------------------------------------------
+// The class ownership check (step 4) precedes the subject_id filter (step 5)
+const classVerifyIdx = routeSrc.indexOf('.from("classes")');
+const subjectFilterIdx = routeSrc.indexOf('if (subject_id)');
+assert.ok(classVerifyIdx !== -1, "Route must verify class ownership");
+assert.ok(subjectFilterIdx !== -1, "Route must conditionally filter by subject_id");
+assert.ok(classVerifyIdx < subjectFilterIdx, "Class ownership check must precede subject_id filter");
+console.log("PASS: class ownership verified before subject_id filter applied");
+
 console.log("\n✓ All attendance reports route contract tests passed.");

@@ -8,6 +8,8 @@
  *   date_from  YYYY-MM-DD  required
  *   date_to    YYYY-MM-DD  required
  *   format     "json" | "csv"  optional, default "json"
+ *   subject_id uuid     optional — when present, report subject-level records;
+ *                        when absent, report class-level records (subject_id IS NULL)
  *
  * Auth (mirrors /api/attendance/insights):
  *   1. auth.getUser() → 401
@@ -44,6 +46,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const date_from = searchParams.get("date_from") ?? "";
   const date_to = searchParams.get("date_to") ?? "";
   const format = searchParams.get("format") ?? "json";
+  const subject_id = searchParams.get("subject_id") ?? null; // optional — null = class-level
 
   if (!class_id || !date_from || !date_to) {
     return NextResponse.json(
@@ -123,16 +126,23 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     ? (classRow as { id: string; name: string; organization_id: string }).organization_id
     : orgId;
 
-  // 5. Fetch attendance records
-  const { data: records, error: recordsErr } = await supabase
+  // 5. Fetch attendance records — class-level (subject_id IS NULL) or subject-level
+  let recordsQuery = supabase
     .from("attendance_records")
     .select("student_id, date, session, status_code")
     .eq("organization_id", effectiveOrgId)
     .eq("class_id", class_id)
     .gte("date", date_from)
     .lte("date", date_to)
-    .is("subject_id", null)
     .order("date", { ascending: true });
+
+  if (subject_id) {
+    recordsQuery = recordsQuery.eq("subject_id", subject_id);
+  } else {
+    recordsQuery = recordsQuery.is("subject_id", null);
+  }
+
+  const { data: records, error: recordsErr } = await recordsQuery;
 
   if (recordsErr) {
     return NextResponse.json({ error: recordsErr.message }, { status: 500 });
