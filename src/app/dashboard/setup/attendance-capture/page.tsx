@@ -42,6 +42,8 @@ interface ACSRow {
   manual_session_enabled: boolean;
   attendance_reports_enabled: boolean;
   attendance_csv_export_enabled: boolean;
+  default_session: string;
+  default_attendance_mode: string;
 }
 
 interface BoolToggle {
@@ -106,6 +108,8 @@ export default function AttendanceCaptureSettingsPage() {
     attendance_reports_enabled: true,
     attendance_csv_export_enabled: true,
   });
+  const [defaultSession, setDefaultSession] = useState<string>("full_day");
+  const [defaultAttendanceMode, setDefaultAttendanceMode] = useState<string>("class");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -128,6 +132,8 @@ export default function AttendanceCaptureSettingsPage() {
         attendance_reports_enabled:      row.attendance_reports_enabled      ?? true,
         attendance_csv_export_enabled:   row.attendance_csv_export_enabled   ?? true,
       });
+      setDefaultSession(row.default_session ?? "full_day");
+      setDefaultAttendanceMode(row.default_attendance_mode ?? "class");
     }
     setLoading(false);
   }, [supabase]);
@@ -157,6 +163,8 @@ export default function AttendanceCaptureSettingsPage() {
         enabled_capture_methods: Array.from(enabled),
         ai_insights_enabled: aiEnabled,
         ...boolFlags,
+        default_session: defaultSession,
+        default_attendance_mode: defaultAttendanceMode,
         updated_at: new Date().toISOString(),
       })
       .eq("id", rowId);
@@ -249,6 +257,41 @@ export default function AttendanceCaptureSettingsPage() {
               </div>
             );
           })}
+        </CardContent>
+      </Card>
+
+      {/* Attendance Defaults */}
+      <Card>
+        <CardHeader><CardTitle>Attendance Defaults</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-gray-500">
+            These values are pre-selected when a teacher opens the attendance page. Teachers can still change them per session.
+          </p>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-semibold text-gray-700">Default Session</label>
+            <p className="text-xs text-gray-500 mb-1">Which session is pre-selected when the attendance page loads.</p>
+            <select
+              value={defaultSession}
+              onChange={e => setDefaultSession(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] max-w-xs"
+            >
+              <option value="full_day">Full Day</option>
+              <option value="morning">Morning</option>
+              <option value="afternoon">Afternoon</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-semibold text-gray-700">Default Attendance Mode</label>
+            <p className="text-xs text-gray-500 mb-1">Whether the capture page starts in class-level or subject-level mode.</p>
+            <select
+              value={defaultAttendanceMode}
+              onChange={e => setDefaultAttendanceMode(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C9A227] max-w-xs"
+            >
+              <option value="class">Class-level (no subject pre-selected)</option>
+              <option value="subject">Subject-level (pre-select first subject)</option>
+            </select>
+          </div>
         </CardContent>
       </Card>
 

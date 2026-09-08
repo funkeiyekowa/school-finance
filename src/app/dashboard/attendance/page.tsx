@@ -31,7 +31,7 @@ export default function AttendancePage() {
 
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().substring(0, 10));
-  const [session, setSession] = useState("full_day");
+  const [session, setSession] = useState("full_day"); // overridden by captureConfig.default_session after load
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>("");
 
@@ -49,6 +49,8 @@ export default function AttendancePage() {
     manual_session_enabled: boolean;
     attendance_reports_enabled: boolean;
     attendance_csv_export_enabled: boolean;
+    default_session: string;
+    default_attendance_mode: string;
   }>({
     enabled_capture_methods: ["manual"],
     ai_insights_enabled: false,
@@ -59,6 +61,8 @@ export default function AttendancePage() {
     manual_session_enabled: true,
     attendance_reports_enabled: true,
     attendance_csv_export_enabled: true,
+    default_session: "full_day",
+    default_attendance_mode: "class",
   });
 
   const loadBase = useCallback(async () => {
@@ -69,7 +73,7 @@ export default function AttendancePage() {
     ]);
     if (cfgRes.data) {
       const cfgRow = (Array.isArray(cfgRes.data) ? cfgRes.data[0] : cfgRes.data) as typeof captureConfig;
-      setCaptureConfig({
+      const newCfg = {
         enabled_capture_methods:         cfgRow.enabled_capture_methods         ?? ["manual"],
         ai_insights_enabled:             cfgRow.ai_insights_enabled             ?? false,
         subject_attendance_enabled:      cfgRow.subject_attendance_enabled      ?? true,
@@ -79,7 +83,12 @@ export default function AttendancePage() {
         manual_session_enabled:          cfgRow.manual_session_enabled          ?? true,
         attendance_reports_enabled:      cfgRow.attendance_reports_enabled      ?? true,
         attendance_csv_export_enabled:   cfgRow.attendance_csv_export_enabled   ?? true,
-      });
+        default_session:                 cfgRow.default_session                 ?? "full_day",
+        default_attendance_mode:         cfgRow.default_attendance_mode         ?? "class",
+      };
+      setCaptureConfig(newCfg);
+      // Apply org-configured defaults to capture state
+      setSession(newCfg.default_session);
     }
 
     let allClasses = (clsRes.data as ClassRow[]) ?? [];
@@ -112,9 +121,16 @@ export default function AttendancePage() {
     if (!selectedClassId || !captureConfig.subject_attendance_enabled) return;
     fetch(`/api/attendance/subjects?class_id=${selectedClassId}`)
       .then(r => r.json())
-      .then(d => setSubjects(d.subjects ?? []))
+      .then(d => {
+        const fetched = d.subjects ?? [];
+        setSubjects(fetched);
+        // Apply default_attendance_mode: 'subject' → pre-select first subject
+        if (captureConfig.default_attendance_mode === "subject" && fetched.length > 0) {
+          setSelectedSubjectId(fetched[0].id);
+        }
+      })
       .catch(() => setSubjects([]));
-  }, [selectedClassId, captureConfig.subject_attendance_enabled]);
+  }, [selectedClassId, captureConfig.subject_attendance_enabled, captureConfig.default_attendance_mode]);
 
   // Load students for selected class + existing records for selected date
   const loadClassData = useCallback(async () => {
