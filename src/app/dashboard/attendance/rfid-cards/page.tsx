@@ -16,17 +16,14 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { ArrowLeft, CreditCard, Radio, UserPlus } from "lucide-react";
 import Link from "next/link";
 
 // Module-level singleton — stable reference, prevents useCallback/useEffect re-firing
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const supabase = createClient();
 
 const FLUSH_TIMEOUT_MS = 100;
 const MIN_UID_LENGTH = 4;

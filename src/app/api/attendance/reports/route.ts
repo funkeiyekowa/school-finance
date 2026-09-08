@@ -32,23 +32,11 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
 
 const HR_ACCESS_ROLES = new Set(["admin", "owner", "principal", "hr_manager", "hr"]);
 
-async function makeSupabaseServer() {
-  const cookieStore = await cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get: (name: string) => cookieStore.get(name)?.value,
-      },
-    }
-  );
-}
+
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(req.url);
@@ -79,7 +67,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const supabase = await makeSupabaseServer();
+  const supabase = await createClient();
 
   // 1. Auth
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
