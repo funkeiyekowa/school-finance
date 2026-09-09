@@ -52,6 +52,7 @@ export const EXAM_ALLOWED_RPCS = [
   "has_active_exam_attempt",
   "get_active_exam_lock",
   "log_proctoring_event",
+  "record_violation",
   "register_proctoring_chunk",
 ];
 

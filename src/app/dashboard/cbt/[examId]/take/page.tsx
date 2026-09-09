@@ -107,7 +107,7 @@ export default function TakeExamPage() {
 
   // The unified registerViolation callback; defined first so the recording
   // hook can use it. The actual body is below in the proctoring effect.
-  const registerViolationRef = useRef<(kind: string) => void>(() => {});
+  const registerViolationRef = useRef<(kind: string) => void | Promise<void>>(() => {});
 
   // Camera/screen recording hook
   const recording = useExamRecording({
@@ -137,31 +137,60 @@ export default function TakeExamPage() {
     // minimising, switching apps, or exiting fullscreen). The functional
     // update + autoSubmittingRef guard guarantee that a burst of events from
     // a single action can only ever produce ONE forced submission.
-    function registerViolation(kind: string) {
-      if (autoSubmittingRef.current) return; // already forcing submission
-      setViolations(prev => {
-        const next = prev + 1;
-        // Log the violation server-side
-        void supabase.rpc("log_proctoring_event", {
-          p_attempt: attempt?.id,
-          p_event_type: kind.replace(/ /g, "_"),
-          p_event_data: { kind },
-          p_violation: true,
-          p_strike_number: next,
-        }).then(() => {}, () => {}); // best-effort, don't crash the exam
+    // registerViolation: server-authoritative enforcement.
+    // The server (record_violation RPC) counts violations from proctoring_events,
+    // enforces max_violations, and terminates the attempt on the server if the
+    // limit is reached. The client never decides whether to terminate — it only
+    // acts on the server's directive. This means refresh/reconnect/new-tab
+    // cannot reset the counter: the server always has the true count.
+    async function registerViolation(kind: string) {
+      if (autoSubmittingRef.current) return; // burst-guard: already handling a violation
+      autoSubmittingRef.current = true; // block concurrent bursts while RPC is in flight
 
-        if (next >= maxViolations) {
-          if (!autoSubmittingRef.current) {
-            autoSubmittingRef.current = true;
-            alert("You have exceeded the allowed number of proctoring violations. Your exam will be submitted.");
-            void submitExam(true, true, "tab_switch_limit", signOutOnViolation);
-          }
-        } else {
-          const remaining = maxViolations - next;
-          alert(`Proctoring warning ${next}/${maxViolations} — ${kind}. ${remaining} warning${remaining === 1 ? "" : "s"} left before your exam is auto-submitted.`);
-        }
-        return next;
+      if (!attempt?.id) { autoSubmittingRef.current = false; return; }
+
+      const { data: vData, error: vErr } = await supabase.rpc("record_violation", {
+        p_attempt: attempt.id,
+        p_kind: kind.replace(/ /g, "_"),
+        p_max_violations: maxViolations,
       });
+
+      if (vErr) {
+        // RPC failed — fail-safe: treat as a warning so the exam isn't silently killed,
+        // but reset the guard so the next genuine violation can still be recorded.
+        autoSubmittingRef.current = false;
+        alert(`Proctoring warning — ${kind}. Please stay on this exam tab.`);
+        return;
+      }
+
+      const res = vData as { ok: boolean; action: "warn" | "terminate"; strike: number; remaining: number; already_terminated?: boolean };
+
+      // Update the display counter from the server's authoritative strike count.
+      setViolations(res.strike ?? 0);
+
+      if (!res.ok) { autoSubmittingRef.current = false; return; }
+
+      if (res.action === "terminate" || res.already_terminated) {
+        // Attempt is now terminated server-side. Sign out and redirect.
+        // autoSubmittingRef stays true — no further violations should be processed.
+        alert("You have exceeded the allowed number of proctoring violations. Your exam has been submitted and you are being signed out.");
+        setSubmitted(true);
+        if (timerRef.current) clearInterval(timerRef.current);
+        try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
+        try { await signOut(); } catch { /* ignore */ }
+        router.push("/login");
+      } else {
+        // Violation recorded; force sign-out for every warning (violations 1 and 2).
+        // The student must re-authenticate before they can continue the attempt.
+        // autoSubmittingRef resets after sign-out begins.
+        const remaining = res.remaining ?? (maxViolations - (res.strike ?? 1));
+        alert(`Proctoring warning ${res.strike}/${maxViolations} — ${kind}. ${remaining} warning${remaining === 1 ? "" : "s"} left. You are being signed out and must log back in to continue.`);
+        autoSubmittingRef.current = false;
+        if (signOutOnViolation) {
+          try { await signOut(); } catch { /* ignore */ }
+          router.push("/login");
+        }
+      }
     }
     registerViolationRef.current = registerViolation;
 
