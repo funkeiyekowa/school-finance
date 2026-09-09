@@ -95,6 +95,14 @@ export default function TakeExamPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const autoSubmittingRef = useRef(false);
+  // lockedRef: set true the instant a violation is detected (before the async RPC).
+  // Immediately disables answer inputs so the student cannot keep answering while
+  // the violation RPC is in flight. Never reset — signOut/redirect ends the page.
+  const lockedRef = useRef(false);
+  // Deduplication: multiple browser events can fire for one physical action
+  // (e.g. visibilitychange + window blur on the same alt-tab). Only the first
+  // event within a 600 ms window produces a server-side violation.
+  const lastViolationTimeRef = useRef(0);
 
   // Proctoring recording config (from exam.settings, hydrated in init)
   const [cameraRequired, setCameraRequired] = useState(false);
@@ -144,8 +152,19 @@ export default function TakeExamPage() {
     // acts on the server's directive. This means refresh/reconnect/new-tab
     // cannot reset the counter: the server always has the true count.
     async function registerViolation(kind: string) {
-      if (autoSubmittingRef.current) return; // burst-guard: already handling a violation
-      autoSubmittingRef.current = true; // block concurrent bursts while RPC is in flight
+      // Deduplication: ignore events within 600 ms of the previous violation trigger.
+      // One physical action (alt-tab, minimize) can fire both visibilitychange and
+      // window blur simultaneously — we only want one server-side violation from it.
+      const now = Date.now();
+      if (now - lastViolationTimeRef.current < 600) return;
+      lastViolationTimeRef.current = now;
+
+      if (autoSubmittingRef.current) return; // burst-guard: RPC already in flight
+      autoSubmittingRef.current = true;
+
+      // IMMEDIATE lockdown: disable all answer inputs before the RPC returns.
+      // The student must not be able to keep selecting answers during the async call.
+      lockedRef.current = true;
 
       if (!attempt?.id) { autoSubmittingRef.current = false; return; }
 
@@ -195,14 +214,22 @@ export default function TakeExamPage() {
     registerViolationRef.current = registerViolation;
 
     function handleVisibility() {
-      if (document.hidden && !autoSubmittingRef.current) registerViolation("you left the exam");
+      if (document.hidden) registerViolation("you left the exam");
+    }
+    // window.blur fires when the user alt-tabs, minimizes the browser window,
+    // or clicks any other application. visibilitychange alone does NOT fire for
+    // these cases on many OS/browser combinations (notably Chrome on Windows/Linux
+    // when switching apps without switching tabs). The 600 ms dedup guard ensures
+    // that a single physical action firing both events only counts as one violation.
+    function handleWindowBlur() {
+      registerViolation("you left the exam window");
     }
     function handleFullscreenChange() {
       const fs = !!document.fullscreenElement;
       setIsFullscreen(fs);
       // Count only EXITING fullscreen (not entering it), and only when the
       // exam requires fullscreen.
-      if (!fs && fullscreenRequired && !autoSubmittingRef.current) {
+      if (!fs && fullscreenRequired) {
         registerViolation("you left fullscreen");
       }
     }
@@ -210,6 +237,7 @@ export default function TakeExamPage() {
 
     document.addEventListener("visibilitychange", handleVisibility);
     document.addEventListener("fullscreenchange", handleFullscreenChange);
+    window.addEventListener("blur", handleWindowBlur);
     document.addEventListener("copy", block);
     document.addEventListener("paste", block);
     document.addEventListener("contextmenu", block);
@@ -218,6 +246,7 @@ export default function TakeExamPage() {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      window.removeEventListener("blur", handleWindowBlur);
       document.removeEventListener("copy", block);
       document.removeEventListener("paste", block);
       document.removeEventListener("contextmenu", block);
@@ -818,6 +847,7 @@ export default function TakeExamPage() {
                 question={currentQ}
                 value={answers[currentQ.id] ?? {}}
                 onChange={(patch) => updateAnswer(currentQ.id, patch)}
+                disabled={lockedRef.current}
               />
 
               <div className="flex items-center justify-between pt-4">
@@ -842,11 +872,12 @@ export default function TakeExamPage() {
 /* ------------------------------------------------------------ */
 
 function AnswerControl({
-  question, value, onChange,
+  question, value, onChange, disabled = false,
 }: {
   question: QuestionData;
   value: AnswerValue;
   onChange: (patch: AnswerValue) => void;
+  disabled?: boolean;
 }) {
   const type = question.question_type;
 
@@ -854,7 +885,7 @@ function AnswerControl({
     return (
       <div className="space-y-2">
         {question.options.map(opt => (
-          <button key={opt.id} onClick={() => onChange({ selected: opt.id })}
+          <button key={opt.id} disabled={disabled} onClick={() => !disabled && onChange({ selected: opt.id })}
             className={cn(
               "w-full text-left px-4 py-3 rounded-xl border-2 transition-all",
               value.selected === opt.id
@@ -880,7 +911,8 @@ function AnswerControl({
       <div className="space-y-2">
         <p className="text-xs text-gray-500">Select all that apply.</p>
         {question.options.map(opt => (
-          <button key={opt.id} onClick={() => {
+          <button key={opt.id} disabled={disabled} onClick={() => {
+            if (disabled) return;
             const next = new Set(selected);
             if (next.has(opt.id)) next.delete(opt.id); else next.add(opt.id);
             onChange({ selected: Array.from(next).sort() });
@@ -911,9 +943,10 @@ function AnswerControl({
         type={type === "numeric" ? "number" : "text"}
         step={type === "numeric" ? "any" : undefined}
         value={value.text ?? ""}
-        onChange={e => onChange({ text: e.target.value })}
+        disabled={disabled}
+        onChange={e => !disabled && onChange({ text: e.target.value })}
         placeholder={type === "numeric" ? "Enter a number" : "Type your answer…"}
-        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-base focus:outline-none focus:border-[#C9A227]"
+        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-base focus:outline-none focus:border-[#C9A227] disabled:opacity-50 disabled:cursor-not-allowed"
       />
     );
   }
@@ -924,9 +957,10 @@ function AnswerControl({
         <textarea
           rows={10}
           value={value.text ?? ""}
-          onChange={e => onChange({ text: e.target.value })}
+          disabled={disabled}
+          onChange={e => !disabled && onChange({ text: e.target.value })}
           placeholder="Write your answer here. This will be graded manually by your teacher."
-          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm leading-relaxed focus:outline-none focus:border-[#C9A227]"
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm leading-relaxed focus:outline-none focus:border-[#C9A227] disabled:opacity-50 disabled:cursor-not-allowed"
         />
         <p className="text-xs text-gray-400">
           Essay answers are graded after submission — your score for this question will appear once your teacher has marked it.
@@ -952,12 +986,14 @@ function AnswerControl({
               <span className="text-gray-300">→</span>
               <select
                 value={current}
+                disabled={disabled}
                 onChange={e => {
+                  if (disabled) return;
                   const next = currentPairs.filter(cp => cp.left !== p.left);
                   if (e.target.value) next.push({ left: p.left, right: e.target.value });
                   onChange({ pairs: next });
                 }}
-                className="flex-1 px-3 py-2 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-[#C9A227]"
+                className="flex-1 px-3 py-2 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-[#C9A227] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="">Select a match…</option>
                 {rightOptions.map((r, j) => <option key={j} value={r}>{r}</option>)}
