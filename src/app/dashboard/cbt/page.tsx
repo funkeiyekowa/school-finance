@@ -819,7 +819,7 @@ export default function CbtPage() {
                   <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.block_on_denial} onChange={e => setExamForm(f => ({ ...f, block_on_denial: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Block exam if recording denied</label>
                 </div>
                 <div className="w-40">
-                  <Input label="Max violations" type="number" min="1" max="10" value={examForm.max_violations} onChange={e => setExamForm(f => ({ ...f, max_violations: e.target.value }))} />
+                  <Input label="Violations before termination" type="number" min="1" max="10" value={examForm.max_violations} onChange={e => setExamForm(f => ({ ...f, max_violations: e.target.value }))} />
                 </div>
               </div>
             )}
