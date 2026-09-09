@@ -95,6 +95,14 @@ export default function TakeExamPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const autoSubmittingRef = useRef(false);
+  // violationOverlay: drives the full-screen enforcement overlay shown on violation.
+  // null = no overlay. The overlay is NOT dismissible by the student — it disappears
+  // only when signOut + router.push complete and the page unmounts.
+  const [violationOverlay, setViolationOverlay] = useState<{
+    strike: number;
+    maxViolations: number;
+    action: "warn" | "terminate";
+  } | null>(null);
   // lockedRef: set true the instant a violation is detected (before the async RPC).
   // Immediately disables answer inputs so the student cannot keep answering while
   // the violation RPC is in flight. Never reset — signOut/redirect ends the page.
@@ -152,21 +160,17 @@ export default function TakeExamPage() {
     // acts on the server's directive. This means refresh/reconnect/new-tab
     // cannot reset the counter: the server always has the true count.
     async function registerViolation(kind: string) {
-      // Deduplication: ignore events within 600 ms of the previous violation trigger.
-      // One physical action (alt-tab, minimize) can fire both visibilitychange and
-      // window blur simultaneously — we only want one server-side violation from it.
+      // Deduplication: one physical action (alt-tab, minimize) fires both
+      // visibilitychange and window.blur. Only the first within 600 ms counts.
       const now = Date.now();
       if (now - lastViolationTimeRef.current < 600) return;
       lastViolationTimeRef.current = now;
 
-      if (autoSubmittingRef.current) return; // burst-guard: RPC already in flight
+      if (autoSubmittingRef.current) return; // RPC already in flight
       autoSubmittingRef.current = true;
+      lockedRef.current = true; // immediate UI freeze before RPC returns
 
-      // IMMEDIATE lockdown: disable all answer inputs before the RPC returns.
-      // The student must not be able to keep selecting answers during the async call.
-      lockedRef.current = true;
-
-      if (!attempt?.id) { autoSubmittingRef.current = false; return; }
+      if (!attempt?.id) { autoSubmittingRef.current = false; lockedRef.current = false; return; }
 
       const { data: vData, error: vErr } = await supabase.rpc("record_violation", {
         p_attempt: attempt.id,
@@ -175,40 +179,51 @@ export default function TakeExamPage() {
       });
 
       if (vErr) {
-        // RPC failed — fail-safe: treat as a warning so the exam isn't silently killed,
-        // but reset the guard so the next genuine violation can still be recorded.
+        // RPC failed — show overlay, reset guards so next genuine violation can fire.
         autoSubmittingRef.current = false;
-        alert(`Proctoring warning — ${kind}. Please stay on this exam tab.`);
+        lockedRef.current = false;
+        // Use overlay even for the error case so the student sees feedback.
+        setViolationOverlay({ strike: 0, maxViolations, action: "warn" });
+        setTimeout(() => setViolationOverlay(null), 3000);
         return;
       }
 
-      const res = vData as { ok: boolean; action: "warn" | "terminate"; strike: number; remaining: number; already_terminated?: boolean };
+      const res = vData as {
+        ok: boolean;
+        action: "warn" | "terminate";
+        strike: number;
+        remaining: number;
+        already_terminated?: boolean;
+      };
 
-      // Update the display counter from the server's authoritative strike count.
+      // Update display from server's authoritative count.
       setViolations(res.strike ?? 0);
 
-      if (!res.ok) { autoSubmittingRef.current = false; return; }
+      if (!res.ok) { autoSubmittingRef.current = false; lockedRef.current = false; return; }
 
       if (res.action === "terminate" || res.already_terminated) {
-        // Attempt is now terminated server-side. Sign out and redirect.
-        // autoSubmittingRef stays true — no further violations should be processed.
-        alert("You have exceeded the allowed number of proctoring violations. Your exam has been submitted and you are being signed out.");
-        setSubmitted(true);
-        if (timerRef.current) clearInterval(timerRef.current);
+        // ── FINAL VIOLATION: attempt already terminated server-side ──────────
+        // Show disqualification overlay. autoSubmittingRef and lockedRef stay
+        // true forever — the page is about to be replaced by the login page.
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+        setViolationOverlay({ strike: res.strike, maxViolations, action: "terminate" });
+        // Exit fullscreen so the browser chrome is accessible.
         try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
+        // Brief pause so the student reads the disqualification message, then sign out.
+        await new Promise(r => setTimeout(r, 2500));
         try { await signOut(); } catch { /* ignore */ }
         router.push("/login");
       } else {
-        // Violation recorded; force sign-out for every warning (violations 1 and 2).
-        // The student must re-authenticate before they can continue the attempt.
-        // autoSubmittingRef resets after sign-out begins.
-        const remaining = res.remaining ?? (maxViolations - (res.strike ?? 1));
-        alert(`Proctoring warning ${res.strike}/${maxViolations} — ${kind}. ${remaining} warning${remaining === 1 ? "" : "s"} left. You are being signed out and must log back in to continue.`);
-        autoSubmittingRef.current = false;
-        if (signOutOnViolation) {
-          try { await signOut(); } catch { /* ignore */ }
-          router.push("/login");
-        }
+        // ── WARNING VIOLATION: attempt stays in_progress ──────────────────────
+        // Show warning overlay, then sign out immediately. Do NOT reset guards
+        // before navigation — we don't want the frozen page to become interactive
+        // again while signOut/router are in flight.
+        setViolationOverlay({ strike: res.strike, maxViolations, action: "warn" });
+        try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
+        // Brief pause so the student reads the message, then enforce sign-out.
+        await new Promise(r => setTimeout(r, 2000));
+        try { await signOut(); } catch { /* ignore */ }
+        router.push("/login");
       }
     }
     registerViolationRef.current = registerViolation;
@@ -406,6 +421,17 @@ export default function TakeExamPage() {
       .eq("id", res.attempt_id)
       .single();
     setAttempt(attemptRow as AttemptData);
+
+    // Load the existing violation count from the server so the UI shows the
+    // correct "Violations N/M" on re-entry after a prior warn+signout.
+    const { count: existingViolations } = await supabase
+      .from("proctoring_events")
+      .select("id", { count: "exact", head: true })
+      .eq("attempt_id", res.attempt_id)
+      .eq("violation", true);
+    if (existingViolations && existingViolations > 0) {
+      setViolations(existingViolations);
+    }
 
     const { data: ansData } = await supabase
       .from("exam_answers")
@@ -757,6 +783,46 @@ export default function TakeExamPage() {
 
   return (
     <div className="min-h-screen bg-[#F7F5F0] flex flex-col">
+      {/* ── Violation enforcement overlay ── */}
+      {/* Full-screen, non-dismissible. Shown immediately when a violation is
+          detected, before the signOut/redirect completes. Prevents the student
+          from interacting with the frozen exam while the page is still mounted. */}
+      {violationOverlay && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#0F2A47]/95 text-white p-8">
+          {violationOverlay.action === "terminate" ? (
+            <>
+              <div className="text-5xl mb-4">🚫</div>
+              <h1 className="text-2xl font-bold mb-2 text-red-400">Exam Disqualified</h1>
+              <p className="text-lg text-center mb-2">
+                You left the exam for the final time.
+              </p>
+              <p className="text-sm text-white/70 text-center">
+                Your exam has been submitted with your answers so far. You are being signed out.
+              </p>
+              <div className="mt-6 text-xs text-white/40">
+                Violation {violationOverlay.strike} of {violationOverlay.maxViolations} — attempt permanently closed.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-5xl mb-4">⚠️</div>
+              <h1 className="text-2xl font-bold mb-2 text-amber-400">
+                Exam Violation {violationOverlay.strike} of {violationOverlay.maxViolations}
+              </h1>
+              <p className="text-lg text-center mb-2">
+                You left the exam window.
+              </p>
+              <p className="text-sm text-white/70 text-center mb-1">
+                You have been logged out. You must log in again to continue.
+              </p>
+              <p className="text-sm text-white/70 text-center">
+                {violationOverlay.maxViolations - violationOverlay.strike} warning{violationOverlay.maxViolations - violationOverlay.strike === 1 ? "" : "s"} remaining before permanent disqualification.
+              </p>
+              <div className="mt-6 text-xs text-white/40">Signing you out…</div>
+            </>
+          )}
+        </div>
+      )}
       <div className="bg-[#0F2A47] text-white px-4 py-3 flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-sm font-bold">{exam.title}</h1>
