@@ -4,17 +4,18 @@
 -- Run after cbt_proctoring_infra.sql.
 -- Idempotent — safe to re-run.
 --
--- Adds:
---   record_violation(p_attempt, p_kind, p_max_violations)
---     → counts violations server-side from proctoring_events
---     → on reaching limit: terminates attempt via submit_exam_attempt
---     → returns directive: action='warn'|'terminate', strike, remaining
+-- record_violation(p_attempt, p_kind, p_max_violations)
+--   → acquires a row-level lock on the attempt row before counting
+--   → counts violations from proctoring_events while holding the lock
+--   → inserts the violation with the correct sequential strike_number
+--   → on reaching limit: terminates attempt via submit_exam_attempt
+--   → returns directive: action='warn'|'terminate', strike, remaining
 --
--- The client is no longer authoritative for the violation count.
--- The violation count is always derived from the server (proctoring_events).
--- max_violations is passed by the client but comes from exam.settings which
--- was loaded server-side via start_exam_attempt; the RPC also caps it at a
--- safe maximum (10) to prevent the client inflating it.
+-- Concurrency guarantee: SELECT ... FOR UPDATE on the exam_attempts row
+-- serializes all concurrent record_violation calls for the same attempt.
+-- Two simultaneous tab-switch events block on the lock; the second sees
+-- the updated proctoring_events count from the first and gets an accurate
+-- strike number. submit_exam_attempt is idempotent on finished attempts.
 
 CREATE OR REPLACE FUNCTION public.record_violation(
   p_attempt       uuid,
@@ -32,19 +33,28 @@ DECLARE
   v_remaining     integer;
   v_submit_result jsonb;
 BEGIN
-  -- Load attempt
-  SELECT * INTO v_attempt FROM exam_attempts WHERE id = p_attempt;
+  -- Acquire a row-level lock on the attempt. This serializes all concurrent
+  -- record_violation calls for the same attempt — each call must wait for the
+  -- previous one to commit before it reads the violation count and inserts.
+  -- NOWAIT is intentionally NOT used: we want concurrent calls to queue, not fail.
+  SELECT * INTO v_attempt
+  FROM exam_attempts
+  WHERE id = p_attempt
+  FOR UPDATE;
+
   IF v_attempt.id IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'attempt_not_found');
   END IF;
 
-  -- Ownership check
+  -- Ownership check: caller must own this attempt.
   SELECT id INTO v_my_student FROM students WHERE profile_id = auth.uid() LIMIT 1;
   IF v_my_student IS NULL OR v_my_student <> v_attempt.student_id THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'not_owner');
   END IF;
 
-  -- If attempt is already finished, reject silently — no double-termination.
+  -- If attempt is already finished (terminated by a concurrent call that
+  -- committed just before we acquired the lock), return terminate immediately.
+  -- No double-counting, no double-termination.
   IF v_attempt.status <> 'in_progress' THEN
     RETURN jsonb_build_object(
       'ok', true,
@@ -55,13 +65,21 @@ BEGIN
     );
   END IF;
 
-  -- Cap max_violations: clamp between 1 and 10.
-  -- Client supplies this from exam.settings (loaded server-side), but we
-  -- never trust the client to inflate it beyond a safe ceiling.
+  -- Cap max_violations: clamp client-supplied value between 1 and 10.
   v_max := GREATEST(1, LEAST(COALESCE(p_max_violations, 3), 10));
 
-  -- Insert the violation event row FIRST, then count. This makes the count
-  -- include this current violation and is atomic within the transaction.
+  -- Count existing violations while holding the lock. Because we hold FOR UPDATE
+  -- on the attempt row, any concurrent call that also needs to insert a violation
+  -- for this attempt is blocked until this transaction commits. The count here
+  -- is therefore the definitive, consistent count before this violation.
+  SELECT COUNT(*) INTO v_strike
+  FROM proctoring_events
+  WHERE attempt_id = p_attempt AND violation = true;
+
+  -- This violation is strike (v_strike + 1).
+  v_strike := v_strike + 1;
+
+  -- Insert the violation with its definitive sequential strike_number.
   INSERT INTO proctoring_events (
     attempt_id, organization_id, event_type, event_data, violation, strike_number
   ) VALUES (
@@ -70,43 +88,28 @@ BEGIN
     p_kind,
     jsonb_build_object('kind', p_kind),
     true,
-    NULL   -- strike_number updated below after counting
+    v_strike
   );
-
-  -- Count all violation rows for this attempt (including the one just inserted).
-  SELECT COUNT(*) INTO v_strike
-  FROM proctoring_events
-  WHERE attempt_id = p_attempt AND violation = true;
-
-  -- Back-fill the strike_number on the row we just inserted.
-  UPDATE proctoring_events
-     SET strike_number = v_strike
-   WHERE attempt_id = p_attempt
-     AND violation = true
-     AND strike_number IS NULL
-     AND created_at = (
-       SELECT MAX(created_at)
-       FROM proctoring_events
-       WHERE attempt_id = p_attempt AND violation = true AND strike_number IS NULL
-     );
 
   v_remaining := GREATEST(0, v_max - v_strike);
 
   IF v_strike >= v_max THEN
-    -- Terminate the attempt server-side. submit_exam_attempt is idempotent
-    -- for already-finished attempts, so concurrent calls are safe.
+    -- Terminate the attempt server-side while still holding the FOR UPDATE lock.
+    -- submit_exam_attempt checks status = 'in_progress' itself and is idempotent,
+    -- but since we hold the lock and confirmed in_progress above, this is the
+    -- exactly-one termination path for this attempt.
     SELECT public.submit_exam_attempt(
       p_attempt,
-      true,           -- p_timed_out = true (auto-submit)
+      true,
       'tab_switch_limit'
     ) INTO v_submit_result;
 
     RETURN jsonb_build_object(
-      'ok',        true,
-      'action',    'terminate',
-      'strike',    v_strike,
-      'remaining', 0,
-      'score',     v_submit_result->'total_score',
+      'ok',          true,
+      'action',      'terminate',
+      'strike',      v_strike,
+      'remaining',   0,
+      'score',       v_submit_result->'total_score',
       'total_marks', v_submit_result->'total_marks',
       'percentage',  v_submit_result->'percentage',
       'passed',      v_submit_result->'passed'
@@ -124,9 +127,8 @@ END $$;
 GRANT EXECUTE ON FUNCTION public.record_violation(uuid, text, integer) TO authenticated;
 
 -- ============================================================
--- Also tighten log_proctoring_event: reject if attempt is not in_progress.
--- Previously it accepted events for any attempt status, allowing a student
--- to keep logging events even after termination.
+-- Tighten log_proctoring_event: reject violation events for
+-- non-in_progress attempts.
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.log_proctoring_event(
   p_attempt uuid,
@@ -150,9 +152,6 @@ BEGIN
   ) THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'not_owner');
   END IF;
-  -- Only allow logging for in-progress attempts. Non-violation events (consent,
-  -- camera status) are harmless to log after termination, but violation events
-  -- must not be accepted for finished attempts.
   IF p_violation = true AND v_attempt.status <> 'in_progress' THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'attempt_not_in_progress');
   END IF;
@@ -162,6 +161,7 @@ BEGIN
 
   RETURN jsonb_build_object('ok', true);
 END $$;
+
 GRANT EXECUTE ON FUNCTION public.log_proctoring_event(uuid, text, jsonb, boolean, integer) TO authenticated;
 
 -- ============================================================
