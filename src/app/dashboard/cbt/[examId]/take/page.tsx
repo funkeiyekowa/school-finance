@@ -90,7 +90,6 @@ export default function TakeExamPage() {
   const [proctored, setProctored] = useState(false);
   const [fullscreenRequired, setFullscreenRequired] = useState(false);
   const [maxViolations, setMaxViolations] = useState(3);
-  const [signOutOnViolation, setSignOutOnViolation] = useState(true);
   const [violations, setViolations] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
@@ -192,12 +191,15 @@ export default function TakeExamPage() {
         ok: boolean;
         action: "warn" | "terminate";
         strike: number;
+        max_violations?: number;
         remaining: number;
         already_terminated?: boolean;
       };
 
       // Update display from server's authoritative count.
       setViolations(res.strike ?? 0);
+      const serverMaxViolations = res.max_violations ?? maxViolations;
+      setMaxViolations(serverMaxViolations);
 
       if (!res.ok) { autoSubmittingRef.current = false; lockedRef.current = false; return; }
 
@@ -206,7 +208,7 @@ export default function TakeExamPage() {
         // Show disqualification overlay. autoSubmittingRef and lockedRef stay
         // true forever — the page is about to be replaced by the login page.
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-        setViolationOverlay({ strike: res.strike, maxViolations, action: "terminate" });
+        setViolationOverlay({ strike: res.strike, maxViolations: serverMaxViolations, action: "terminate" });
         // Exit fullscreen so the browser chrome is accessible.
         try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
         // Brief pause so the student reads the disqualification message, then sign out.
@@ -218,7 +220,7 @@ export default function TakeExamPage() {
         // Show warning overlay, then sign out immediately. Do NOT reset guards
         // before navigation — we don't want the frozen page to become interactive
         // again while signOut/router are in flight.
-        setViolationOverlay({ strike: res.strike, maxViolations, action: "warn" });
+        setViolationOverlay({ strike: res.strike, maxViolations: serverMaxViolations, action: "warn" });
         try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
         // Brief pause so the student reads the message, then enforce sign-out.
         await new Promise(r => setTimeout(r, 2000));
@@ -266,7 +268,7 @@ export default function TakeExamPage() {
       document.removeEventListener("paste", block);
       document.removeEventListener("contextmenu", block);
     };
-  }, [proctored, submitted, maxViolations, signOutOnViolation, fullscreenRequired, requestFullscreen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [proctored, submitted, maxViolations, fullscreenRequired, requestFullscreen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---------- Init: start_exam_attempt RPC + load questions ---------- */
   const init = useCallback(async () => {
@@ -308,6 +310,7 @@ export default function TakeExamPage() {
         closed:              `This exam closed at ${res.ends_at ? new Date(res.ends_at).toLocaleString() : "an earlier time"}.`,
         not_assigned:        "You are not assigned to this exam. Please contact your teacher.",
         max_attempts_reached:"You have used all your attempts for this exam.",
+        disqualified:       "This exam was closed after the maximum number of proctoring violations.",
       };
       setError(map[res.reason ?? ""] ?? "You cannot take this exam right now.");
       setLoading(false);
@@ -345,7 +348,6 @@ export default function TakeExamPage() {
     setProctored(isProctored);
     setFullscreenRequired(s.fullscreen_required === true || isProctored);
     setMaxViolations(typeof s.max_violations === "number" && s.max_violations > 0 ? s.max_violations : 3);
-    setSignOutOnViolation(s.sign_out_on_violation !== false); // default true
 
     // Recording config — merge exam-level with school-level defaults.
     // School settings may override if the exam doesn't specify.

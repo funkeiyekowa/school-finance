@@ -1,7 +1,8 @@
 -- ============================================================
 -- CBT Violation Enforcement — server-side lockdown fix
 -- ============================================================
--- Run after cbt_proctoring_infra.sql.
+-- Run after cbt_ai_integration.sql (which provides the three-argument
+-- submit_exam_attempt RPC used for server-side termination).
 -- Idempotent — safe to re-run.
 --
 -- record_violation(p_attempt, p_kind, p_max_violations)
@@ -9,6 +10,9 @@
 --   → counts violations from proctoring_events while holding the lock
 --   → inserts the violation with the correct sequential strike_number
 --   → on reaching limit: terminates attempt via submit_exam_attempt
+--   → reads max_violations from the exam's server-side settings; the legacy
+--     p_max_violations argument is deliberately ignored and cannot weaken
+--     enforcement
 --   → returns directive: action='warn'|'terminate', strike, remaining
 --
 -- Concurrency guarantee: SELECT ... FOR UPDATE on the exam_attempts row
@@ -28,6 +32,7 @@ AS $$
 DECLARE
   v_attempt       exam_attempts;
   v_my_student    uuid;
+  v_configured_max integer;
   v_max           integer;
   v_strike        integer;
   v_remaining     integer;
@@ -47,7 +52,11 @@ BEGIN
   END IF;
 
   -- Ownership check: caller must own this attempt.
-  SELECT id INTO v_my_student FROM students WHERE profile_id = auth.uid() LIMIT 1;
+  SELECT id INTO v_my_student
+  FROM students
+  WHERE profile_id = auth.uid()
+    AND organization_id = v_attempt.organization_id
+  LIMIT 1;
   IF v_my_student IS NULL OR v_my_student <> v_attempt.student_id THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'not_owner');
   END IF;
@@ -65,8 +74,20 @@ BEGIN
     );
   END IF;
 
-  -- Cap max_violations: clamp client-supplied value between 1 and 10.
-  v_max := GREATEST(1, LEAST(COALESCE(p_max_violations, 3), 10));
+  -- The limit is server-authoritative. Never trust p_max_violations: it is
+  -- retained only for backwards-compatible RPC calls from deployed clients.
+  -- Treat missing or malformed configuration as the safe default of 3.
+  SELECT CASE
+           WHEN e.settings->>'max_violations' ~ '^[0-9]+$'
+             THEN (e.settings->>'max_violations')::integer
+           ELSE 3
+         END
+    INTO v_configured_max
+    FROM exams e
+   WHERE e.id = v_attempt.exam_id
+     AND e.organization_id = v_attempt.organization_id;
+
+  v_max := GREATEST(1, LEAST(COALESCE(v_configured_max, 3), 10));
 
   -- Count existing violations while holding the lock. Because we hold FOR UPDATE
   -- on the attempt row, any concurrent call that also needs to insert a violation
@@ -108,6 +129,7 @@ BEGIN
       'ok',          true,
       'action',      'terminate',
       'strike',      v_strike,
+      'max_violations', v_max,
       'remaining',   0,
       'score',       v_submit_result->'total_score',
       'total_marks', v_submit_result->'total_marks',
@@ -119,6 +141,7 @@ BEGIN
       'ok',        true,
       'action',    'warn',
       'strike',    v_strike,
+      'max_violations', v_max,
       'remaining', v_remaining
     );
   END IF;
@@ -127,8 +150,106 @@ END $$;
 GRANT EXECUTE ON FUNCTION public.record_violation(uuid, text, integer) TO authenticated;
 
 -- ============================================================
--- Tighten log_proctoring_event: reject violation events for
--- non-in_progress attempts.
+-- Disqualification is terminal for this exam, even when the exam's normal
+-- max_attempts setting would otherwise permit another attempt. This function
+-- also locks an existing in-progress attempt before returning it, so a login
+-- concurrent with the final record_violation call cannot resume the attempt
+-- after it is closed.
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.start_exam_attempt(p_exam uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_student uuid;
+  v_org uuid;
+  v_check jsonb;
+  v_existing exam_attempts;
+  v_next_num integer;
+  v_new_id uuid;
+BEGIN
+  SELECT id, organization_id INTO v_student, v_org
+  FROM students
+  WHERE profile_id = auth.uid()
+    AND status = 'active'
+  LIMIT 1;
+
+  IF v_student IS NULL THEN
+    RAISE EXCEPTION 'No student profile linked to this user';
+  END IF;
+
+  -- A tab-switch disqualification consumes the exam regardless of the
+  -- ordinary retry setting. Check before the generic availability response so
+  -- the student receives the correct terminal state.
+  IF EXISTS (
+    SELECT 1
+    FROM exam_attempts
+    WHERE exam_id = p_exam
+      AND student_id = v_student
+      AND organization_id = v_org
+      AND termination_reason = 'tab_switch_limit'
+  ) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'disqualified');
+  END IF;
+
+  v_check := can_take_exam(p_exam, v_student);
+  IF (v_check->>'ok')::boolean IS DISTINCT FROM true THEN
+    RETURN v_check;
+  END IF;
+
+  -- Share the attempt-row lock used by record_violation. If final
+  -- termination is in progress, this waits and then re-evaluates the row.
+  SELECT * INTO v_existing
+  FROM exam_attempts
+  WHERE exam_id = p_exam
+    AND student_id = v_student
+    AND organization_id = v_org
+    AND status = 'in_progress'
+  ORDER BY started_at DESC
+  LIMIT 1
+  FOR UPDATE;
+
+  IF v_existing.id IS NOT NULL THEN
+    RETURN jsonb_build_object('ok', true, 'resumed', true,
+                              'attempt_id', v_existing.id,
+                              'started_at', v_existing.started_at);
+  END IF;
+
+  -- Re-check after the shared row lock. This closes the race where the final
+  -- violation commits while this call is waiting to resume the attempt.
+  IF EXISTS (
+    SELECT 1
+    FROM exam_attempts
+    WHERE exam_id = p_exam
+      AND student_id = v_student
+      AND organization_id = v_org
+      AND termination_reason = 'tab_switch_limit'
+  ) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'disqualified');
+  END IF;
+
+  SELECT COALESCE(MAX(attempt_number), 0) + 1 INTO v_next_num
+  FROM exam_attempts
+  WHERE exam_id = p_exam
+    AND student_id = v_student
+    AND organization_id = v_org;
+
+  INSERT INTO exam_attempts(exam_id, student_id, attempt_number, status,
+                            organization_id, started_at)
+  VALUES (p_exam, v_student, v_next_num, 'in_progress', v_org, now())
+  RETURNING id INTO v_new_id;
+
+  RETURN jsonb_build_object('ok', true, 'resumed', false,
+                            'attempt_id', v_new_id, 'attempt_number', v_next_num);
+END $$;
+
+GRANT EXECUTE ON FUNCTION public.start_exam_attempt(uuid) TO authenticated;
+
+-- ============================================================
+-- Tighten log_proctoring_event: it is for non-violation audit events only.
+-- All violation strikes must go through record_violation so the attempt lock,
+-- server-side threshold, and sequential numbering cannot be bypassed.
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.log_proctoring_event(
   p_attempt uuid,
@@ -148,12 +269,17 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'reason', 'attempt_not_found');
   END IF;
   IF NOT (
-    v_attempt.student_id IN (SELECT id FROM students WHERE profile_id = auth.uid())
+    v_attempt.student_id IN (
+      SELECT id
+      FROM students
+      WHERE profile_id = auth.uid()
+        AND organization_id = v_attempt.organization_id
+    )
   ) THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'not_owner');
   END IF;
-  IF p_violation = true AND v_attempt.status <> 'in_progress' THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'attempt_not_in_progress');
+  IF COALESCE(p_violation, false) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'use_record_violation');
   END IF;
 
   INSERT INTO proctoring_events (attempt_id, organization_id, event_type, event_data, violation, strike_number)
