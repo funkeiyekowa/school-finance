@@ -227,6 +227,20 @@ BEGIN
     RAISE EXCEPTION 'No student profile linked to this user';
   END IF;
 
+  -- A proctored exam cannot safely start without the event table that holds
+  -- the server-authoritative violation history. Return a clear setup status
+  -- instead of leaking a PostgreSQL "relation does not exist" error.
+  IF to_regclass('public.proctoring_events') IS NULL
+     AND EXISTS (
+       SELECT 1
+       FROM exams
+       WHERE id = p_exam
+         AND organization_id = v_org
+         AND settings->>'proctored' = 'true'
+     ) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'proctoring_not_configured');
+  END IF;
+
   -- A tab-switch disqualification consumes the exam regardless of the
   -- ordinary retry setting. Check before the generic availability response so
   -- the student receives the correct terminal state.

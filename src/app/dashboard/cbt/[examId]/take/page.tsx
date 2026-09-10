@@ -232,8 +232,8 @@ export default function TakeExamPage() {
 
       if (res.action === "terminate" || res.already_terminated) {
         // ── FINAL VIOLATION: attempt already terminated server-side ──────────
-        // Show disqualification overlay. autoSubmittingRef and lockedRef stay
-        // true forever — the page is about to be replaced by the login page.
+        // Show the terminal disqualification overlay. autoSubmittingRef and
+        // lockedRef stay true, so the finished attempt cannot be used again.
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
         setViolationOverlay({ strike: res.strike, maxViolations: serverMaxViolations, action: "terminate" });
         // Exit fullscreen so the browser chrome is accessible.
@@ -332,6 +332,7 @@ export default function TakeExamPage() {
         not_assigned:        "You are not assigned to this exam. Please contact your teacher.",
         max_attempts_reached:"You have used all your attempts for this exam.",
         disqualified:       "This exam was closed after the maximum number of proctoring violations.",
+        proctoring_not_configured: "This proctored exam is not ready yet. Ask an administrator to install the CBT proctoring database setup.",
       };
       setError(map[res.reason ?? ""] ?? "You cannot take this exam right now.");
       setLoading(false);
