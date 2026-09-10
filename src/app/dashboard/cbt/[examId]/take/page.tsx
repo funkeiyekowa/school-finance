@@ -46,6 +46,14 @@ interface AttemptData {
   total_score: number | null; percentage: number | null; passed: boolean | null;
   total_marks: number | null;
 }
+interface CompletedExamData {
+  message: string;
+  showResults: boolean;
+  totalScore: number | null;
+  totalMarks: number | null;
+  percentage: number | null;
+  passed: boolean | null;
+}
 
 function shuffleArray<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -81,6 +89,7 @@ export default function TakeExamPage() {
   const [exam, setExam] = useState<ExamData | null>(null);
   const [questions, setQuestions] = useState<QuestionData[]>([]);
   const [attempt, setAttempt] = useState<AttemptData | null>(null);
+  const [completedExam, setCompletedExam] = useState<CompletedExamData | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [flagged, setFlagged] = useState<Set<string>>(new Set());
@@ -327,7 +336,19 @@ export default function TakeExamPage() {
       setLoading(false);
       return;
     }
-    const res = (startRes ?? {}) as { ok?: boolean; reason?: string; attempt_id?: string; starts_at?: string; ends_at?: string; violation_count?: number };
+    const res = (startRes ?? {}) as { ok?: boolean; completed?: boolean; reason?: string; attempt_id?: string; starts_at?: string; ends_at?: string; violation_count?: number; show_results?: boolean; completion_message?: string; total_score?: number | null; total_marks?: number | null; percentage?: number | null; passed?: boolean | null };
+    if (res.completed) {
+      setCompletedExam({
+        message: res.completion_message || "This exam has been completed. Your submission has been recorded.",
+        showResults: res.show_results === true,
+        totalScore: res.total_score ?? null,
+        totalMarks: res.total_marks ?? null,
+        percentage: res.percentage ?? null,
+        passed: res.passed ?? null,
+      });
+      setLoading(false);
+      return;
+    }
     if (!res.ok || !res.attempt_id) {
       const map: Record<string, string> = {
         exam_not_found:      "This exam does not exist or has been withdrawn.",
@@ -754,6 +775,29 @@ export default function TakeExamPage() {
           <h1 className="text-lg font-bold text-[#0F2A47]">Cannot start this exam</h1>
           <p className="text-sm text-gray-600">{error}</p>
           <Button variant="gold" onClick={() => router.push("/dashboard/my-exams")}>Back to my exams</Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  if (completedExam) return (
+    <div className="min-h-screen bg-[#F7F5F0] flex items-center justify-center p-6">
+      <Card className="max-w-md w-full">
+        <CardContent className="py-8 text-center space-y-4">
+          <CheckCircle2 size={48} className={cn("mx-auto", completedExam.showResults && completedExam.passed ? "text-green-600" : completedExam.showResults && completedExam.passed === false ? "text-red-500" : "text-[#C9A227]")} />
+          <h1 className="text-xl font-bold text-[#0F2A47]">Exam Completed</h1>
+          <p className="text-sm text-gray-600">{completedExam.message}</p>
+          {completedExam.showResults ? (
+            <>
+              <div className="grid grid-cols-3 gap-3 pt-2">
+                <div className="bg-gray-50 rounded-lg p-3"><div className="text-xl font-bold text-[#0F2A47]">{completedExam.totalScore ?? 0}</div><div className="text-xs text-gray-500">Score</div></div>
+                <div className="bg-gray-50 rounded-lg p-3"><div className="text-xl font-bold text-[#0F2A47]">{completedExam.totalMarks ?? 0}</div><div className="text-xs text-gray-500">Total</div></div>
+                <div className="bg-gray-50 rounded-lg p-3"><div className="text-xl font-bold text-[#0F2A47]">{completedExam.percentage ?? 0}%</div><div className="text-xs text-gray-500">Percentage</div></div>
+              </div>
+              {completedExam.passed !== null && <div className={cn("text-sm font-bold", completedExam.passed ? "text-green-600" : "text-red-500")}>{completedExam.passed ? "PASSED" : "NOT PASSED"}</div>}
+            </>
+          ) : <p className="text-xs text-gray-500">Your teacher will release results when they are ready.</p>}
+          <Button variant="gold" onClick={() => router.replace("/dashboard/my-exams")}>Back to My Exams</Button>
         </CardContent>
       </Card>
     </div>

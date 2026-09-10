@@ -42,7 +42,7 @@ const DEFAULT_EXAM_FORM = {
   shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false,
   proctored: false, fullscreen_required: false, max_violations: "3", camera_required: false, screen_required: false,
   block_on_denial: true, sign_out_after_warning: true, warning_message: "", warning_acknowledgement_label: "",
-  final_message: "", final_action_label: "", starts_at: "", ends_at: "",
+  final_message: "", final_action_label: "", completion_message: "", starts_at: "", ends_at: "",
 };
 
 /**
@@ -442,7 +442,7 @@ export default function CbtPage() {
     if (exam) {
       setEditingExam(exam);
       const s = (exam.settings || {}) as Record<string, unknown>;
-      setExamForm({ ...DEFAULT_EXAM_FORM, title: exam.title, exam_type: exam.exam_type, subject_id: exam.subject_id || "", class_id: exam.class_id || "", duration_minutes: String(exam.duration_minutes), max_attempts: String(exam.max_attempts), pass_mark: String(exam.pass_mark || 0), shuffle_questions: exam.shuffle_questions, shuffle_options: exam.shuffle_options, show_results: exam.show_results, show_answers: exam.show_answers, proctored: s.proctored === true, fullscreen_required: s.fullscreen_required === true, max_violations: String((s.max_violations as number) || 3), camera_required: s.camera_required === true, screen_required: s.screen_required === true, block_on_denial: s.block_on_denial !== false, sign_out_after_warning: s.sign_out_after_warning !== false, warning_message: typeof s.warning_message === "string" ? s.warning_message : "", warning_acknowledgement_label: typeof s.warning_acknowledgement_label === "string" ? s.warning_acknowledgement_label : "", final_message: typeof s.final_message === "string" ? s.final_message : "", final_action_label: typeof s.final_action_label === "string" ? s.final_action_label : "", starts_at: (exam as unknown as { starts_at?: string | null }).starts_at ? (exam as unknown as { starts_at?: string | null }).starts_at!.slice(0, 16) : "", ends_at: (exam as unknown as { ends_at?: string | null }).ends_at ? (exam as unknown as { ends_at?: string | null }).ends_at!.slice(0, 16) : "" });
+      setExamForm({ ...DEFAULT_EXAM_FORM, title: exam.title, exam_type: exam.exam_type, subject_id: exam.subject_id || "", class_id: exam.class_id || "", duration_minutes: String(exam.duration_minutes), max_attempts: String(exam.max_attempts), pass_mark: String(exam.pass_mark || 0), shuffle_questions: exam.shuffle_questions, shuffle_options: exam.shuffle_options, show_results: exam.show_results, show_answers: exam.show_answers, proctored: s.proctored === true, fullscreen_required: s.fullscreen_required === true, max_violations: String((s.max_violations as number) || 3), camera_required: s.camera_required === true, screen_required: s.screen_required === true, block_on_denial: s.block_on_denial !== false, sign_out_after_warning: s.sign_out_after_warning !== false, warning_message: typeof s.warning_message === "string" ? s.warning_message : "", warning_acknowledgement_label: typeof s.warning_acknowledgement_label === "string" ? s.warning_acknowledgement_label : "", final_message: typeof s.final_message === "string" ? s.final_message : "", final_action_label: typeof s.final_action_label === "string" ? s.final_action_label : "", completion_message: typeof s.completion_message === "string" ? s.completion_message : "", starts_at: (exam as unknown as { starts_at?: string | null }).starts_at ? (exam as unknown as { starts_at?: string | null }).starts_at!.slice(0, 16) : "", ends_at: (exam as unknown as { ends_at?: string | null }).ends_at ? (exam as unknown as { ends_at?: string | null }).ends_at!.slice(0, 16) : "" });
     } else {
       setEditingExam(null);
       setExamForm(DEFAULT_EXAM_FORM);
@@ -476,6 +476,7 @@ export default function CbtPage() {
         warning_acknowledgement_label: examForm.warning_acknowledgement_label.trim().slice(0, 80),
         final_message: examForm.final_message.trim().slice(0, 500),
         final_action_label: examForm.final_action_label.trim().slice(0, 80),
+        completion_message: examForm.completion_message.trim().slice(0, 500),
       },
       starts_at: examForm.starts_at ? new Date(examForm.starts_at).toISOString() : null,
       ends_at: examForm.ends_at ? new Date(examForm.ends_at).toISOString() : null,
@@ -926,6 +927,7 @@ export default function CbtPage() {
                   <Input label="Warning button label (optional)" maxLength={80} value={examForm.warning_acknowledgement_label} onChange={e => setExamForm(f => ({ ...f, warning_acknowledgement_label: e.target.value }))} placeholder="I Understand — Sign Out" />
                   <Textarea label="Warning message (optional)" rows={3} maxLength={500} value={examForm.warning_message} onChange={e => setExamForm(f => ({ ...f, warning_message: e.target.value }))} placeholder="You left the exam window." />
                   <div className="space-y-3"><Textarea label="Final disqualification message (optional)" rows={3} maxLength={500} value={examForm.final_message} onChange={e => setExamForm(f => ({ ...f, final_message: e.target.value }))} placeholder="Your exam has been submitted with your answers so far." /><Input label="Final button label (optional)" maxLength={80} value={examForm.final_action_label} onChange={e => setExamForm(f => ({ ...f, final_action_label: e.target.value }))} placeholder="Back to My Exams" /></div>
+                  <Textarea label="Completion message (optional)" rows={3} maxLength={500} value={examForm.completion_message} onChange={e => setExamForm(f => ({ ...f, completion_message: e.target.value }))} placeholder="This exam has been completed. Your submission has been recorded." />
                 </div>
               </div>
             )}

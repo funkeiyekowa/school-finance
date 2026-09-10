@@ -213,6 +213,8 @@ DECLARE
   v_org uuid;
   v_check jsonb;
   v_existing exam_attempts;
+  v_completed exam_attempts;
+  v_exam exams;
   v_violation_count integer;
   v_next_num integer;
   v_new_id uuid;
@@ -257,6 +259,35 @@ BEGIN
 
   v_check := can_take_exam(p_exam, v_student);
   IF (v_check->>'ok')::boolean IS DISTINCT FROM true THEN
+    -- A completed exam deserves a completion summary, not a generic retry
+    -- error. This is still server-authoritative: only the owner's latest
+    -- finished attempt is returned, and score fields are later rendered only
+    -- when the exam owner enabled show_results.
+    IF v_check->>'reason' = 'max_attempts_reached' THEN
+      SELECT * INTO v_completed
+      FROM exam_attempts
+      WHERE exam_id = p_exam
+        AND student_id = v_student
+        AND organization_id = v_org
+        AND status IN ('submitted', 'graded', 'timed_out')
+      ORDER BY submitted_at DESC NULLS LAST, started_at DESC
+      LIMIT 1;
+      SELECT * INTO v_exam FROM exams WHERE id = p_exam AND organization_id = v_org;
+      IF v_completed.id IS NOT NULL THEN
+        RETURN jsonb_build_object(
+          'ok', true,
+          'completed', true,
+          'attempt_id', v_completed.id,
+          'status', v_completed.status,
+          'show_results', COALESCE(v_exam.show_results, false),
+          'completion_message', COALESCE(NULLIF(v_exam.settings->>'completion_message', ''), 'This exam has been completed. Your submission has been recorded.'),
+          'total_score', v_completed.total_score,
+          'total_marks', v_completed.total_marks,
+          'percentage', v_completed.percentage,
+          'passed', v_completed.passed
+        );
+      END IF;
+    END IF;
     RETURN v_check;
   END IF;
 
