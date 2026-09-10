@@ -213,6 +213,7 @@ DECLARE
   v_org uuid;
   v_check jsonb;
   v_existing exam_attempts;
+  v_violation_count integer;
   v_next_num integer;
   v_new_id uuid;
 BEGIN
@@ -258,9 +259,14 @@ BEGIN
   FOR UPDATE;
 
   IF v_existing.id IS NOT NULL THEN
+    SELECT COUNT(*)::integer INTO v_violation_count
+    FROM proctoring_events
+    WHERE attempt_id = v_existing.id
+      AND violation = true;
     RETURN jsonb_build_object('ok', true, 'resumed', true,
                               'attempt_id', v_existing.id,
-                              'started_at', v_existing.started_at);
+                              'started_at', v_existing.started_at,
+                              'violation_count', v_violation_count);
   END IF;
 
   -- Re-check after the shared row lock. This closes the race where the final
@@ -288,7 +294,8 @@ BEGIN
   RETURNING id INTO v_new_id;
 
   RETURN jsonb_build_object('ok', true, 'resumed', false,
-                            'attempt_id', v_new_id, 'attempt_number', v_next_num);
+                            'attempt_id', v_new_id, 'attempt_number', v_next_num,
+                            'violation_count', 0);
 END $$;
 
 GRANT EXECUTE ON FUNCTION public.start_exam_attempt(uuid) TO authenticated;

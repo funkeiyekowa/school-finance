@@ -243,15 +243,10 @@ export default function TakeExamPage() {
         // is needed and the student cannot resume the exam.
       } else {
         // ── WARNING VIOLATION: attempt stays in_progress ──────────────────────
-        // Show warning overlay, then sign out immediately. Do NOT reset guards
-        // before navigation — we don't want the frozen page to become interactive
-        // again while signOut/router are in flight.
+        // Keep the warning visible until the student explicitly acknowledges
+        // it. The exam stays frozen behind the non-dismissible dialog.
         setViolationOverlay({ strike: res.strike, maxViolations: serverMaxViolations, action: "warn" });
         try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
-        // Brief pause so the student reads the message, then enforce sign-out.
-        await new Promise(r => setTimeout(r, 2000));
-        try { await signOut(); } catch { /* ignore */ }
-        window.location.assign(schoolLoginPathForCookie());
       }
     }
     registerViolationRef.current = registerViolation;
@@ -327,7 +322,7 @@ export default function TakeExamPage() {
       setLoading(false);
       return;
     }
-    const res = (startRes ?? {}) as { ok?: boolean; reason?: string; attempt_id?: string; starts_at?: string; ends_at?: string };
+    const res = (startRes ?? {}) as { ok?: boolean; reason?: string; attempt_id?: string; starts_at?: string; ends_at?: string; violation_count?: number };
     if (!res.ok || !res.attempt_id) {
       const map: Record<string, string> = {
         exam_not_found:      "This exam does not exist or has been withdrawn.",
@@ -450,13 +445,23 @@ export default function TakeExamPage() {
       .single();
     setAttempt(attemptRow as AttemptData);
 
+    // start_exam_attempt is SECURITY DEFINER and returns this count for the
+    // owning student. It is the primary source on every resume; do not depend
+    // on a client-side table read that RLS intentionally denies to students.
+    if (typeof res.violation_count === "number") {
+      setViolations(res.violation_count);
+    }
+
     // Students cannot read proctoring_events directly (by design). Use the
     // ownership-checked RPC so the persisted count survives warn + logout.
-    const { data: proctoringState } = await supabase.rpc("get_attempt_proctoring_state", {
+    const { data: proctoringState, error: proctoringStateError } = await supabase.rpc("get_attempt_proctoring_state", {
       p_attempt: res.attempt_id,
     });
     const persistedViolations = (proctoringState as { violation_count?: number } | null)?.violation_count;
     if (typeof persistedViolations === "number") setViolations(persistedViolations);
+    else if (proctoringStateError && typeof res.violation_count !== "number") {
+      setSaveWarning("Unable to load the server-recorded violation count. Ask an administrator to apply the latest CBT enforcement SQL before continuing this test.");
+    }
 
     const { data: ansData } = await supabase
       .from("exam_answers")
@@ -854,12 +859,17 @@ export default function TakeExamPage() {
                 You left the exam window.
               </p>
               <p className="text-sm text-white/70 text-center mb-1">
-                You have been logged out. You must log in again to continue.
+                Your exam is paused. Click below to acknowledge this warning; you will then be logged out and must log in again to continue.
               </p>
               <p className="text-sm text-white/70 text-center">
                 {violationOverlay.maxViolations - violationOverlay.strike} warning{violationOverlay.maxViolations - violationOverlay.strike === 1 ? "" : "s"} remaining before permanent disqualification.
               </p>
-              <div className="mt-6 text-xs text-white/40">Signing you out…</div>
+              <Button variant="gold" className="mt-6" onClick={async () => {
+                try { await signOut(); } catch { /* redirect still proceeds */ }
+                window.location.assign(schoolLoginPathForCookie());
+              }}>
+                I Understand — Sign Out
+              </Button>
             </>
           )}
         </div>
