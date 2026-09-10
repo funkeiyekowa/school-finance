@@ -150,6 +150,53 @@ END $$;
 GRANT EXECUTE ON FUNCTION public.record_violation(uuid, text, integer) TO authenticated;
 
 -- ============================================================
+-- Student-safe proctoring state for an attempt they own. The underlying
+-- proctoring_events table stays staff-only for reads, while the student can
+-- still see the authoritative strike total after a warning logout/re-login.
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.get_attempt_proctoring_state(p_attempt uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_attempt exam_attempts;
+  v_my_student uuid;
+  v_count integer;
+BEGIN
+  SELECT * INTO v_attempt
+  FROM exam_attempts
+  WHERE id = p_attempt;
+
+  IF v_attempt.id IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'attempt_not_found');
+  END IF;
+
+  SELECT id INTO v_my_student
+  FROM students
+  WHERE profile_id = auth.uid()
+    AND organization_id = v_attempt.organization_id
+  LIMIT 1;
+  IF v_my_student IS NULL OR v_my_student <> v_attempt.student_id THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_owner');
+  END IF;
+
+  SELECT COUNT(*)::integer INTO v_count
+  FROM proctoring_events
+  WHERE attempt_id = p_attempt
+    AND violation = true;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'violation_count', v_count,
+    'status', v_attempt.status,
+    'termination_reason', v_attempt.termination_reason
+  );
+END $$;
+
+GRANT EXECUTE ON FUNCTION public.get_attempt_proctoring_state(uuid) TO authenticated;
+
+-- ============================================================
 -- Disqualification is terminal for this exam, even when the exam's normal
 -- max_attempts setting would otherwise permit another attempt. This function
 -- also locks an existing in-progress attempt before returning it, so a login

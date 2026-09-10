@@ -22,6 +22,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { CheckCircle2, Clock, Flag, ChevronLeft, ChevronRight, AlertTriangle, Lock, Maximize } from "lucide-react";
 import { useExamRecording } from "@/lib/proctoring/useExamRecording";
 import { ProctoringConsent } from "@/components/cbt/ProctoringConsent";
+import { schoolLoginPathForCookie } from "@/lib/auth/signOutToSchoolLogin";
 
 interface OptionRow { id: string; text: string; is_correct: boolean; }
 interface MatchingPair { left: string; right: string; }
@@ -185,7 +186,7 @@ export default function TakeExamPage() {
         try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
         await new Promise(r => setTimeout(r, 2500));
         try { await signOut(); } catch { /* ignore */ }
-        router.replace("/login");
+        window.location.assign(schoolLoginPathForCookie());
       }
 
       // This should not normally be reachable because the effect is bound to
@@ -237,10 +238,9 @@ export default function TakeExamPage() {
         setViolationOverlay({ strike: res.strike, maxViolations: serverMaxViolations, action: "terminate" });
         // Exit fullscreen so the browser chrome is accessible.
         try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
-        // Brief pause so the student reads the disqualification message, then sign out.
-        await new Promise(r => setTimeout(r, 2500));
-        try { await signOut(); } catch { /* ignore */ }
-        router.replace("/login");
+        // A final violation is terminal, but keep this confirmation visible.
+        // The server has already submitted and closed the attempt; no logout
+        // is needed and the student cannot resume the exam.
       } else {
         // ── WARNING VIOLATION: attempt stays in_progress ──────────────────────
         // Show warning overlay, then sign out immediately. Do NOT reset guards
@@ -251,7 +251,7 @@ export default function TakeExamPage() {
         // Brief pause so the student reads the message, then enforce sign-out.
         await new Promise(r => setTimeout(r, 2000));
         try { await signOut(); } catch { /* ignore */ }
-        router.replace("/login");
+        window.location.assign(schoolLoginPathForCookie());
       }
     }
     registerViolationRef.current = registerViolation;
@@ -450,16 +450,13 @@ export default function TakeExamPage() {
       .single();
     setAttempt(attemptRow as AttemptData);
 
-    // Load the existing violation count from the server so the UI shows the
-    // correct "Violations N/M" on re-entry after a prior warn+signout.
-    const { count: existingViolations } = await supabase
-      .from("proctoring_events")
-      .select("id", { count: "exact", head: true })
-      .eq("attempt_id", res.attempt_id)
-      .eq("violation", true);
-    if (existingViolations && existingViolations > 0) {
-      setViolations(existingViolations);
-    }
+    // Students cannot read proctoring_events directly (by design). Use the
+    // ownership-checked RPC so the persisted count survives warn + logout.
+    const { data: proctoringState } = await supabase.rpc("get_attempt_proctoring_state", {
+      p_attempt: res.attempt_id,
+    });
+    const persistedViolations = (proctoringState as { violation_count?: number } | null)?.violation_count;
+    if (typeof persistedViolations === "number") setViolations(persistedViolations);
 
     const { data: ansData } = await supabase
       .from("exam_answers")
@@ -840,11 +837,9 @@ export default function TakeExamPage() {
                 You left the exam for the final time.
               </p>
               <p className="text-sm text-white/70 text-center">
-                Your exam has been submitted with your answers so far. You are being signed out.
+                Your exam has been submitted with your answers so far and the incident has been entered in the violation report.
               </p>
-              <div className="mt-6 text-xs text-white/40">
-                Violation {violationOverlay.strike} of {violationOverlay.maxViolations} — attempt permanently closed.
-              </div>
+              <div className="mt-6 text-xs text-white/40">Violation {violationOverlay.strike} of {violationOverlay.maxViolations} — attempt permanently closed.</div>
             </>
           ) : (
             <>
