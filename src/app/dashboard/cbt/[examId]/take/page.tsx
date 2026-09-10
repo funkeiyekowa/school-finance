@@ -840,6 +840,9 @@ export default function TakeExamPage() {
                 Your exam has been submitted with your answers so far and the incident has been entered in the violation report.
               </p>
               <div className="mt-6 text-xs text-white/40">Violation {violationOverlay.strike} of {violationOverlay.maxViolations} — attempt permanently closed.</div>
+              <Button variant="secondary" className="mt-6" onClick={() => router.replace("/dashboard/my-exams")}>
+                Back to My Exams
+              </Button>
             </>
           ) : (
             <>
