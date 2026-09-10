@@ -7,7 +7,7 @@ import { fmtDateTime, cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
+import { Input, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Plus, BookOpen, FileText, Save, Trash2, Upload, Link2, Copy, Pencil, Sparkles, Loader2, ShieldAlert } from "lucide-react";
 
@@ -36,6 +36,14 @@ interface ViolationEventRow {
     exams: { title: string } | { title: string }[] | null;
   }[] | null;
 }
+
+const DEFAULT_EXAM_FORM = {
+  title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0",
+  shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false,
+  proctored: false, fullscreen_required: false, max_violations: "3", camera_required: false, screen_required: false,
+  block_on_denial: true, sign_out_after_warning: true, warning_message: "", warning_acknowledgement_label: "",
+  final_message: "", final_action_label: "", starts_at: "", ends_at: "",
+};
 
 /**
  * CSV template for the bulk uploader.
@@ -167,7 +175,7 @@ export default function CbtPage() {
   const [showExamForm, setShowExamForm] = useState(false);
   const [savingExam, setSavingExam] = useState(false);
   const [editingExam, setEditingExam] = useState<ExamRow | null>(null);
-  const [examForm, setExamForm] = useState({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, fullscreen_required: false, max_violations: "3", camera_required: false, screen_required: false, block_on_denial: true, starts_at: "", ends_at: "" });
+  const [examForm, setExamForm] = useState(DEFAULT_EXAM_FORM);
 
   // Exam questions panel
   const [selectedExam, setSelectedExam] = useState<ExamRow | null>(null);
@@ -434,10 +442,10 @@ export default function CbtPage() {
     if (exam) {
       setEditingExam(exam);
       const s = (exam.settings || {}) as Record<string, unknown>;
-      setExamForm({ title: exam.title, exam_type: exam.exam_type, subject_id: exam.subject_id || "", class_id: exam.class_id || "", duration_minutes: String(exam.duration_minutes), max_attempts: String(exam.max_attempts), pass_mark: String(exam.pass_mark || 0), shuffle_questions: exam.shuffle_questions, shuffle_options: exam.shuffle_options, show_results: exam.show_results, show_answers: exam.show_answers, proctored: s.proctored === true, fullscreen_required: s.fullscreen_required === true, max_violations: String((s.max_violations as number) || 3), camera_required: s.camera_required === true, screen_required: s.screen_required === true, block_on_denial: s.block_on_denial !== false, starts_at: (exam as unknown as { starts_at?: string | null }).starts_at ? (exam as unknown as { starts_at?: string | null }).starts_at!.slice(0, 16) : "", ends_at: (exam as unknown as { ends_at?: string | null }).ends_at ? (exam as unknown as { ends_at?: string | null }).ends_at!.slice(0, 16) : "" });
+      setExamForm({ ...DEFAULT_EXAM_FORM, title: exam.title, exam_type: exam.exam_type, subject_id: exam.subject_id || "", class_id: exam.class_id || "", duration_minutes: String(exam.duration_minutes), max_attempts: String(exam.max_attempts), pass_mark: String(exam.pass_mark || 0), shuffle_questions: exam.shuffle_questions, shuffle_options: exam.shuffle_options, show_results: exam.show_results, show_answers: exam.show_answers, proctored: s.proctored === true, fullscreen_required: s.fullscreen_required === true, max_violations: String((s.max_violations as number) || 3), camera_required: s.camera_required === true, screen_required: s.screen_required === true, block_on_denial: s.block_on_denial !== false, sign_out_after_warning: s.sign_out_after_warning !== false, warning_message: typeof s.warning_message === "string" ? s.warning_message : "", warning_acknowledgement_label: typeof s.warning_acknowledgement_label === "string" ? s.warning_acknowledgement_label : "", final_message: typeof s.final_message === "string" ? s.final_message : "", final_action_label: typeof s.final_action_label === "string" ? s.final_action_label : "", starts_at: (exam as unknown as { starts_at?: string | null }).starts_at ? (exam as unknown as { starts_at?: string | null }).starts_at!.slice(0, 16) : "", ends_at: (exam as unknown as { ends_at?: string | null }).ends_at ? (exam as unknown as { ends_at?: string | null }).ends_at!.slice(0, 16) : "" });
     } else {
       setEditingExam(null);
-      setExamForm({ title: "", exam_type: "exam", subject_id: "", class_id: "", duration_minutes: "60", max_attempts: "1", pass_mark: "0", shuffle_questions: false, shuffle_options: false, show_results: true, show_answers: false, proctored: false, fullscreen_required: false, max_violations: "3", camera_required: false, screen_required: false, block_on_denial: true, starts_at: "", ends_at: "" });
+      setExamForm(DEFAULT_EXAM_FORM);
     }
     setShowExamForm(true);
   }
@@ -463,6 +471,11 @@ export default function CbtPage() {
         camera_required: examForm.camera_required,
         screen_required: examForm.screen_required,
         block_on_denial: examForm.block_on_denial,
+        sign_out_after_warning: examForm.sign_out_after_warning,
+        warning_message: examForm.warning_message.trim().slice(0, 500),
+        warning_acknowledgement_label: examForm.warning_acknowledgement_label.trim().slice(0, 80),
+        final_message: examForm.final_message.trim().slice(0, 500),
+        final_action_label: examForm.final_action_label.trim().slice(0, 80),
       },
       starts_at: examForm.starts_at ? new Date(examForm.starts_at).toISOString() : null,
       ends_at: examForm.ends_at ? new Date(examForm.ends_at).toISOString() : null,
@@ -903,12 +916,16 @@ export default function CbtPage() {
                 <p className="text-[11px] text-amber-800">While a student takes this exam they are confined to it: school navigation and the AI Assistant are blocked server-side until they submit. Blocking AI for students is always enforced and cannot be turned off here.</p>
                 <div className="flex flex-wrap gap-4">
                   <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.fullscreen_required} onChange={e => setExamForm(f => ({ ...f, fullscreen_required: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Require fullscreen</label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.sign_out_after_warning} onChange={e => setExamForm(f => ({ ...f, sign_out_after_warning: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Sign out after a warning</label>
                   <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.camera_required} onChange={e => setExamForm(f => ({ ...f, camera_required: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Record camera</label>
                   <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.screen_required} onChange={e => setExamForm(f => ({ ...f, screen_required: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Record screen</label>
                   <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={examForm.block_on_denial} onChange={e => setExamForm(f => ({ ...f, block_on_denial: e.target.checked }))} className="w-4 h-4 rounded text-[#C9A227]" />Block exam if recording denied</label>
                 </div>
-                <div className="w-40">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Input label="Violations before termination" type="number" min="1" max="10" value={examForm.max_violations} onChange={e => setExamForm(f => ({ ...f, max_violations: e.target.value }))} />
+                  <Input label="Warning button label (optional)" maxLength={80} value={examForm.warning_acknowledgement_label} onChange={e => setExamForm(f => ({ ...f, warning_acknowledgement_label: e.target.value }))} placeholder="I Understand — Sign Out" />
+                  <Textarea label="Warning message (optional)" rows={3} maxLength={500} value={examForm.warning_message} onChange={e => setExamForm(f => ({ ...f, warning_message: e.target.value }))} placeholder="You left the exam window." />
+                  <div className="space-y-3"><Textarea label="Final disqualification message (optional)" rows={3} maxLength={500} value={examForm.final_message} onChange={e => setExamForm(f => ({ ...f, final_message: e.target.value }))} placeholder="Your exam has been submitted with your answers so far." /><Input label="Final button label (optional)" maxLength={80} value={examForm.final_action_label} onChange={e => setExamForm(f => ({ ...f, final_action_label: e.target.value }))} placeholder="Back to My Exams" /></div>
                 </div>
               </div>
             )}

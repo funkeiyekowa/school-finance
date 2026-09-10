@@ -91,6 +91,11 @@ export default function TakeExamPage() {
   const [proctored, setProctored] = useState(false);
   const [fullscreenRequired, setFullscreenRequired] = useState(false);
   const [maxViolations, setMaxViolations] = useState(3);
+  const [signOutAfterWarning, setSignOutAfterWarning] = useState(true);
+  const [warningMessage, setWarningMessage] = useState("You left the exam window.");
+  const [warningAcknowledgementLabel, setWarningAcknowledgementLabel] = useState("I Understand — Sign Out");
+  const [finalMessage, setFinalMessage] = useState("Your exam has been submitted with your answers so far and the incident has been entered in the violation report.");
+  const [finalActionLabel, setFinalActionLabel] = useState("Back to My Exams");
   const [violations, setViolations] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
@@ -370,6 +375,12 @@ export default function TakeExamPage() {
     setProctored(isProctored);
     setFullscreenRequired(s.fullscreen_required === true || isProctored);
     setMaxViolations(typeof s.max_violations === "number" && s.max_violations > 0 ? s.max_violations : 3);
+    const shouldSignOutAfterWarning = s.sign_out_after_warning !== false;
+    setSignOutAfterWarning(shouldSignOutAfterWarning);
+    setWarningMessage(typeof s.warning_message === "string" && s.warning_message.trim() ? s.warning_message.trim() : "You left the exam window.");
+    setWarningAcknowledgementLabel(typeof s.warning_acknowledgement_label === "string" && s.warning_acknowledgement_label.trim() ? s.warning_acknowledgement_label.trim() : shouldSignOutAfterWarning ? "I Understand — Sign Out" : "I Understand — Continue");
+    setFinalMessage(typeof s.final_message === "string" && s.final_message.trim() ? s.final_message.trim() : "Your exam has been submitted with your answers so far and the incident has been entered in the violation report.");
+    setFinalActionLabel(typeof s.final_action_label === "string" && s.final_action_label.trim() ? s.final_action_label.trim() : "Back to My Exams");
 
     // Recording config — merge exam-level with school-level defaults.
     // School settings may override if the exam doesn't specify.
@@ -843,11 +854,11 @@ export default function TakeExamPage() {
                 You left the exam for the final time.
               </p>
               <p className="text-sm text-white/70 text-center">
-                Your exam has been submitted with your answers so far and the incident has been entered in the violation report.
+                {finalMessage}
               </p>
               <div className="mt-6 text-xs text-white/40">Violation {violationOverlay.strike} of {violationOverlay.maxViolations} — attempt permanently closed.</div>
               <Button variant="secondary" className="mt-6" onClick={() => router.replace("/dashboard/my-exams")}>
-                Back to My Exams
+                {finalActionLabel}
               </Button>
             </>
           ) : (
@@ -857,19 +868,26 @@ export default function TakeExamPage() {
                 Exam Violation {violationOverlay.strike} of {violationOverlay.maxViolations}
               </h1>
               <p className="text-lg text-center mb-2">
-                You left the exam window.
+                {warningMessage}
               </p>
               <p className="text-sm text-white/70 text-center mb-1">
-                Your exam is paused. Click below to acknowledge this warning; you will then be logged out and must log in again to continue.
+                {signOutAfterWarning ? "Your exam is paused. Click below to acknowledge this warning; you will then be logged out and must log in again to continue." : "Your exam is paused. Click below to acknowledge this warning and continue the exam."}
               </p>
               <p className="text-sm text-white/70 text-center">
                 {violationOverlay.maxViolations - violationOverlay.strike} warning{violationOverlay.maxViolations - violationOverlay.strike === 1 ? "" : "s"} remaining before permanent disqualification.
               </p>
               <Button variant="gold" className="mt-6" onClick={async () => {
-                try { await signOut(); } catch { /* redirect still proceeds */ }
-                window.location.assign(schoolLoginPathForCookie());
+                if (signOutAfterWarning) {
+                  try { await signOut(); } catch { /* redirect still proceeds */ }
+                  window.location.assign(schoolLoginPathForCookie());
+                } else {
+                  setViolationOverlay(null);
+                  lockedRef.current = false;
+                  autoSubmittingRef.current = false;
+                  requestFullscreen();
+                }
               }}>
-                I Understand — Sign Out
+                {warningAcknowledgementLabel || (signOutAfterWarning ? "I Understand — Sign Out" : "I Understand — Continue")}
               </Button>
             </>
           )}
