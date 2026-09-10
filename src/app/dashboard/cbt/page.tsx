@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { Plus, BookOpen, FileText, Save, Trash2, Upload, Link2, Copy, Pencil, Sparkles, Loader2 } from "lucide-react";
+import { Plus, BookOpen, FileText, Save, Trash2, Upload, Link2, Copy, Pencil, Sparkles, Loader2, ShieldAlert } from "lucide-react";
 
 interface SubjectRow { id: string; name: string; short_code: string; }
 interface ClassRow { id: string; name: string; }
@@ -18,6 +18,24 @@ interface ExamRow { id: string; title: string; exam_type: string; status: string
 interface ExamQuestionRow { id: string; exam_id: string; question_id: string; sort_order: number; }
 interface StudentRow { id: string; full_name: string; student_code: string; grade: string | null; }
 interface AssignmentRow { id: string; exam_id: string; student_id: string | null; class_id: string | null; available_from: string | null; available_to: string | null; }
+interface ViolationEventRow {
+  id: string;
+  event_type: string;
+  event_data: { kind?: string } | null;
+  strike_number: number | null;
+  created_at: string;
+  exam_attempts: {
+    status: string;
+    termination_reason: string | null;
+    students: { full_name: string; student_code: string } | { full_name: string; student_code: string }[] | null;
+    exams: { title: string } | { title: string }[] | null;
+  } | {
+    status: string;
+    termination_reason: string | null;
+    students: { full_name: string; student_code: string } | { full_name: string; student_code: string }[] | null;
+    exams: { title: string } | { title: string }[] | null;
+  }[] | null;
+}
 
 /**
  * CSV template for the bulk uploader.
@@ -53,11 +71,14 @@ export default function CbtPage() {
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"exams" | "questions">("exams");
+  const [tab, setTab] = useState<"exams" | "questions" | "violations">("exams");
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
   const [exams, setExams] = useState<ExamRow[]>([]);
+  const [violationEvents, setViolationEvents] = useState<ViolationEventRow[]>([]);
+  const [violationLoading, setViolationLoading] = useState(false);
+  const [violationError, setViolationError] = useState<string | null>(null);
 
   // Question form
   const [showQForm, setShowQForm] = useState(false);
@@ -182,6 +203,24 @@ export default function CbtPage() {
   }, [supabase]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadViolationLog = useCallback(async () => {
+    setViolationLoading(true);
+    setViolationError(null);
+    const { data, error } = await supabase
+      .from("proctoring_events")
+      .select("id, event_type, event_data, strike_number, created_at, exam_attempts(status, termination_reason, students(full_name, student_code), exams(title))")
+      .eq("violation", true)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) {
+      setViolationError(error.message);
+      setViolationEvents([]);
+    } else {
+      setViolationEvents((data ?? []) as unknown as ViolationEventRow[]);
+    }
+    setViolationLoading(false);
+  }, [supabase]);
 
   // --- Question CRUD ---
   const EMPTY_QFORM = { question_text: "", question_type: "multiple_choice", subject_id: "", topic: "", difficulty: "medium", marks: "1", answer_text: "", options: [{ id: "A", text: "", is_correct: true }, { id: "B", text: "", is_correct: false }, { id: "C", text: "", is_correct: false }, { id: "D", text: "", is_correct: false }] };
@@ -610,6 +649,7 @@ export default function CbtPage() {
       <div className="flex gap-2">
         <button onClick={() => setTab("exams")} className={cn("flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg", tab === "exams" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}><FileText size={14} /> Exams ({exams.length})</button>
         <button onClick={() => setTab("questions")} className={cn("flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg", tab === "questions" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}><BookOpen size={14} /> Question Bank ({questions.length})</button>
+        {canEdit && <button onClick={() => { setTab("violations"); void loadViolationLog(); }} className={cn("flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg", tab === "violations" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}><ShieldAlert size={14} /> Violation Log</button>}
       </div>
 
       {/* EXAMS TAB */}
@@ -715,6 +755,57 @@ export default function CbtPage() {
               })}
               {questions.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">No questions yet.</p>}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {tab === "violations" && canEdit && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle>Proctoring Violation Log</CardTitle>
+                <p className="text-xs text-gray-500 mt-1">Latest 100 server-recorded violations. Final-strike attempts are marked as disqualified.</p>
+              </div>
+              <Button size="sm" variant="secondary" onClick={() => void loadViolationLog()} loading={violationLoading}>Refresh</Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {violationError ? (
+              <p className="text-sm text-red-600">Could not load the violation log: {violationError}</p>
+            ) : violationLoading ? (
+              <LoadingSpinner />
+            ) : violationEvents.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-8">No proctoring violations have been recorded yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-gray-50 border-b">
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Time</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Student</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Exam</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Event</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Strike</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-600">Outcome</th>
+                  </tr></thead>
+                  <tbody>{violationEvents.map(event => {
+                    const attempt = Array.isArray(event.exam_attempts) ? event.exam_attempts[0] : event.exam_attempts;
+                    const student = Array.isArray(attempt?.students) ? attempt.students[0] : attempt?.students;
+                    const exam = Array.isArray(attempt?.exams) ? attempt.exams[0] : attempt?.exams;
+                    const disqualified = attempt?.termination_reason === "tab_switch_limit";
+                    const eventName = event.event_data?.kind || event.event_type.replace(/_/g, " ");
+                    return <tr key={event.id} className="border-b border-gray-100">
+                      <td className="px-3 py-3 text-xs text-gray-600 whitespace-nowrap">{fmtDateTime(event.created_at)}</td>
+                      <td className="px-3 py-3"><div className="font-medium text-gray-800">{student?.full_name ?? "Unknown student"}</div><div className="text-xs text-gray-500">{student?.student_code ?? "—"}</div></td>
+                      <td className="px-3 py-3 text-gray-700">{exam?.title ?? "Unknown exam"}</td>
+                      <td className="px-3 py-3 capitalize text-gray-700">{eventName}</td>
+                      <td className="px-3 py-3 font-semibold text-amber-700">#{event.strike_number ?? "—"}</td>
+                      <td className="px-3 py-3"><span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium", disqualified ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800")}>{disqualified ? "Disqualified" : "Warning / resumed"}</span></td>
+                    </tr>;
+                  })}</tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
