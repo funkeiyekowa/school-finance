@@ -20,6 +20,7 @@ export default defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "mobile/dist/**",
     "next-env.d.ts",
     "node_modules/**",
   ]),

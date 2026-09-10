@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Smart & Thrive",
+    "slug": "smart-thrive-school",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "smartthrive",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.smartthrive.school"
+    },
+    "android": {
+      "package": "com.smartthrive.school",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F2A47"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Smart & Thrive uses the camera only for school features you choose, such as attendance and exam verification."
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
