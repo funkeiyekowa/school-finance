@@ -100,7 +100,7 @@ export default function TakeExamPage() {
   const [violationOverlay, setViolationOverlay] = useState<{
     strike: number;
     maxViolations: number;
-    action: "warn" | "terminate";
+    action: "checking" | "warn" | "terminate" | "error";
   } | null>(null);
   // lockedRef: set true the instant a violation is detected (before the async RPC).
   // Immediately disables answer inputs so the student cannot keep answering while
@@ -169,7 +169,32 @@ export default function TakeExamPage() {
       autoSubmittingRef.current = true;
       lockedRef.current = true; // immediate UI freeze before RPC returns
 
-      if (!attempt?.id) { autoSubmittingRef.current = false; lockedRef.current = false; return; }
+      // The dialog must be visible as soon as the student returns to the exam,
+      // rather than waiting for a network round-trip to record the event.
+      // It changes to the authoritative warning/disqualification message when
+      // the RPC returns.
+      setViolationOverlay({
+        strike: Math.min(violations + 1, maxViolations),
+        maxViolations,
+        action: "checking",
+      });
+
+      async function signOutAfterRecordingFailure() {
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+        setViolationOverlay({ strike: 0, maxViolations, action: "error" });
+        try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
+        await new Promise(r => setTimeout(r, 2500));
+        try { await signOut(); } catch { /* ignore */ }
+        router.replace("/login");
+      }
+
+      // This should not normally be reachable because the effect is bound to
+      // attempt?.id. If it is, fail closed instead of leaving an interactive
+      // exam after a detected tab switch.
+      if (!attempt?.id) {
+        await signOutAfterRecordingFailure();
+        return;
+      }
 
       const { data: vData, error: vErr } = await supabase.rpc("record_violation", {
         p_attempt: attempt.id,
@@ -178,16 +203,14 @@ export default function TakeExamPage() {
       });
 
       if (vErr) {
-        // RPC failed — show overlay, reset guards so next genuine violation can fire.
-        autoSubmittingRef.current = false;
-        lockedRef.current = false;
-        // Use overlay even for the error case so the student sees feedback.
-        setViolationOverlay({ strike: 0, maxViolations, action: "warn" });
-        setTimeout(() => setViolationOverlay(null), 3000);
+        // Do not let a failed recording request leave a student in an active
+        // exam. They are signed out and may resume only after a later login;
+        // no unverified strike is claimed as persisted.
+        await signOutAfterRecordingFailure();
         return;
       }
 
-      const res = vData as {
+      const res = (vData ?? {}) as {
         ok: boolean;
         action: "warn" | "terminate";
         strike: number;
@@ -201,7 +224,10 @@ export default function TakeExamPage() {
       const serverMaxViolations = res.max_violations ?? maxViolations;
       setMaxViolations(serverMaxViolations);
 
-      if (!res.ok) { autoSubmittingRef.current = false; lockedRef.current = false; return; }
+      if (!res.ok) {
+        await signOutAfterRecordingFailure();
+        return;
+      }
 
       if (res.action === "terminate" || res.already_terminated) {
         // ── FINAL VIOLATION: attempt already terminated server-side ──────────
@@ -214,7 +240,7 @@ export default function TakeExamPage() {
         // Brief pause so the student reads the disqualification message, then sign out.
         await new Promise(r => setTimeout(r, 2500));
         try { await signOut(); } catch { /* ignore */ }
-        router.push("/login");
+        router.replace("/login");
       } else {
         // ── WARNING VIOLATION: attempt stays in_progress ──────────────────────
         // Show warning overlay, then sign out immediately. Do NOT reset guards
@@ -225,7 +251,7 @@ export default function TakeExamPage() {
         // Brief pause so the student reads the message, then enforce sign-out.
         await new Promise(r => setTimeout(r, 2000));
         try { await signOut(); } catch { /* ignore */ }
-        router.push("/login");
+        router.replace("/login");
       }
     }
     registerViolationRef.current = registerViolation;
@@ -268,7 +294,7 @@ export default function TakeExamPage() {
       document.removeEventListener("paste", block);
       document.removeEventListener("contextmenu", block);
     };
-  }, [proctored, submitted, maxViolations, fullscreenRequired, requestFullscreen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [attempt?.id, proctored, submitted, maxViolations, violations, fullscreenRequired, requestFullscreen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---------- Init: start_exam_attempt RPC + load questions ---------- */
   const init = useCallback(async () => {
@@ -791,7 +817,22 @@ export default function TakeExamPage() {
           from interacting with the frozen exam while the page is still mounted. */}
       {violationOverlay && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#0F2A47]/95 text-white p-8">
-          {violationOverlay.action === "terminate" ? (
+          {violationOverlay.action === "checking" ? (
+            <>
+              <div className="text-5xl mb-4">🔒</div>
+              <h1 className="text-2xl font-bold mb-2 text-amber-400">Exam Security Check</h1>
+              <p className="text-lg text-center mb-2">You left the exam window.</p>
+              <p className="text-sm text-white/70 text-center">Recording this violation. Please wait…</p>
+            </>
+          ) : violationOverlay.action === "error" ? (
+            <>
+              <div className="text-5xl mb-4">⚠️</div>
+              <h1 className="text-2xl font-bold mb-2 text-amber-400">Exam Access Paused</h1>
+              <p className="text-lg text-center mb-2">We could not verify this exam violation.</p>
+              <p className="text-sm text-white/70 text-center">You are being signed out to protect the exam. Log in again when your connection is restored.</p>
+              <div className="mt-6 text-xs text-white/40">Signing you out…</div>
+            </>
+          ) : violationOverlay.action === "terminate" ? (
             <>
               <div className="text-5xl mb-4">🚫</div>
               <h1 className="text-2xl font-bold mb-2 text-red-400">Exam Disqualified</h1>
