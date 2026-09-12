@@ -67,3 +67,68 @@ export async function requireStaffSession(
 
   return null;
 }
+
+/**
+ * Variant of requireStaffSession for routes that need the caller's resolved
+ * organization_id to scope downstream queries. Returns the active
+ * organization_id alongside the guard so the route does not need a second
+ * membership query.
+ *
+ * Usage:
+ *   const { guard, organizationId } = await requireStaffSessionWithOrg({ permission: "..." });
+ *   if (guard) return guard;
+ *   // organizationId is guaranteed non-null here
+ */
+export async function requireStaffSessionWithOrg(
+  options: StaffSessionOptions = {},
+): Promise<{ guard: Response; organizationId: null } | { guard: null; organizationId: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { guard: Response.json({ error: "Not signed in." }, { status: 401 }), organizationId: null };
+  }
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("org_memberships")
+    .select("organization_id, role")
+    .eq("user_id", user.id)
+    .eq("active", true)
+    .eq("is_default", true)
+    .maybeSingle();
+
+  const activeMembership = membership as {
+    organization_id?: string;
+    role?: string;
+  } | null;
+  const role = activeMembership?.role;
+  const organizationId = activeMembership?.organization_id ?? null;
+
+  if (
+    membershipError ||
+    !organizationId ||
+    !role ||
+    !STAFF_ROLES.has(role)
+  ) {
+    return { guard: Response.json({ error: "Not authorized." }, { status: 403 }), organizationId: null };
+  }
+
+  if (options.permission && !PRIVILEGED_ROLES.has(role)) {
+    const { data: roleConfig, error: permissionsError } = await supabase
+      .from("roles")
+      .select("permissions")
+      .eq("organization_id", organizationId)
+      .eq("name", role)
+      .limit(1)
+      .maybeSingle();
+    const permissions = roleConfig?.permissions as Record<string, boolean> | null;
+
+    if (permissionsError || permissions?.[options.permission] !== true) {
+      return {
+        guard: Response.json({ error: `Permission required: ${options.permission}.` }, { status: 403 }),
+        organizationId: null,
+      };
+    }
+  }
+
+  return { guard: null, organizationId };
+}

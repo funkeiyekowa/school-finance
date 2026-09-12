@@ -12,7 +12,7 @@ import {
 } from "@/lib/alerts/matcher";
 import { createServiceClient } from "@/lib/alerts/service";
 import { evaluatePolicy, loadPolicy, getConfidenceBand } from "@/lib/alerts/policy";
-import { requireStaffSession } from "@/lib/api/requireStaff";
+import { requireStaffSessionWithOrg } from "@/lib/api/requireStaff";
 
 /**
  * Dry-run the full parse + match pipeline on pasted SMS/email text.
@@ -21,10 +21,15 @@ import { requireStaffSession } from "@/lib/api/requireStaff";
  * counterparty, matched student/vendor, confidence, match reason — but
  * never writes anything to the database. Staff-only so an anonymous
  * caller can't fish the student directory by pasting text.
+ *
+ * All database reads (school_settings, students, vendors) are scoped to
+ * the authenticated caller's active organization — the same org resolved
+ * by the auth guard — so this route cannot leak data across tenants.
  */
 export async function POST(request: Request) {
-  const guard = await requireStaffSession({ permission: "sms_alerts" });
+  const { guard, organizationId } = await requireStaffSessionWithOrg({ permission: "sms_alerts" });
   if (guard) return guard;
+  // organizationId is guaranteed non-null here (discriminated union).
   const supabase = createServiceClient();
 
   let body: Record<string, unknown>;
@@ -45,10 +50,11 @@ export async function POST(request: Request) {
   const messageText = isHtml ? htmlToText(rawText) : rawText;
   const parsed = parseAlert(messageText, subject || null);
 
-  // ---------- Settings ----------
+  // ---------- Settings — scoped to the caller's organization ----------
   const { data: settingsRow } = await supabase
     .from("school_settings")
     .select("*")
+    .eq("organization_id", organizationId)
     .limit(1)
     .single();
   const settings = (settingsRow ?? {}) as Record<string, unknown>;
@@ -57,9 +63,9 @@ export async function POST(request: Request) {
   const autoExpenseEnabled = settings.sms_auto_expense === true;
   const policy = loadPolicy(settings);
 
-  // ---------- Run the new matching engine (read-only) ----------
-  const studentResult = await matchStudent(supabase, parsed.studentNumber, parsed.studentName);
-  const vendorResult = await matchVendor(supabase, parsed.payeeName);
+  // ---------- Run the matching engine (read-only, org-scoped) ----------
+  const studentResult = await matchStudent(supabase, parsed.studentNumber, parsed.studentName, organizationId);
+  const vendorResult = await matchVendor(supabase, parsed.payeeName, organizationId);
 
   const isDebit = parsed.direction === "debit";
   const isCredit = parsed.direction === "credit";
