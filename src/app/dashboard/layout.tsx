@@ -21,10 +21,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect("/auth/pending");
   }
 
-  const _legitimateRoles = ["student","parent","teacher","admin","owner","super_admin","developer","editor","staff"];
-  const _profileOrgId = (profile as { organization_id?: string | null }).organization_id ?? null;
-  const _isLegit = _legitimateRoles.includes(profile.role ?? "") && Boolean(_profileOrgId);
-  if (!profile.active && !_isLegit) redirect("/auth/pending");
+  const legitimateRoles = ["student","parent","teacher","admin","owner","super_admin","developer","editor","staff","bursar","accountant","viewer"];
+  const profileOrgId = (profile as { organization_id?: string | null }).organization_id ?? null;
+  const hasLegitRole = legitimateRoles.includes(profile.role ?? "");
+  const hasOrg = Boolean(profileOrgId);
+
+  // Block if deactivated OR if role/org is not legitimate.
+  // Original bug: `&&` meant a deactivated user with a real role passed through.
+  if (!profile.active || !hasLegitRole || !hasOrg) redirect("/auth/pending");
 
   return (
     <AuthProvider>

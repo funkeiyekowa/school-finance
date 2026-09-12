@@ -199,10 +199,24 @@ export const ROLE_PRESETS: Record<string, Partial<Record<FeatureKey, boolean>>> 
   },
 };
 
+/**
+ * Numeric rank for each role — higher = more privileged.
+ * Used for promotion guards and UI visibility checks.
+ * All known roles are listed; an unknown role returns undefined,
+ * which JavaScript comparisons treat as NaN (always false).
+ */
 export const ROLE_RANK: Record<string, number> = {
-  pending: 0,
-  viewer: 1,
-  staff: 2,
-  editor: 2,
-  admin: 3,
+  pending:     0,
+  student:     0,
+  parent:      0,
+  viewer:      1,
+  staff:       2,
+  editor:      2,
+  teacher:     2,
+  bursar:      2,
+  accountant:  2,
+  admin:       3,
+  super_admin: 4,
+  owner:       5,
+  developer:   5,
 };
