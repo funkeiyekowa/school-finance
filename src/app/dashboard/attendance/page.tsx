@@ -230,6 +230,22 @@ export default function AttendancePage() {
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
     loadClassData();
+
+    // Best-effort push to parents; never blocks or reflects back into the
+    // save UI above, which has already completed by this point.
+    void fetch("/api/notifications/push-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: "attendance",
+        classId: selectedClassId,
+        date: selectedDate,
+        session,
+        subjectId: selectedSubjectId || null,
+      }),
+    }).catch(() => {
+      // Delivery is best-effort; attendance is already saved.
+    });
   }
 
   function markAll(statusCode: string) {

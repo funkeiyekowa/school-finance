@@ -494,7 +494,19 @@ export default function CbtPage() {
     setShowExamForm(false); setEditingExam(null); load();
   }
 
-  async function publishExam(examId: string) { await supabase.from("exams").update({ status: "published", updated_at: new Date().toISOString() }).eq("id", examId); load(); }
+  async function publishExam(examId: string) {
+    const { error } = await supabase.from("exams").update({ status: "published", updated_at: new Date().toISOString() }).eq("id", examId);
+    load();
+    if (error) return;
+    // Best-effort push to parents of assigned students; never blocks the UI above.
+    void fetch("/api/notifications/push-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: "exam", examId }),
+    }).catch(() => {
+      // Delivery is best-effort; the exam is already published.
+    });
+  }
   async function closeExam(examId: string) { await supabase.from("exams").update({ status: "closed", updated_at: new Date().toISOString() }).eq("id", examId); load(); }
 
   // --- Exam Questions ---
