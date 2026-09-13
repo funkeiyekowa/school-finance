@@ -4,7 +4,8 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Card, SectionTitle, ui } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { colors } from "@/lib/theme";
-import { listConversations, subscribeToConversationList } from "@/lib/messaging-service";
+import { listConversations, setNotificationPref, subscribeToConversationList } from "@/lib/messaging-service";
+import { clearBadge } from "@/lib/push-service";
 import { CONVERSATION_TYPE_LABELS, shortStamp, type ConversationListItem } from "@/lib/messaging-types";
 
 export default function MessagesScreen() {
@@ -14,6 +15,7 @@ export default function MessagesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mutingId, setMutingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -31,10 +33,12 @@ export default function MessagesScreen() {
     void load();
   }, [load]);
 
-  // Refresh on return from a thread so unread counts settle immediately.
+  // Refresh on return from a thread so unread counts settle immediately, and
+  // drop the icon badge — the user is looking at their messages now.
   useFocusEffect(
     useCallback(() => {
       void load();
+      void clearBadge();
     }, [load]),
   );
 
@@ -42,6 +46,34 @@ export default function MessagesScreen() {
     if (!identity) return;
     return subscribeToConversationList(identity.userId, () => void load());
   }, [identity, load]);
+
+  const toggleMute = useCallback(async (item: ConversationListItem) => {
+    if (mutingId) return;
+    const next = item.notificationPref === "muted" ? "all" : "muted";
+    // Optimistic update
+    setItems((prev) =>
+      prev.map((c) =>
+        c.conversationId === item.conversationId
+          ? { ...c, notificationPref: next, mutedAt: next === "muted" ? new Date().toISOString() : null }
+          : c,
+      ),
+    );
+    setMutingId(item.conversationId);
+    try {
+      await setNotificationPref(item.conversationId, next);
+    } catch {
+      // Rollback on failure
+      setItems((prev) =>
+        prev.map((c) =>
+          c.conversationId === item.conversationId
+            ? { ...c, notificationPref: item.notificationPref, mutedAt: item.mutedAt }
+            : c,
+        ),
+      );
+    } finally {
+      setMutingId(null);
+    }
+  }, [mutingId]);
 
   if (!identity) return null;
 
@@ -57,13 +89,16 @@ export default function MessagesScreen() {
   const rest = items.filter((i) => !i.pinnedAt && !i.archivedAt);
 
   function Row({ item }: { item: ConversationListItem }) {
+    const isMuting = mutingId === item.conversationId;
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Open conversation with ${item.title}`}
+        accessibilityLabel={`Open conversation with ${item.title}. Long press to ${item.notificationPref === "muted" ? "unmute" : "mute"}.`}
         onPress={() =>
           router.push({ pathname: "/(app)/chat/[conversationId]", params: { conversationId: item.conversationId, title: item.title } } as never)
         }
+        onLongPress={() => void toggleMute(item)}
+        delayLongPress={400}
         style={({ pressed }) => pressed && styles.pressed}
       >
         <Card>
@@ -71,7 +106,14 @@ export default function MessagesScreen() {
             <Text style={styles.rowTitle} numberOfLines={1}>
               {item.title}
             </Text>
-            <Text style={styles.stamp}>{shortStamp(item.lastMessageAt)}</Text>
+            <View style={styles.rowTopRight}>
+              <Text style={styles.stamp}>{shortStamp(item.lastMessageAt)}</Text>
+              {isMuting ? (
+                <ActivityIndicator size="small" color={colors.muted} style={styles.muteSpinner} />
+              ) : (
+                <Text style={styles.muteIcon}>{item.notificationPref === "muted" ? "🔕" : ""}</Text>
+              )}
+            </View>
           </View>
           <Text style={styles.rowSub} numberOfLines={1}>
             {item.type === "direct" ? item.subtitle : `${CONVERSATION_TYPE_LABELS[item.type]} · ${item.subtitle}`}
@@ -86,7 +128,6 @@ export default function MessagesScreen() {
               </View>
             ) : null}
           </View>
-          {item.mutedAt ? <Text style={styles.flag}>Muted</Text> : null}
           {item.lockedAt ? <Text style={styles.flagLocked}>Locked by a moderator</Text> : null}
         </Card>
       </Pressable>
@@ -149,15 +190,17 @@ export default function MessagesScreen() {
 const styles = StyleSheet.create({
   centre: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.canvas },
   rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  rowTopRight: { flexDirection: "row", alignItems: "center", gap: 6 },
   rowTitle: { color: colors.navy, fontSize: 16, fontWeight: "800", flex: 1 },
   stamp: { color: colors.muted, fontSize: 11, fontWeight: "600" },
+  muteIcon: { fontSize: 13, minWidth: 16 },
+  muteSpinner: { width: 16 },
   rowSub: { color: colors.muted, fontSize: 12, marginTop: -4 },
   rowBottom: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 2 },
   preview: { color: colors.muted, fontSize: 14, flex: 1 },
   previewUnread: { color: colors.ink, fontWeight: "700" },
   badge: { minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 7, backgroundColor: colors.gold, alignItems: "center", justifyContent: "center" },
   badgeText: { color: colors.navy, fontWeight: "900", fontSize: 12 },
-  flag: { color: colors.muted, fontSize: 11, fontWeight: "700", marginTop: 2 },
   flagLocked: { color: colors.danger, fontSize: 11, fontWeight: "700", marginTop: 2 },
   fab: { position: "absolute", right: 18, bottom: 22, backgroundColor: colors.navy, borderRadius: 99, paddingHorizontal: 20, paddingVertical: 14 },
   fabText: { color: colors.white, fontWeight: "800", fontSize: 14 },
