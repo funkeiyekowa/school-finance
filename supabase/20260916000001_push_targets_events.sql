@@ -41,6 +41,16 @@
 --   parent their child has an exam" notification, not a duplicate
 --   in-app alert to the student.
 --
+--   "Enrolled in class X" is resolved EXACTLY like can_take_exam()'s
+--   own student_current_class_id() helper (cbt_upgrade_migration.sql):
+--   student_enrollments WHERE status = 'active', taking only each
+--   student's single most-recent (by enrolled_at) active row — not
+--   "any active row referencing this class". A student with more than
+--   one active enrollment row only counts here if class X is their
+--   CURRENT one, so this can never notify a wider set of parents than
+--   can_take_exam() would actually let sit the exam. No academic_year_id
+--   filter, matching student_current_class_id() exactly (it has none).
+--
 -- Service-role-only functions:
 --   Both are SECURITY DEFINER, EXECUTE granted to service_role ONLY.
 --   REVOKE ... FROM PUBLIC is explicit because Postgres grants EXECUTE
@@ -158,6 +168,16 @@ AS $$
       SELECT 1 FROM public.cbt_exam_assignments a WHERE a.exam_id = p_exam_id
     ) AS present
   ),
+  -- Each student's current class, exactly like student_current_class_id():
+  -- the single most-recent (by enrolled_at) row with status = 'active'.
+  -- No academic_year_id filter, matching that helper exactly.
+  current_class AS (
+    SELECT DISTINCT ON (se.student_id)
+      se.student_id, se.class_id
+    FROM public.student_enrollments se
+    WHERE se.status = 'active'
+    ORDER BY se.student_id, se.enrolled_at DESC
+  ),
   assigned_students AS (
     -- Explicit per-student assignments.
     SELECT a.student_id
@@ -166,10 +186,11 @@ AS $$
       AND ha.present
       AND a.student_id IS NOT NULL
     UNION
-    -- Explicit per-class assignments -> enrolled students.
-    SELECT ce.student_id
+    -- Explicit per-class assignments -> students whose CURRENT class
+    -- matches (not "any enrollment row referencing this class").
+    SELECT cc.student_id
     FROM public.cbt_exam_assignments a
-    JOIN public.class_enrollments ce ON ce.class_id = a.class_id
+    JOIN current_class cc ON cc.class_id = a.class_id
     CROSS JOIN has_assignments ha
     WHERE a.exam_id = p_exam_id
       AND ha.present
@@ -177,9 +198,9 @@ AS $$
     UNION
     -- No assignment rows at all -> fall back to the exam's own
     -- class_id, exactly like can_take_exam()'s fallback.
-    SELECT ce.student_id
+    SELECT cc.student_id
     FROM ex
-    JOIN public.class_enrollments ce ON ce.class_id = ex.class_id
+    JOIN current_class cc ON cc.class_id = ex.class_id
     CROSS JOIN has_assignments ha
     WHERE NOT ha.present
       AND ex.class_id IS NOT NULL
