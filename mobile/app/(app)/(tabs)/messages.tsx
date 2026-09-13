@@ -8,6 +8,57 @@ import { listConversations, setNotificationPref, subscribeToConversationList } f
 import { clearBadge } from "@/lib/push-service";
 import { CONVERSATION_TYPE_LABELS, shortStamp, type ConversationListItem } from "@/lib/messaging-types";
 
+interface RowProps {
+  item: ConversationListItem;
+  mutingId: string | null;
+  onPress: (item: ConversationListItem) => void;
+  onLongPress: (item: ConversationListItem) => void;
+}
+
+function Row({ item, mutingId, onPress, onLongPress }: RowProps) {
+  const isMuting = mutingId === item.conversationId;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open conversation with ${item.title}. Long press to ${item.notificationPref === "muted" ? "unmute" : "mute"}.`}
+      onPress={() => onPress(item)}
+      onLongPress={() => onLongPress(item)}
+      delayLongPress={400}
+      style={({ pressed }) => pressed && styles.pressed}
+    >
+      <Card>
+        <View style={styles.rowTop}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <View style={styles.rowTopRight}>
+            <Text style={styles.stamp}>{shortStamp(item.lastMessageAt)}</Text>
+            {isMuting ? (
+              <ActivityIndicator size="small" color={colors.muted} style={styles.muteSpinner} />
+            ) : (
+              <Text style={styles.muteIcon}>{item.notificationPref === "muted" ? "🔕" : ""}</Text>
+            )}
+          </View>
+        </View>
+        <Text style={styles.rowSub} numberOfLines={1}>
+          {item.type === "direct" ? item.subtitle : `${CONVERSATION_TYPE_LABELS[item.type]} · ${item.subtitle}`}
+        </Text>
+        <View style={styles.rowBottom}>
+          <Text style={[styles.preview, item.unreadCount > 0 && styles.previewUnread]} numberOfLines={1}>
+            {item.lastMessagePreview ?? "No messages yet"}
+          </Text>
+          {item.unreadCount > 0 ? (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{item.unreadCount > 99 ? "99+" : item.unreadCount}</Text>
+            </View>
+          ) : null}
+        </View>
+        {item.lockedAt ? <Text style={styles.flagLocked}>Locked by a moderator</Text> : null}
+      </Card>
+    </Pressable>
+  );
+}
+
 export default function MessagesScreen() {
   const { identity } = useAuth();
   const router = useRouter();
@@ -75,6 +126,10 @@ export default function MessagesScreen() {
     }
   }, [mutingId]);
 
+  const handleRowPress = useCallback((item: ConversationListItem) => {
+    router.push({ pathname: "/(app)/chat/[conversationId]", params: { conversationId: item.conversationId, title: item.title } } as never);
+  }, [router]);
+
   if (!identity) return null;
 
   if (loading) {
@@ -87,52 +142,6 @@ export default function MessagesScreen() {
 
   const pinned = items.filter((i) => i.pinnedAt && !i.archivedAt);
   const rest = items.filter((i) => !i.pinnedAt && !i.archivedAt);
-
-  function Row({ item }: { item: ConversationListItem }) {
-    const isMuting = mutingId === item.conversationId;
-    return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Open conversation with ${item.title}. Long press to ${item.notificationPref === "muted" ? "unmute" : "mute"}.`}
-        onPress={() =>
-          router.push({ pathname: "/(app)/chat/[conversationId]", params: { conversationId: item.conversationId, title: item.title } } as never)
-        }
-        onLongPress={() => void toggleMute(item)}
-        delayLongPress={400}
-        style={({ pressed }) => pressed && styles.pressed}
-      >
-        <Card>
-          <View style={styles.rowTop}>
-            <Text style={styles.rowTitle} numberOfLines={1}>
-              {item.title}
-            </Text>
-            <View style={styles.rowTopRight}>
-              <Text style={styles.stamp}>{shortStamp(item.lastMessageAt)}</Text>
-              {isMuting ? (
-                <ActivityIndicator size="small" color={colors.muted} style={styles.muteSpinner} />
-              ) : (
-                <Text style={styles.muteIcon}>{item.notificationPref === "muted" ? "🔕" : ""}</Text>
-              )}
-            </View>
-          </View>
-          <Text style={styles.rowSub} numberOfLines={1}>
-            {item.type === "direct" ? item.subtitle : `${CONVERSATION_TYPE_LABELS[item.type]} · ${item.subtitle}`}
-          </Text>
-          <View style={styles.rowBottom}>
-            <Text style={[styles.preview, item.unreadCount > 0 && styles.previewUnread]} numberOfLines={1}>
-              {item.lastMessagePreview ?? "No messages yet"}
-            </Text>
-            {item.unreadCount > 0 ? (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{item.unreadCount > 99 ? "99+" : item.unreadCount}</Text>
-              </View>
-            ) : null}
-          </View>
-          {item.lockedAt ? <Text style={styles.flagLocked}>Locked by a moderator</Text> : null}
-        </Card>
-      </Pressable>
-    );
-  }
 
   return (
     <View style={ui.screen}>
@@ -164,12 +173,12 @@ export default function MessagesScreen() {
               <>
                 <SectionTitle title="Pinned" />
                 {pinned.map((i) => (
-                  <Row key={i.conversationId} item={i} />
+                  <Row key={i.conversationId} item={i} mutingId={mutingId} onPress={handleRowPress} onLongPress={toggleMute} />
                 ))}
               </>
             ) : null}
             {rest.map((i) => (
-              <Row key={i.conversationId} item={i} />
+              <Row key={i.conversationId} item={i} mutingId={mutingId} onPress={handleRowPress} onLongPress={toggleMute} />
             ))}
           </>
         )}
