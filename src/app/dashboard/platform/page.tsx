@@ -12,11 +12,11 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { OrgMembersPanel } from "@/components/platform/OrgMembersPanel";
-import { SuperAdminsPanel } from "@/components/platform/SuperAdminsPanel";
 import { SeedDataPanel } from "@/components/platform/SeedDataPanel";
+import { SuperAdminsPanel } from "@/components/platform/SuperAdminsPanel";
 import {
   Plus, Building2, Package, Users, ShieldCheck, LogIn, AlertTriangle,
-  CheckCircle2, Globe, ExternalLink, Copy,
+  CheckCircle2, Globe, ExternalLink, Copy, Smartphone,
 } from "lucide-react";
 
 interface OrgRow {
@@ -45,7 +45,7 @@ interface SubRow {
   status: string;
 }
 
-type Tab = "orgs" | "school" | "members" | "modules" | "superadmins";
+type Tab = "orgs" | "school" | "members" | "modules" | "superadmins" | "mobile";
 
 export default function PlatformAdminPage() {
   const { isSuperAdmin, profile, orgId, switchOrg } = useAuth();
@@ -73,12 +73,21 @@ export default function PlatformAdminPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Mobile app default school slug (platform_settings.default_mobile_school_slug).
+  // Boots the Expo app straight to sign-in for this school instead of showing
+  // a manual slug-entry screen. See supabase/20260914000001_default_mobile_school_slug.sql.
+  const [mobileSlug, setMobileSlug] = useState("");
+  const [mobileSlugSaving, setMobileSlugSaving] = useState(false);
+  const [mobileSlugError, setMobileSlugError] = useState<string | null>(null);
+  const [mobileSlugSavedAt, setMobileSlugSavedAt] = useState<string | null>(null);
+
   const load = useCallback(async () => {
-    const [orgRes, modRes, subRes, memRes] = await Promise.all([
+    const [orgRes, modRes, subRes, memRes, settingsRes] = await Promise.all([
       supabase.from("organizations").select("*").order("created_at", { ascending: false }),
       supabase.from("platform_modules").select("*").order("sort_order"),
       supabase.from("subscriptions").select("organization_id, module_key, status"),
       supabase.from("org_memberships").select("organization_id"),
+      supabase.from("platform_settings").select("default_mobile_school_slug, updated_at").eq("id", "default").maybeSingle(),
     ]);
 
     if (orgRes.error) setError(orgRes.error.message);
@@ -86,6 +95,10 @@ export default function PlatformAdminPage() {
     setOrgs((orgRes.data ?? []) as OrgRow[]);
     setModules((modRes.data ?? []) as ModuleRow[]);
     setSubscriptions((subRes.data ?? []) as SubRow[]);
+
+    const settingsRow = settingsRes.data as { default_mobile_school_slug?: string; updated_at?: string } | null;
+    setMobileSlug(settingsRow?.default_mobile_school_slug ?? "grant-schools");
+    setMobileSlugSavedAt(settingsRow?.updated_at ?? null);
 
     const counts: Record<string, number> = {};
     for (const row of memRes.data ?? []) {
@@ -122,6 +135,35 @@ export default function PlatformAdminPage() {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
+  }
+
+  /**
+   * Saves the mobile app's default school slug directly against
+   * platform_settings — already RLS-gated to super_admin/developer via
+   * platform_settings_super_admin_all, same as this page's own guard
+   * (isSuperAdmin check below), so a direct table write is safe here
+   * without a dedicated RPC.
+   */
+  async function saveMobileSlug() {
+    const cleaned = mobileSlug.trim().toLowerCase();
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(cleaned)) {
+      setMobileSlugError("Enter a valid school address name, for example grant-schools.");
+      return;
+    }
+    setMobileSlugSaving(true);
+    setMobileSlugError(null);
+    const { error: err } = await supabase
+      .from("platform_settings")
+      .update({ default_mobile_school_slug: cleaned })
+      .eq("id", "default");
+    setMobileSlugSaving(false);
+    if (err) {
+      setMobileSlugError(err.message);
+      return;
+    }
+    setMobileSlug(cleaned);
+    setMobileSlugSavedAt(new Date().toISOString());
+    flash("Mobile app default school updated.");
   }
 
   if (!isSuperAdmin) {
@@ -337,6 +379,7 @@ export default function PlatformAdminPage() {
           { id: "members", label: "Members", icon: <Users size={14} /> },
           { id: "modules", label: "Module catalogue", icon: <Package size={14} /> },
           { id: "superadmins", label: "Super Admins", icon: <ShieldCheck size={14} /> },
+          { id: "mobile", label: "Mobile app", icon: <Smartphone size={14} /> },
         ] as const).map(t => (
           <button
             key={t.id}
@@ -611,6 +654,38 @@ export default function PlatformAdminPage() {
           </CardHeader>
           <CardContent>
             <SuperAdminsPanel />
+          </CardContent>
+        </Card>
+      )}
+
+      {tab === "mobile" && (
+        <Card>
+          <CardHeader><CardTitle>Mobile app — default school</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-xs text-gray-500 mb-4">
+              The Smart &amp; Thrive mobile app boots straight to sign-in for this school&apos;s
+              address name, so staff, parents, and students do not have to type it on first
+              launch. Change it here to point the app at a different school without a new
+              app build.
+            </p>
+            <div className="max-w-sm space-y-3">
+              <Input
+                label="Default school address name"
+                value={mobileSlug}
+                onChange={e => { setMobileSlug(e.target.value); setMobileSlugError(null); }}
+                placeholder="grant-schools"
+                helpText="Must match an existing school's address name (the same slug used in /s/<slug>/login)."
+              />
+              {mobileSlugError && (
+                <p className="text-sm text-red-600">{mobileSlugError}</p>
+              )}
+              <Button variant="gold" onClick={saveMobileSlug} loading={mobileSlugSaving}>
+                Save default school
+              </Button>
+              {mobileSlugSavedAt && (
+                <p className="text-xs text-gray-400">Last updated {fmtDateTime(mobileSlugSavedAt)}</p>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
