@@ -141,7 +141,9 @@ export default function ExamsScreen() {
                         .join("  •  ")}
                     </Text>
 
-                    {proctor.proctored ? (
+                    {/* Only warn where it is actionable. On a finished or closed
+                        exam the notice is noise — the student cannot act on it. */}
+                    {proctor.proctored && (g.bucket === "available" || g.bucket === "upcoming") ? (
                       <View style={styles.warnBox}>
                         <Text style={styles.warnText}>
                           Proctored exam — must be taken on a computer. It cannot be started from the mobile app.
