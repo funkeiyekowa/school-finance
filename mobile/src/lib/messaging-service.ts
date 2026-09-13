@@ -271,6 +271,18 @@ export async function createDirectConversation(otherUserId: string): Promise<str
   return id;
 }
 
+/** Creates a new group conversation. Server enforces group_creator_roles from messaging_policy. */
+export async function createGroup(title: string, memberIds: string[]): Promise<string> {
+  const { data, error } = await supabase.rpc("create_group", {
+    p_title: title.trim(),
+    p_member_ids: memberIds,
+    p_type: "group",
+  });
+  if (error) throw new Error(error.message || "Could not create group.");
+  if (typeof data !== "string" || !data) throw new Error("Could not create group.");
+  return data;
+}
+
 export async function unreadBadge(): Promise<number> {
   const { data, error } = await supabase.rpc("messaging_dashboard_stats");
   if (error) return 0;

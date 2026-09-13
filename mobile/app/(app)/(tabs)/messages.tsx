@@ -175,14 +175,24 @@ export default function MessagesScreen() {
         )}
       </ScrollView>
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="New message"
-        onPress={() => router.push("/(app)/new-message" as never)}
-        style={({ pressed }) => [styles.fab, pressed && styles.pressed]}
-      >
-        <Text style={styles.fabText}>New message</Text>
-      </Pressable>
+      <View style={styles.fabRow}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="New group"
+          onPress={() => router.push("/(app)/new-group" as never)}
+          style={({ pressed }) => [styles.fabSecondary, pressed && styles.pressed]}
+        >
+          <Text style={styles.fabSecondaryText}>New group</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="New message"
+          onPress={() => router.push("/(app)/new-message" as never)}
+          style={({ pressed }) => [styles.fab, pressed && styles.pressed]}
+        >
+          <Text style={styles.fabText}>New message</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -202,7 +212,10 @@ const styles = StyleSheet.create({
   badge: { minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 7, backgroundColor: colors.gold, alignItems: "center", justifyContent: "center" },
   badgeText: { color: colors.navy, fontWeight: "900", fontSize: 12 },
   flagLocked: { color: colors.danger, fontSize: 11, fontWeight: "700", marginTop: 2 },
-  fab: { position: "absolute", right: 18, bottom: 22, backgroundColor: colors.navy, borderRadius: 99, paddingHorizontal: 20, paddingVertical: 14 },
+  fabRow: { position: "absolute", right: 18, bottom: 22, flexDirection: "row", gap: 10, alignItems: "center" },
+  fab: { backgroundColor: colors.navy, borderRadius: 99, paddingHorizontal: 20, paddingVertical: 14 },
+  fabSecondary: { backgroundColor: colors.canvas, borderWidth: 2, borderColor: colors.navy, borderRadius: 99, paddingHorizontal: 16, paddingVertical: 12 },
+  fabSecondaryText: { color: colors.navy, fontWeight: "800", fontSize: 14 },
   fabText: { color: colors.white, fontWeight: "800", fontSize: 14 },
   pressed: { opacity: 0.75 },
 });
