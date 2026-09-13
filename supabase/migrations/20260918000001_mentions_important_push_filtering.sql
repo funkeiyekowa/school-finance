@@ -1,21 +1,23 @@
 -- Migration: 20260918000001_mentions_important_push_filtering
 --
--- Adds mentioned_user_ids (uuid[]) and is_important (boolean) columns to the
--- messages table, wires them through send_message and get_messages, and
--- updates push_targets_for_message to honour 'mentions' and 'important'
--- notification_pref values.
+-- Completes the mentions/importance push-filtering stack started by
+-- 20260917000001_messages_mentions_importance (which added columns and the
+-- 7-arg send_message overload but did NOT update get_messages).
 --
--- These columns are new; the mobile app was already sending p_mentioned_user_ids
--- and p_is_important to send_message (they were silently ignored before this
--- migration), and the mobile picker already lets users set notification_pref
--- to 'mentions' or 'important' (they were honoured only for the 'muted' check
--- in push_targets_for_message).
+-- Safe to run whether or not 20260917000001 has been applied:
+--   - ADD COLUMN IF NOT EXISTS / CREATE INDEX IF NOT EXISTS: no-ops if present
+--   - CREATE OR REPLACE FUNCTION: in-place replacement for send_message (replaces
+--     the no-default 7-arg from 20260917 with a version that has safe defaults,
+--     keeping backward compat) and get_messages (adds the two new columns to
+--     RETURNS TABLE so the mobile thread view can read them)
+--   - push_targets_for_message: identical logic to 20260917, safe replace
 --
 -- No RLS change required: messages are already readable only by conversation
 -- members via the existing messages_member_read policy. No table is added.
 --
 -- Security posture unchanged: every existing SECURITY DEFINER / GRANT pattern
--- is preserved verbatim.
+-- is preserved verbatim. Recipient set for push can only SHRINK (mentions/
+-- important members receive fewer pushes than before — never more).
 
 -- ─── 1. Add columns to messages ──────────────────────────────────────────────
 
@@ -23,14 +25,17 @@ ALTER TABLE public.messages
   ADD COLUMN IF NOT EXISTS mentioned_user_ids uuid[] NOT NULL DEFAULT '{}',
   ADD COLUMN IF NOT EXISTS is_important boolean NOT NULL DEFAULT false;
 
+-- Partial GIN index for mention lookups (20260917 uses a different name;
+-- both survive since IF NOT EXISTS is keyed on index name).
 CREATE INDEX IF NOT EXISTS idx_messages_mentioned
   ON public.messages USING GIN (mentioned_user_ids)
   WHERE array_length(mentioned_user_ids, 1) > 0;
 
 -- ─── 2. Update send_message ───────────────────────────────────────────────────
--- Adds p_mentioned_user_ids and p_is_important. The old 5-arg signature is
--- still valid (both new params default to safe values) so existing callers
--- are unaffected.
+-- Replaces the no-default 7-arg overload from 20260917 (same signature) with
+-- a version that adds DEFAULT values to the two new params. This keeps the
+-- 5-arg web callers routing to the existing 5-arg overload (PostgREST resolves
+-- by supplied parameter names) and lets the mobile callers supply all 7.
 
 CREATE OR REPLACE FUNCTION public.send_message(
   p_conversation_id uuid,
@@ -125,10 +130,11 @@ BEGIN
   RETURN v_msg;
 END;
 $$;
--- Grant to match original (old overload is superseded by this one)
 GRANT EXECUTE ON FUNCTION public.send_message(uuid, text, text, uuid, jsonb, uuid[], boolean) TO authenticated;
 
 -- ─── 3. Update get_messages — add mentioned_user_ids and is_important to result ─
+-- This is the primary addition over 20260917000001: the thread view on mobile
+-- needs these columns to render @-mention highlights and importance badges.
 
 CREATE OR REPLACE FUNCTION public.get_messages(
   p_conversation_id uuid,
@@ -191,12 +197,12 @@ $$;
 GRANT EXECUTE ON FUNCTION public.get_messages(uuid, timestamptz, integer) TO authenticated;
 
 -- ─── 4. Update push_targets_for_message — honour mentions and important ────────
--- Logic:
---   'all'       → always notified (as before)
---   'muted'     → never notified (as before, via muted_at AND pref check)
---   'mentions'  → notified only if auth.uid() is in msg.mentioned_user_ids
---   'important' → notified only if msg.is_important = true
--- Sender is always excluded. Former members (left_at IS NOT NULL) excluded.
+-- Logic (unchanged from 20260917, re-applied for idempotency):
+--   'all'       → always notified
+--   'muted'     → never notified (muted_at IS NULL AND pref <> 'muted')
+--   'mentions'  → only if cm.user_id = ANY(msg.mentioned_user_ids)
+--   'important' → only if msg.is_important = true
+-- Sender excluded. Former members (left_at IS NOT NULL) excluded.
 -- Locked/deleted messages excluded.
 
 CREATE OR REPLACE FUNCTION public.push_targets_for_message(p_message_id uuid)
@@ -256,12 +262,10 @@ AS $$
     AND cm.left_at IS NULL                 -- former members get nothing
     AND cm.muted_at IS NULL                -- muted conversation
     AND COALESCE(cm.notification_pref, 'all') <> 'muted'
-    -- mentions: member set pref to 'mentions' → only notify if they are mentioned
     AND (
       COALESCE(cm.notification_pref, 'all') <> 'mentions'
       OR cm.user_id = ANY(msg.mentioned_user_ids)
     )
-    -- important: member set pref to 'important' → only notify if message is marked important
     AND (
       COALESCE(cm.notification_pref, 'all') <> 'important'
       OR msg.is_important = true
@@ -271,3 +275,32 @@ $$;
 REVOKE ALL ON FUNCTION public.push_targets_for_message(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.push_targets_for_message(uuid) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.push_targets_for_message(uuid) TO service_role;
+
+-- ─── VERIFY ───────────────────────────────────────────────────────────────────
+-- After applying, confirm:
+--   1. messages table has mentioned_user_ids and is_important columns
+--   2. send_message 7-arg and get_messages both exist with correct grants
+--   3. push_targets_for_message granted to service_role ONLY
+
+SELECT
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = 'public' AND table_name = 'messages'
+     AND column_name IN ('mentioned_user_ids','is_important')) AS new_columns_present,
+  (SELECT COUNT(*) FROM pg_indexes
+   WHERE schemaname = 'public' AND tablename = 'messages'
+     AND indexname LIKE 'idx_messages_mentioned%') AS mention_indexes_present;
+
+SELECT p.proname,
+       pg_get_function_identity_arguments(p.oid) AS args,
+       array_agg(DISTINCT a.rolname ORDER BY a.rolname) AS granted_to
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+LEFT JOIN LATERAL (
+  SELECT r.rolname FROM pg_roles r
+  WHERE has_function_privilege(r.oid, p.oid, 'EXECUTE')
+    AND r.rolname IN ('anon','authenticated','service_role')
+) a ON TRUE
+WHERE n.nspname = 'public'
+  AND p.proname IN ('send_message','get_messages','push_targets_for_message')
+GROUP BY p.proname, p.oid
+ORDER BY p.proname, args;
