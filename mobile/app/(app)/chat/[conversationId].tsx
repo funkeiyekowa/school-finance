@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -15,8 +16,23 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ui } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { colors } from "@/lib/theme";
-import { getMessages, fetchAttachmentLimits, markRead, sendMessage, subscribeToConversation } from "@/lib/messaging-service";
-import { clockStamp, initcap, type ChatAttachment, type ChatMessage } from "@/lib/messaging-types";
+import {
+  getMessages,
+  fetchAttachmentLimits,
+  getNotificationPref,
+  markRead,
+  sendMessage,
+  setNotificationPref,
+  subscribeToConversation,
+} from "@/lib/messaging-service";
+import {
+  clockStamp,
+  initcap,
+  NOTIFICATION_PREF_OPTIONS,
+  type ChatAttachment,
+  type ChatMessage,
+  type NotificationPref,
+} from "@/lib/messaging-types";
 import {
   formatFileSize,
   getAttachmentSignedUrl,
@@ -44,6 +60,9 @@ export default function ChatScreen() {
   const [uploading, setUploading] = useState(false);
   const [limits, setLimits] = useState({ maxAttachmentMb: 15, allowedTypes: [] as string[] });
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [notifPref, setNotifPref] = useState<NotificationPref>("all");
+  const [notifSheetOpen, setNotifSheetOpen] = useState(false);
+  const [savingPref, setSavingPref] = useState(false);
 
   const scrollRef = useRef<ScrollView | null>(null);
   const atBottom = useRef(true);
@@ -70,6 +89,27 @@ export default function ChatScreen() {
   useEffect(() => {
     void fetchAttachmentLimits().then(setLimits);
   }, []);
+
+  useEffect(() => {
+    if (!conversationId) return;
+    void getNotificationPref(conversationId).then(setNotifPref);
+  }, [conversationId]);
+
+  async function onChangeNotifPref(next: NotificationPref) {
+    if (!conversationId || savingPref) return;
+    setSavingPref(true);
+    const previous = notifPref;
+    setNotifPref(next); // optimistic — the sheet feels instant
+    try {
+      await setNotificationPref(conversationId, next);
+      setNotifSheetOpen(false);
+    } catch (e) {
+      setNotifPref(previous);
+      setError(e instanceof Error ? e.message : "Could not update notification settings.");
+    } finally {
+      setSavingPref(false);
+    }
+  }
 
   useEffect(() => {
     if (!conversationId) return;
@@ -169,7 +209,48 @@ export default function ChatScreen() {
         <Text style={styles.barTitle} numberOfLines={1}>
           {title || "Conversation"}
         </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Notification settings for this conversation"
+          onPress={() => setNotifSheetOpen(true)}
+          style={styles.notifBtn}
+        >
+          <Text style={styles.notifBtnIcon}>{notifPref === "muted" ? "🔕" : "🔔"}</Text>
+        </Pressable>
       </View>
+
+      <Modal
+        visible={notifSheetOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNotifSheetOpen(false)}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={() => setNotifSheetOpen(false)}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <Text style={styles.sheetTitle}>Notifications</Text>
+            <Text style={styles.sheetSubtitle}>For this conversation only</Text>
+            {NOTIFICATION_PREF_OPTIONS.map((opt) => {
+              const selected = opt.value === notifPref;
+              return (
+                <Pressable
+                  key={opt.value}
+                  accessibilityRole="button"
+                  accessibilityLabel={opt.label}
+                  disabled={savingPref}
+                  onPress={() => void onChangeNotifPref(opt.value)}
+                  style={({ pressed }) => [styles.sheetOption, selected && styles.sheetOptionSelected, pressed && styles.pressed]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sheetOptionLabel}>{opt.label}</Text>
+                    <Text style={styles.sheetOptionHint}>{opt.hint}</Text>
+                  </View>
+                  {selected ? <Text style={styles.sheetCheck}>✓</Text> : null}
+                </Pressable>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {loading ? (
         <View style={styles.centre}>
@@ -340,6 +421,17 @@ const styles = StyleSheet.create({
   back: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   backText: { color: colors.white, fontSize: 30, fontWeight: "800", lineHeight: 34 },
   barTitle: { color: colors.white, fontSize: 17, fontWeight: "800", flex: 1 },
+  notifBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  notifBtnIcon: { fontSize: 20 },
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(10,20,35,0.45)", justifyContent: "flex-end" },
+  sheet: { backgroundColor: colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 34, gap: 4 },
+  sheetTitle: { color: colors.navy, fontSize: 18, fontWeight: "800" },
+  sheetSubtitle: { color: colors.muted, fontSize: 12, marginBottom: 10 },
+  sheetOption: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, paddingHorizontal: 4, borderRadius: 12 },
+  sheetOptionSelected: { backgroundColor: "#EEF3F9" },
+  sheetOptionLabel: { color: colors.ink, fontSize: 15, fontWeight: "700" },
+  sheetOptionHint: { color: colors.muted, fontSize: 12, marginTop: 1 },
+  sheetCheck: { color: colors.gold, fontSize: 18, fontWeight: "900" },
   thread: { padding: 14, gap: 10 },
   moreSpinner: { marginVertical: 8 },
   threadStart: { textAlign: "center", color: colors.muted, fontSize: 11, fontWeight: "700", paddingVertical: 6 },

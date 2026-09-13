@@ -9,6 +9,17 @@ export type ConversationType =
 
 export type MessageType = "text" | "image" | "document" | "voice" | "system";
 
+/**
+ * Mirrors src/lib/messaging/types.ts's NotificationPref exactly (same four
+ * values, same CHECK constraint on conversation_members.notification_pref).
+ * 'mentions' and 'important' are accepted by the schema but nothing in the
+ * app — web or mobile — implements the narrower filtering they'd imply yet;
+ * they are exposed here only because a user can already choose them and the
+ * column already accepts them, not because push targeting currently
+ * distinguishes them from 'all'.
+ */
+export type NotificationPref = "all" | "mentions" | "important" | "muted";
+
 export interface ConversationListItem {
   conversationId: string;
   type: ConversationType;
@@ -18,6 +29,7 @@ export interface ConversationListItem {
   lastMessageAt: string | null;
   unreadCount: number;
   mutedAt: string | null;
+  notificationPref: NotificationPref;
   pinnedAt: string | null;
   lockedAt: string | null;
   archivedAt: string | null;
@@ -67,6 +79,14 @@ export const CONVERSATION_TYPE_LABELS: Record<ConversationType, string> = {
   department: "Department",
   announcement: "Announcement",
 };
+
+/** Order matches the picker UI, most-to-least notifications. */
+export const NOTIFICATION_PREF_OPTIONS: { value: NotificationPref; label: string; hint: string }[] = [
+  { value: "all", label: "All messages", hint: "Notify me for every new message" },
+  { value: "mentions", label: "Mentions only", hint: "Notify me only when I'm mentioned" },
+  { value: "important", label: "Important only", hint: "Notify me only for important messages" },
+  { value: "muted", label: "Muted", hint: "Don't send me notifications for this conversation" },
+];
 
 export function initcap(value: string): string {
   if (!value) return "";

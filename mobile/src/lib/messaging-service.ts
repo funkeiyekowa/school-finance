@@ -9,6 +9,7 @@ import {
   type ConversationListItem,
   type ConversationType,
   type MessageableUser,
+  type NotificationPref,
 } from "@/lib/messaging-types";
 
 /**
@@ -57,6 +58,7 @@ export async function listConversations(limit = 100): Promise<ConversationListIt
       lastMessageAt: (r.last_message_at as string | null) ?? null,
       unreadCount: (r.unread_count as number) ?? 0,
       mutedAt: (r.muted_at as string | null) ?? null,
+      notificationPref: ((r.notification_pref as string | null) || "all") as NotificationPref,
       pinnedAt: (r.pinned_at as string | null) ?? null,
       lockedAt: (r.locked_at as string | null) ?? null,
       archivedAt: (r.archived_at as string | null) ?? null,
@@ -129,6 +131,62 @@ export async function markRead(conversationId: string): Promise<void> {
   } catch {
     // Read receipts are best-effort — never block the thread on this.
   }
+}
+
+/**
+ * Reads this user's own notification preference for one conversation, for
+ * the chat screen's settings sheet. Falls back to 'all' (the column
+ * default) on any read failure — never blocks opening the thread.
+ */
+export async function getNotificationPref(conversationId: string): Promise<NotificationPref> {
+  try {
+    const { data: auth } = await supabase.auth.getUser();
+    const userId = auth.user?.id;
+    if (!userId) return "all";
+    const { data } = await supabase
+      .from("conversation_members")
+      .select("notification_pref")
+      .eq("conversation_id", conversationId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    const row = data as { notification_pref?: string } | null;
+    return (row?.notification_pref as NotificationPref) || "all";
+  } catch {
+    return "all";
+  }
+}
+
+/**
+ * Sets this user's own notification preference for one conversation.
+ * conversation_members.notification_pref already exists (CHECK constrained
+ * to 'all'|'mentions'|'important'|'muted') and the conv_members_self_update
+ * RLS policy already permits a member to update their own row directly — no
+ * RPC, no migration. muted_at is kept in lockstep with the 'muted' value
+ * because push_targets_for_message() ANDs both (cm.muted_at IS NULL AND
+ * notification_pref <> 'muted'); setting only one and not the other would
+ * leave the two mute signals inconsistent for a caller reading either alone.
+ *
+ * The update payload below is a literal object of exactly these two
+ * columns — never a spread of a fetched conversation_members row. The RLS
+ * policy is row-scoped only (organization_id + user_id), not column-scoped,
+ * so a full-row update could otherwise silently rewrite member_role or
+ * other fields it was never meant to touch.
+ */
+export async function setNotificationPref(conversationId: string, pref: NotificationPref): Promise<void> {
+  if (!conversationId) return;
+  const { data: auth } = await supabase.auth.getUser();
+  const userId = auth.user?.id;
+  if (!userId) throw new Error("You are signed out.");
+
+  const { error } = await supabase
+    .from("conversation_members")
+    .update({
+      notification_pref: pref,
+      muted_at: pref === "muted" ? new Date().toISOString() : null,
+    })
+    .eq("conversation_id", conversationId)
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message || "Could not update notification settings.");
 }
 
 /**
