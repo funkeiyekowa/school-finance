@@ -13,6 +13,9 @@ export default function TabsLayout() {
   // Exams are the student's own papers. start_exam_attempt is the authority on
   // who may sit one; hiding the tab is presentation only.
   const showExams = role === "student";
+  // Read-only attendance for the people it belongs to. my_linked_student_ids()
+  // plus RLS decide whose records are readable; this only decides who sees a tab.
+  const showMyAttendance = role === "student" || role === "parent";
   // Messages is open to every signed-in role. messaging_policy decides who may
   // actually start a conversation, server-side, inside search_messageable_users.
   const showMessages = Boolean(identity);
@@ -20,6 +23,7 @@ export default function TabsLayout() {
   return <Tabs screenOptions={{ headerStyle: { backgroundColor: colors.navy }, headerTintColor: colors.white, tabBarActiveTintColor: colors.gold, tabBarInactiveTintColor: colors.muted, tabBarStyle: { borderTopColor: colors.line }, headerTitleStyle: { fontWeight: "800" } }}>
     <Tabs.Screen name="index" options={{ title: "Home", tabBarLabel: "Home" }} />
     <Tabs.Screen name="attendance" options={{ title: "Take attendance", tabBarLabel: "Attendance", href: showAttendance ? undefined : null }} />
+    <Tabs.Screen name="my-attendance" options={{ title: "Attendance", tabBarLabel: "Attendance", href: showMyAttendance ? undefined : null }} />
     <Tabs.Screen name="exams" options={{ title: "My exams", tabBarLabel: "Exams", href: showExams ? undefined : null }} />
     <Tabs.Screen name="messages" options={{ title: "Messages", tabBarLabel: "Messages", href: showMessages ? undefined : null }} />
     <Tabs.Screen name="profile" options={{ title: "My profile", tabBarLabel: "Profile" }} />
