@@ -91,6 +91,8 @@ export async function getMessages(conversationId: string, before?: string, limit
         replyToBody: (r.reply_to_body as string | null) ?? null,
         attachmentCount: Array.isArray(r.attachments) ? (r.attachments as unknown[]).length : 0,
         attachments: mapAttachments(r.attachments),
+        mentionedUserIds: Array.isArray(r.mentioned_user_ids) ? (r.mentioned_user_ids as string[]) : [],
+        isImportant: (r.is_important as boolean) ?? false,
       }),
     )
     .reverse();
@@ -200,6 +202,8 @@ export async function sendMessage(params: {
   body: string;
   replyToId?: string | null;
   attachments?: UploadedAttachment[];
+  mentionedUserIds?: string[];
+  isImportant?: boolean;
 }): Promise<void> {
   const body = params.body.trim();
   const attachments = params.attachments ?? [];
@@ -217,6 +221,10 @@ export async function sendMessage(params: {
     p_message_type: messageType,
     p_reply_to_id: params.replyToId ?? null,
     p_attachments: attachments.length > 0 ? attachments : null,
+    p_mentioned_user_ids: params.mentionedUserIds && params.mentionedUserIds.length > 0
+      ? params.mentionedUserIds
+      : null,
+    p_is_important: params.isImportant ?? false,
   });
   if (error) throw new Error(error.message || "Could not send your message.");
 

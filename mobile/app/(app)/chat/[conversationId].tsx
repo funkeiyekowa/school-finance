@@ -63,6 +63,7 @@ export default function ChatScreen() {
   const [notifPref, setNotifPref] = useState<NotificationPref>("all");
   const [notifSheetOpen, setNotifSheetOpen] = useState(false);
   const [savingPref, setSavingPref] = useState(false);
+  const [markImportant, setMarkImportant] = useState(false);
 
   const scrollRef = useRef<ScrollView | null>(null);
   const atBottom = useRef(true);
@@ -162,10 +163,17 @@ export default function ChatScreen() {
         const uploaded = await uploadAttachment(conversationId, pending, limits);
         attachments = [uploaded];
       }
-      await sendMessage({ conversationId, body, replyToId: replyTo?.id ?? null, attachments });
+      await sendMessage({
+        conversationId,
+        body,
+        replyToId: replyTo?.id ?? null,
+        attachments,
+        isImportant: markImportant,
+      });
       setDraft("");
       setReplyTo(null);
       setPending(null);
+      setMarkImportant(false);
       await load();
       requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
     } catch (e) {
@@ -335,10 +343,15 @@ export default function ChatScreen() {
                     </>
                   )}
 
-                  <Text style={[styles.time, mine && styles.timeMine]}>
-                    {clockStamp(m.createdAt)}
-                    {m.editedAt ? " · edited" : ""}
-                  </Text>
+                  <View style={styles.timeRow}>
+                    <Text style={[styles.time, mine && styles.timeMine]}>
+                      {clockStamp(m.createdAt)}
+                      {m.editedAt ? " · edited" : ""}
+                    </Text>
+                    {m.isImportant ? (
+                      <Text style={[styles.importantBadge, mine && styles.importantBadgeMine]}>⚠️ Important</Text>
+                    ) : null}
+                  </View>
                 </View>
               </Pressable>
             );
@@ -391,6 +404,15 @@ export default function ChatScreen() {
           style={({ pressed }) => [styles.attachBtn, pressed && styles.pressed, (sending || !!pending) && styles.sendOff]}
         >
           <Text style={styles.attachBtnIcon}>📎</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={markImportant ? "Unmark as important" : "Mark as important"}
+          onPress={() => setMarkImportant((v) => !v)}
+          disabled={sending}
+          style={({ pressed }) => [styles.attachBtn, markImportant && styles.importantBtnActive, pressed && styles.pressed, sending && styles.sendOff]}
+        >
+          <Text style={styles.attachBtnIcon}>⚠️</Text>
         </Pressable>
         <TextInput
           style={styles.input}
@@ -453,8 +475,12 @@ const styles = StyleSheet.create({
   attachName: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   attachMeta: { color: colors.muted, fontSize: 11 },
   attachMetaMine: { color: "#B9CBE0" },
-  time: { color: colors.muted, fontSize: 10, marginTop: 2 },
+  timeRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
+  time: { color: colors.muted, fontSize: 10 },
   timeMine: { color: "#B9CBE0" },
+  importantBadge: { color: colors.muted, fontSize: 10, fontWeight: "700" },
+  importantBadgeMine: { color: "#B9CBE0" },
+  importantBtnActive: { backgroundColor: "#FFF3CD" },
   system: { textAlign: "center", color: colors.muted, fontSize: 12, fontStyle: "italic", paddingVertical: 4 },
   empty: { textAlign: "center", color: colors.muted, paddingVertical: 30 },
   errorBar: { backgroundColor: colors.dangerSoft, color: colors.danger, fontWeight: "700", fontSize: 13, padding: 10, textAlign: "center" },
