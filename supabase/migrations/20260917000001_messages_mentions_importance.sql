@@ -111,10 +111,9 @@ BEGIN
 END;
 $$;
 
--- Old 5-arg overload still exists; grant covers the new 7-arg signature.
--- The old signature is NOT dropped — existing web callers using positional
--- args with 5 params continue to resolve to the old overload until they
--- are updated, at which point both are identical except param count.
+-- The existing 5-arg overload is NOT dropped — web callers resolve to it by
+-- argument count and continue to work unchanged. The new 7-arg overload has
+-- no defaults; mobile callers must supply all 7 arguments explicitly.
 -- Safest: keep both; Postgres resolves by argument count at call-site.
 GRANT EXECUTE ON FUNCTION public.send_message(uuid, text, text, uuid, jsonb, uuid[], boolean) TO authenticated;
 
