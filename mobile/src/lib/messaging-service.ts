@@ -1,7 +1,10 @@
 import { supabase } from "@/lib/supabase";
+import { requestPushForMessage } from "@/lib/push-service";
+import type { UploadedAttachment } from "@/lib/attachment-service";
 import {
   initcap,
   previewFor,
+  type ChatAttachment,
   type ChatMessage,
   type ConversationListItem,
   type ConversationType,
@@ -24,8 +27,11 @@ import {
  *     "which parents may message which teachers" is decided server-side, not
  *     by filtering a list on the phone.
  *
- * Attachments are deliberately NOT sent from mobile this phase — see
- * docs. Sending is text-only; received attachments are labelled.
+ * Attachments: sendMessage() now accepts already-uploaded attachment
+ * metadata (see attachment-service.ts for the upload step) and forwards it
+ * to send_message()'s p_attachments jsonb param exactly as the web app
+ * does — organization_id and message_id are stamped server-side inside the
+ * function, never read from this payload.
  */
 
 function rows(value: unknown): Record<string, unknown>[] {
@@ -82,9 +88,39 @@ export async function getMessages(conversationId: string, before?: string, limit
         replyToId: (r.reply_to_id as string | null) ?? null,
         replyToBody: (r.reply_to_body as string | null) ?? null,
         attachmentCount: Array.isArray(r.attachments) ? (r.attachments as unknown[]).length : 0,
+        attachments: mapAttachments(r.attachments),
       }),
     )
     .reverse();
+}
+
+function mapAttachments(value: unknown): ChatAttachment[] {
+  if (!Array.isArray(value)) return [];
+  return (value as Record<string, unknown>[]).map((a) => ({
+    id: a.id as string,
+    storagePath: a.storage_path as string,
+    fileName: (a.file_name as string) || "Attachment",
+    fileType: (a.file_type as string) || "application/octet-stream",
+    fileSizeBytes: (a.file_size_bytes as number) ?? 0,
+    width: (a.width as number | null) ?? null,
+    height: (a.height as number | null) ?? null,
+  }));
+}
+
+/**
+ * Attachment limits from messaging_policy, for the client-side courtesy
+ * check before uploading — mirrors useMessagingPolicy() on web. Falls back
+ * to generous defaults if the row can't be read; the upload route enforces
+ * its own backstop regardless (25MB, a fixed type allowlist), so a missed
+ * read here never widens what the server actually accepts.
+ */
+export async function fetchAttachmentLimits(): Promise<{ maxAttachmentMb: number; allowedTypes: string[] }> {
+  const { data } = await supabase.from("messaging_policy").select("max_attachment_mb, allowed_attachment_types").maybeSingle();
+  const row = data as { max_attachment_mb?: number; allowed_attachment_types?: string[] } | null;
+  return {
+    maxAttachmentMb: row?.max_attachment_mb ?? 15,
+    allowedTypes: row?.allowed_attachment_types ?? [],
+  };
 }
 
 export async function markRead(conversationId: string): Promise<void> {
@@ -96,20 +132,52 @@ export async function markRead(conversationId: string): Promise<void> {
 }
 
 /**
- * Sends a text message. organization_id is stamped server-side by the RPC;
- * attachments are not supported from mobile this phase and are always null.
+ * Sends a message, optionally with attachments already uploaded via
+ * uploadAttachment(). organization_id and the message id are stamped
+ * server-side by the RPC; message_type is inferred from the first
+ * attachment the same way the web Composer does.
  */
-export async function sendMessage(params: { conversationId: string; body: string; replyToId?: string | null }): Promise<void> {
+export async function sendMessage(params: {
+  conversationId: string;
+  body: string;
+  replyToId?: string | null;
+  attachments?: UploadedAttachment[];
+}): Promise<void> {
   const body = params.body.trim();
-  if (!body) return;
-  const { error } = await supabase.rpc("send_message", {
+  const attachments = params.attachments ?? [];
+  if (!body && attachments.length === 0) return;
+
+  const messageType = attachments.length > 0 && attachments[0].file_type.startsWith("image/")
+    ? "image"
+    : attachments.length > 0
+      ? "document"
+      : "text";
+
+  const { data, error } = await supabase.rpc("send_message", {
     p_conversation_id: params.conversationId,
-    p_body: body,
-    p_message_type: "text",
+    p_body: body || null,
+    p_message_type: messageType,
     p_reply_to_id: params.replyToId ?? null,
-    p_attachments: null,
+    p_attachments: attachments.length > 0 ? attachments : null,
   });
   if (error) throw new Error(error.message || "Could not send your message.");
+
+  // Ask the server to deliver push to the other members. Fire-and-forget: the
+  // message is already persisted, and the route re-verifies that we are the
+  // sender before it resolves anyone's device token.
+  const messageId = extractMessageId(data);
+  if (messageId) void requestPushForMessage(messageId);
+}
+
+/** send_message may return a bare uuid or an object; accept either. */
+function extractMessageId(data: unknown): string | null {
+  if (typeof data === "string" && data.length > 0) return data;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (row && typeof row === "object") {
+    const candidate = (row as { id?: unknown; message_id?: unknown }).message_id ?? (row as { id?: unknown }).id;
+    if (typeof candidate === "string" && candidate.length > 0) return candidate;
+  }
+  return null;
 }
 
 /**

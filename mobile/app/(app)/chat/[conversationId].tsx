@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -14,8 +15,17 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ui } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { colors } from "@/lib/theme";
-import { getMessages, markRead, sendMessage, subscribeToConversation } from "@/lib/messaging-service";
-import { clockStamp, initcap, type ChatMessage } from "@/lib/messaging-types";
+import { getMessages, fetchAttachmentLimits, markRead, sendMessage, subscribeToConversation } from "@/lib/messaging-service";
+import { clockStamp, initcap, type ChatAttachment, type ChatMessage } from "@/lib/messaging-types";
+import {
+  formatFileSize,
+  getAttachmentSignedUrl,
+  pickDocumentAttachment,
+  pickImageAttachment,
+  uploadAttachment,
+  type PickedAttachment,
+  type UploadedAttachment,
+} from "@/lib/attachment-service";
 
 export default function ChatScreen() {
   const { conversationId, title } = useLocalSearchParams<{ conversationId: string; title?: string }>();
@@ -30,6 +40,10 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  const [pending, setPending] = useState<PickedAttachment | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [limits, setLimits] = useState({ maxAttachmentMb: 15, allowedTypes: [] as string[] });
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView | null>(null);
   const atBottom = useRef(true);
@@ -54,6 +68,10 @@ export default function ChatScreen() {
   }, [load]);
 
   useEffect(() => {
+    void fetchAttachmentLimits().then(setLimits);
+  }, []);
+
+  useEffect(() => {
     if (!conversationId) return;
     return subscribeToConversation(conversationId, () => void load());
   }, [conversationId, load]);
@@ -72,21 +90,65 @@ export default function ChatScreen() {
     }
   }
 
+  async function onPickImage() {
+    setError(null);
+    try {
+      const picked = await pickImageAttachment();
+      if (picked) setPending(picked);
+    } catch {
+      setError("Could not open your photo library.");
+    }
+  }
+
+  async function onPickDocument() {
+    setError(null);
+    try {
+      const picked = await pickDocumentAttachment();
+      if (picked) setPending(picked);
+    } catch {
+      setError("Could not open the file picker.");
+    }
+  }
+
   async function onSend() {
     const body = draft.trim();
-    if (!body || !conversationId || sending) return;
+    if ((!body && !pending) || !conversationId || sending || uploading) return;
     setSending(true);
     setError(null);
     try {
-      await sendMessage({ conversationId, body, replyToId: replyTo?.id ?? null });
+      let attachments: UploadedAttachment[] = [];
+      if (pending) {
+        setUploading(true);
+        const uploaded = await uploadAttachment(conversationId, pending, limits);
+        attachments = [uploaded];
+      }
+      await sendMessage({ conversationId, body, replyToId: replyTo?.id ?? null, attachments });
       setDraft("");
       setReplyTo(null);
+      setPending(null);
       await load();
       requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not send your message.");
     } finally {
       setSending(false);
+      setUploading(false);
+    }
+  }
+
+  async function onOpenAttachment(a: ChatAttachment) {
+    setOpeningId(a.id);
+    try {
+      const url = await getAttachmentSignedUrl(a.storagePath);
+      if (!url) {
+        setError(`Could not open ${a.fileName}.`);
+        return;
+      }
+      await Linking.openURL(url);
+    } catch {
+      setError(`Could not open ${a.fileName}.`);
+    } finally {
+      setOpeningId(null);
     }
   }
 
@@ -166,11 +228,28 @@ export default function ChatScreen() {
                     <Text style={[styles.body, styles.deleted, mine && styles.bodyMine]}>Message deleted</Text>
                   ) : (
                     <>
-                      {m.attachmentCount > 0 ? (
-                        <Text style={[styles.attach, mine && styles.bodyMine]}>
-                          📎 {m.attachmentCount} attachment{m.attachmentCount === 1 ? "" : "s"} — open on a computer to view
-                        </Text>
-                      ) : null}
+                      {m.attachments.map((a) => (
+                        <Pressable
+                          key={a.id}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Open ${a.fileName}`}
+                          onPress={() => void onOpenAttachment(a)}
+                          disabled={openingId === a.id}
+                          style={[styles.attachRow, mine && styles.attachRowMine]}
+                        >
+                          <Text style={[styles.attachIcon, mine && styles.bodyMine]}>
+                            {a.fileType.startsWith("image/") ? "🖼️" : "📎"}
+                          </Text>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.attachName, mine && styles.bodyMine]} numberOfLines={1}>
+                              {a.fileName}
+                            </Text>
+                            <Text style={[styles.attachMeta, mine && styles.attachMetaMine]}>
+                              {formatFileSize(a.fileSizeBytes)} · {openingId === a.id ? "Opening…" : "Tap to open"}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      ))}
                       {m.body ? <Text style={[styles.body, mine && styles.bodyMine]}>{m.body}</Text> : null}
                     </>
                   )}
@@ -201,7 +280,37 @@ export default function ChatScreen() {
         </View>
       ) : null}
 
+      {pending ? (
+        <View style={styles.pendingBar}>
+          <Text style={styles.pendingIcon}>{pending.mimeType.startsWith("image/") ? "🖼️" : "📎"}</Text>
+          <Text style={styles.pendingText} numberOfLines={1}>
+            {pending.name}
+          </Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Remove attachment" onPress={() => setPending(null)}>
+            <Text style={styles.replyCancel}>✕</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <View style={styles.composer}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Attach a photo"
+          onPress={() => void onPickImage()}
+          disabled={sending || !!pending}
+          style={({ pressed }) => [styles.attachBtn, pressed && styles.pressed, (sending || !!pending) && styles.sendOff]}
+        >
+          <Text style={styles.attachBtnIcon}>🖼️</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Attach a file"
+          onPress={() => void onPickDocument()}
+          disabled={sending || !!pending}
+          style={({ pressed }) => [styles.attachBtn, pressed && styles.pressed, (sending || !!pending) && styles.sendOff]}
+        >
+          <Text style={styles.attachBtnIcon}>📎</Text>
+        </Pressable>
         <TextInput
           style={styles.input}
           placeholder="Message…"
@@ -214,9 +323,9 @@ export default function ChatScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Send"
-          disabled={!draft.trim() || sending}
+          disabled={(!draft.trim() && !pending) || sending}
           onPress={() => void onSend()}
-          style={({ pressed }) => [styles.send, (!draft.trim() || sending) && styles.sendOff, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.send, ((!draft.trim() && !pending) || sending) && styles.sendOff, pressed && styles.pressed]}
         >
           {sending ? <ActivityIndicator color={colors.navy} size="small" /> : <Text style={styles.sendText}>Send</Text>}
         </Pressable>
@@ -246,7 +355,12 @@ const styles = StyleSheet.create({
   body: { color: colors.ink, fontSize: 15, lineHeight: 21 },
   bodyMine: { color: colors.white },
   deleted: { fontStyle: "italic", opacity: 0.7 },
-  attach: { color: colors.muted, fontSize: 13, fontWeight: "600" },
+  attachRow: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#EEF3F9", borderRadius: 10, padding: 8, marginBottom: 4, minWidth: 180 },
+  attachRowMine: { backgroundColor: "#1B3E63" },
+  attachIcon: { fontSize: 18 },
+  attachName: { color: colors.ink, fontSize: 13, fontWeight: "700" },
+  attachMeta: { color: colors.muted, fontSize: 11 },
+  attachMetaMine: { color: "#B9CBE0" },
   time: { color: colors.muted, fontSize: 10, marginTop: 2 },
   timeMine: { color: "#B9CBE0" },
   system: { textAlign: "center", color: colors.muted, fontSize: 12, fontStyle: "italic", paddingVertical: 4 },
@@ -255,7 +369,12 @@ const styles = StyleSheet.create({
   replyBar: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#EEF3F9", paddingHorizontal: 14, paddingVertical: 9 },
   replyText: { flex: 1, color: colors.navyMid, fontSize: 12, fontWeight: "600" },
   replyCancel: { color: colors.muted, fontSize: 16, fontWeight: "800" },
-  composer: { flexDirection: "row", alignItems: "flex-end", gap: 10, padding: 12, paddingBottom: 26, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.white },
+  pendingBar: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#FFF8E8", paddingHorizontal: 14, paddingVertical: 9 },
+  pendingIcon: { fontSize: 16 },
+  pendingText: { flex: 1, color: colors.navyMid, fontSize: 12, fontWeight: "700" },
+  composer: { flexDirection: "row", alignItems: "flex-end", gap: 8, padding: 12, paddingBottom: 26, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.white },
+  attachBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.canvas },
+  attachBtnIcon: { fontSize: 17 },
   input: { flex: 1, minHeight: 46, maxHeight: 130, borderColor: colors.line, borderWidth: 1, borderRadius: 22, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, color: colors.ink, fontSize: 15, backgroundColor: colors.canvas },
   send: { height: 46, borderRadius: 23, paddingHorizontal: 20, backgroundColor: colors.gold, alignItems: "center", justifyContent: "center" },
   sendOff: { opacity: 0.45 },

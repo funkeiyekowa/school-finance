@@ -33,6 +33,16 @@ import { requestSizeExceeds, safeUploadName, sanitizePathSegments, validateFileS
  *     client-side isOrgAdmin gate).
  *   - message-attachments: caller must be an active member of the
  *     target conversation (conversation_members, left_at IS NULL).
+ *
+ * Auth: the web app authenticates via the Supabase session cookie
+ * (createClient() below). The mobile app has no cookies, so as a
+ * mobile-only addition this route ALSO accepts a Bearer JWT
+ * (Authorization: Bearer <access_token>) verified independently via
+ * the service-role client's auth.getUser(jwt) -- the same pattern
+ * already used by /api/notifications/push. The cookie path is tried
+ * first and is completely unchanged; the bearer path only ever
+ * activates when no cookie session is present, so existing web
+ * behavior is not altered.
  */
 
 const UPLOAD_RATE_MAX = 30;
@@ -80,7 +90,21 @@ export async function POST(request: Request) {
   }
 
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  let { data: { user } } = await supabase.auth.getUser();
+
+  // Mobile has no session cookie: fall back to a Bearer JWT, verified
+  // independently via the service-role client rather than trusted from the
+  // client. Only reached when the cookie path above found no user.
+  if (!user) {
+    const authHeader = request.headers.get("authorization") ?? "";
+    const bearerMatch = /^Bearer\s+(.+)$/i.exec(authHeader);
+    if (bearerMatch) {
+      const svcAuth = createServiceClient();
+      const { data: bearerUser } = await svcAuth.auth.getUser(bearerMatch[1]);
+      user = bearerUser.user;
+    }
+  }
+
   if (!user) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
@@ -99,7 +123,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: membership } = await supabase
+  // These lookups run through the service-role client so the bearer-token
+  // path (which has no RLS-enforcing session) works identically to the
+  // cookie path. Both branches reach this point only after user.id was
+  // independently verified above (by the cookie session or by
+  // svcAuth.auth.getUser(jwt)), so every query below is explicitly scoped
+  // to that verified id -- with RLS bypassed, these filters ARE the
+  // security boundary and must not be loosened.
+  const svcLookup = createServiceClient();
+
+  const { data: membership } = await svcLookup
     .from("org_memberships")
     .select("organization_id, role")
     .eq("user_id", user.id)
@@ -113,7 +146,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No active organization for this account." }, { status: 403 });
   }
 
-  const { data: profileRow } = await supabase
+  const { data: profileRow } = await svcLookup
     .from("profiles")
     .select("role, active")
     .eq("id", user.id)
@@ -154,7 +187,7 @@ export async function POST(request: Request) {
     if (typeof conversationId !== "string" || !conversationId) {
       return NextResponse.json({ error: "Missing conversationId." }, { status: 400 });
     }
-    const { data: memberRow } = await supabase
+    const { data: memberRow } = await svcLookup
       .from("conversation_members")
       .select("user_id")
       .eq("conversation_id", conversationId)
@@ -171,7 +204,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const svc = createServiceClient();
+  const svc = svcLookup;
   const safeName = safeUploadName(file.name, file.type);
   const safeFolder = bucket === "website-media" && typeof folder === "string"
     ? sanitizePathSegments(folder)

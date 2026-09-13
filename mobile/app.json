@@ -27,7 +27,20 @@
           "cameraPermission": "Smart & Thrive uses the camera only for school features you choose, such as attendance and exam verification."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#0F2A47",
+          "defaultChannel": "messages"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Smart & Thrive uses your photos only when you choose to attach one to a message."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

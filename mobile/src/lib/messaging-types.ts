@@ -24,6 +24,16 @@ export interface ConversationListItem {
   otherUserId: string | null;
 }
 
+export interface ChatAttachment {
+  id: string;
+  storagePath: string;
+  fileName: string;
+  fileType: string;
+  fileSizeBytes: number;
+  width: number | null;
+  height: number | null;
+}
+
 export interface ChatMessage {
   id: string;
   senderId: string;
@@ -38,6 +48,7 @@ export interface ChatMessage {
   replyToId: string | null;
   replyToBody: string | null;
   attachmentCount: number;
+  attachments: ChatAttachment[];
 }
 
 export interface MessageableUser {
