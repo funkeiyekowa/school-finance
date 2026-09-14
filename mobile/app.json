@@ -14,7 +14,11 @@
       "package": "com.smartthrive.school",
       "adaptiveIcon": {
         "backgroundColor": "#0F2A47"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro"
@@ -46,9 +50,11 @@
       "typedRoutes": true
     },
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "REPLACE_WITH_YOUR_EAS_PROJECT_ID"
+        "projectId": "ddb264d8-d268-42af-99fa-54d7268ba34e"
       }
-    }
+    },
+    "owner": "ocpdeji"
   }
 }

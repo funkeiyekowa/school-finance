@@ -8,9 +8,9 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_SUPABASE_URL": "",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "",
-        "EXPO_PUBLIC_WEB_APP_URL": ""
+        "EXPO_PUBLIC_SUPABASE_URL": "https://dqlsdocmjudzyzmqisrx.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_iKLSPJU_hah8mnbsK3JOiw_2pD_lcn3",
+        "EXPO_PUBLIC_WEB_APP_URL": "https://school-finance.vercel.app"
       }
     },
     "preview": {
