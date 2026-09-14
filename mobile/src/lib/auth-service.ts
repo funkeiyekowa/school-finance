@@ -1,6 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 import { supabase, MOBILE_SCHOOL_SLUG_KEY } from "@/lib/supabase";
 import type { LoginContext, MobileIdentity, PortalRole, SchoolBrand } from "@/lib/auth-types";
+import { revokePushForThisDevice } from "@/lib/push-service";
 
 const STUDENT_CODE_RE = /^[A-Za-z]\d+$/;
 
@@ -92,6 +93,11 @@ async function loadIdentity(userId: string, school: SchoolBrand, role: PortalRol
 }
 
 export async function signOut(): Promise<void> {
+  // Revoke the push token FIRST — revoke_push_token() is scoped to auth.uid()
+  // and becomes a no-op once the session is gone. Without this a shared device
+  // would keep receiving the previous user's message previews until someone
+  // else signs in on it and register_push_token() reassigns the row.
+  await revokePushForThisDevice();
   await SecureStore.deleteItemAsync(MOBILE_SCHOOL_SLUG_KEY);
   await supabase.auth.signOut();
 }

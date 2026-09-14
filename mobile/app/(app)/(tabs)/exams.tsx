@@ -152,12 +152,30 @@ export default function ExamsScreen() {
                     ) : null}
 
                     {g.bucket === "done" && latest ? (
-                      <Text style={styles.result}>
-                        {latest.percentage != null
-                          ? `Score: ${latest.total_score ?? 0}/${latest.total_marks ?? exam.total_marks ?? 0}  (${Math.round(latest.percentage)}%)`
-                          : "Submitted — awaiting results."}
-                        {latest.passed === true ? "  ✓ Passed" : latest.passed === false ? "  ✗ Not passed" : ""}
-                      </Text>
+                      <>
+                        <Text style={styles.result}>
+                          {latest.percentage != null
+                            ? `Score: ${latest.total_score ?? 0}/${latest.total_marks ?? exam.total_marks ?? 0}  (${Math.round(latest.percentage)}%)`
+                            : "Submitted — awaiting results."}
+                          {latest.passed === true ? "  ✓ Passed" : latest.passed === false ? "  ✗ Not passed" : ""}
+                        </Text>
+                        {/* get_attempt_review() returns nothing unless the school
+                            enabled answer review, so the screen degrades safely. */}
+                        {exam.show_answers ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`Review answers for ${exam.title}`}
+                            onPress={() =>
+                              router.push({
+                                pathname: "/(app)/exam-review/[attemptId]",
+                                params: { attemptId: latest.id, title: exam.title },
+                              } as never)
+                            }
+                          >
+                            <Text style={styles.cta}>Review answers →</Text>
+                          </Pressable>
+                        ) : null}
+                      </>
                     ) : null}
 
                     {openable && !proctor.proctored ? (
