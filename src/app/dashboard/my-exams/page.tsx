@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/lib/context/AuthContext";
+import { useStudentDashboard } from "@/lib/hooks/useStudentDashboard";
+import { useStudentResults } from "@/lib/hooks/useStudentResults";
+import { bucketExams, formatScore } from "@/lib/exams/examState";
+import type { ResultsAttempt } from "@/lib/types/student-dashboard";
 import { fmtDateTime, cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -10,94 +13,34 @@ import { Button } from "@/components/ui/Button";
 import Link from "next/link";
 import { BookOpen, CheckCircle2, Clock, AlertTriangle, FileText } from "lucide-react";
 
-interface ExamRow { id: string; title: string; exam_type: string; duration_minutes: number; total_marks: number; pass_mark: number; class_id: string | null; status: string; max_attempts: number; show_answers: boolean; starts_at: string | null; ends_at: string | null; }
-interface AttemptRow { id: string; exam_id: string; attempt_number: number; total_score: number | null; percentage: number | null; passed: boolean | null; status: string; submitted_at: string | null; started_at: string; }
 interface AnswerRow { question_id: string; selected_option: string | null; is_correct: boolean | null; marks_awarded: number | null; }
 interface QuestionRow { id: string; question_text: string; options: { id: string; text: string; is_correct: boolean }[]; marks: number; explanation: string | null; }
-interface AssignmentRow { id: string; exam_id: string; available_from: string | null; available_to: string | null; }
 
 export default function MyExamsPage() {
-  const { user } = useAuth();
   const supabase = createClient();
-  const [loading, setLoading] = useState(true);
-  const [exams, setExams] = useState<ExamRow[]>([]);
-  const [attempts, setAttempts] = useState<AttemptRow[]>([]);
-  const [studentId, setStudentId] = useState<string | null>(null);
-  const [studentGrade, setStudentGrade] = useState<string | null>(null);
+  const dashboard = useStudentDashboard();
+  const results = useStudentResults();
 
   // Review state
-  const [reviewAttempt, setReviewAttempt] = useState<AttemptRow | null>(null);
+  const [reviewAttempt, setReviewAttempt] = useState<ResultsAttempt | null>(null);
   const [reviewAnswers, setReviewAnswers] = useState<AnswerRow[]>([]);
   const [reviewQuestions, setReviewQuestions] = useState<QuestionRow[]>([]);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!user) { setLoading(false); return; }
-
-    // Find the student linked to this user. The canonical link is
-    // students.profile_id; fall back to guardian_email for legacy rows.
-    let stuData: { id: string; grade: string | null } | null = null;
-    const { data: byProfile } = await supabase.from("students")
-      .select("id, grade")
-      .eq("profile_id", user.id)
-      .maybeSingle();
-    stuData = byProfile as { id: string; grade: string | null } | null;
-    if (!stuData) {
-      const { data: byEmail } = await supabase.from("students")
-        .select("id, grade")
-        .eq("guardian_email", user.email)
-        .eq("status", "active")
-        .limit(1).maybeSingle();
-      stuData = byEmail as { id: string; grade: string | null } | null;
-    }
-    if (!stuData) { setLoading(false); return; }
-    setStudentId(stuData.id);
-    setStudentGrade(stuData.grade);
-
-    const [examResp, attResp, assignResp] = await Promise.all([
-      supabase.from("exams").select("*").eq("status", "published"),
-      supabase.from("exam_attempts").select("*").eq("student_id", stuData.id).order("started_at", { ascending: false }),
-      supabase.from("cbt_exam_assignments").select("*").eq("student_id", stuData.id),
-    ]);
-    const allExams = (examResp.data ?? []) as ExamRow[];
-    const attemptsData = (attResp.data ?? []) as AttemptRow[];
-    const assignments = (assignResp.data ?? []) as AssignmentRow[];
-
-    // Show an exam when either (a) the student is directly assigned, or
-    // (b) no per-student assignments exist for it and the exam is either
-    // unscoped or scoped to their current grade. This mirrors
-    // can_take_exam() in cbt_upgrade_migration.sql.
-    const now = new Date();
-    const directIds = new Set(
-      assignments
-        .filter(a =>
-          (!a.available_from || new Date(a.available_from) <= now) &&
-          (!a.available_to   || new Date(a.available_to)   >= now)
-        )
-        .map(a => a.exam_id)
-    );
-
-    const myExams = allExams.filter(e => {
-      if (directIds.has(e.id)) return true;
-      // no per-student assignment — allow class-scoped exams when the
-      // student's current grade matches. This is a permissive UI filter;
-      // the server still enforces the exact rule at start_exam_attempt.
-      if (!e.class_id) return true;
-      return stuData!.grade != null;
-    });
-    setExams(myExams);
-    setAttempts(attemptsData);
-    setLoading(false);
-  }, [user, supabase]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function openReview(attempt: AttemptRow) {
+  async function openReview(attempt: ResultsAttempt) {
     // Questions are staff-only under RLS; the review payload (questions +
     // correct answers + the student's own responses) comes from the
     // get_attempt_review RPC, which only returns data for a submitted
     // attempt the caller owns when the exam permits answer review.
+    setReviewAttempt(attempt);
+    setReviewError(null);
+    setReviewAnswers([]);
+    setReviewQuestions([]);
     const { data, error: err } = await supabase.rpc("get_attempt_review", { p_attempt: attempt.id });
-    if (err) { alert(`Could not load review: ${err.message}`); return; }
+    if (err) {
+      setReviewError(`Could not load review: ${err.message}`);
+      return;
+    }
     const rows = (data ?? []) as {
       question_id: string; question_text: string; options: unknown;
       marks: number; explanation: string | null;
@@ -116,24 +59,34 @@ export default function MyExamsPage() {
       is_correct: r.is_correct,
       marks_awarded: r.marks_awarded,
     })));
-    setReviewAttempt(attempt);
   }
 
-  if (loading) return <div className="p-6"><LoadingSpinner /></div>;
-  if (!studentId) return <div className="p-6 text-gray-500">No student account linked. Contact your school administrator.</div>;
+  const loading = dashboard.loading || results.loading;
+  const error = dashboard.error || results.error;
+  const buckets = bucketExams(dashboard.exams);
+  const availableExams = [...buckets.inProgress, ...buckets.available];
+  const completedExams = buckets.completed;
 
-  // Group exams by whether the student still has attempts left.  Exams the
-  // student has fully consumed still appear (in a separate 'Completed' bucket)
-  // so they know it's not missing — with status shown as Completed.
-  const examUsage = exams.map(e => {
-    const submittedForThis = attempts.filter(a => a.exam_id === e.id && (a.status === "submitted" || a.status === "timed_out" || a.status === "graded")).length;
-    const inProgress = attempts.some(a => a.exam_id === e.id && a.status === "in_progress");
-    const remaining = Math.max(0, e.max_attempts - submittedForThis);
-    return { exam: e, submitted: submittedForThis, inProgress, remaining };
-  });
-  const availableExams = examUsage.filter(u => u.remaining > 0 || u.inProgress);
-  const exhaustedExams = examUsage.filter(u => u.remaining === 0 && !u.inProgress);
-  const completedAttempts = attempts.filter(a => a.status === "submitted" || a.status === "timed_out" || a.status === "graded");
+  if (loading) return <div className="p-6"><LoadingSpinner /></div>;
+
+  if (error) {
+    return (
+      <div className="p-6 space-y-5">
+        <PageHeader
+          icon={<FileText size={24} />}
+          gradient="navy" title="My Exams" subtitle="View available exams, take tests, and review your results" />
+        <Card>
+          <CardContent className="p-6 text-center space-y-3">
+            <p className="text-sm text-gray-600">We couldn&apos;t load your exams.</p>
+            <p className="text-xs text-gray-500">{error}</p>
+            <Button size="sm" variant="secondary" onClick={() => void Promise.all([dashboard.reload(), results.reload()])}>Retry</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!dashboard.student) return <div className="p-6 text-gray-500">No student account linked. Contact your school administrator.</div>;
 
   return (
     <div className="p-6 space-y-5">
@@ -144,19 +97,19 @@ export default function MyExamsPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl border p-4 text-center">
-          <div className="text-xl font-bold text-[#0F2A47]">{availableExams.length}</div>
+          <div className="text-xl font-bold text-[#0F2A47]">{dashboard.stats.available + dashboard.stats.in_progress}</div>
           <div className="text-xs text-gray-500">Available</div>
         </div>
         <div className="bg-white rounded-xl border p-4 text-center">
-          <div className="text-xl font-bold text-green-700">{completedAttempts.filter(a => a.passed).length}</div>
+          <div className="text-xl font-bold text-green-700">{results.attempts.filter(a => a.passed).length}</div>
           <div className="text-xs text-gray-500">Passed</div>
         </div>
         <div className="bg-white rounded-xl border p-4 text-center">
-          <div className="text-xl font-bold text-red-600">{completedAttempts.filter(a => a.passed === false).length}</div>
+          <div className="text-xl font-bold text-red-600">{results.attempts.filter(a => a.passed === false).length}</div>
           <div className="text-xs text-gray-500">Failed</div>
         </div>
         <div className="bg-white rounded-xl border p-4 text-center">
-          <div className="text-xl font-bold text-[#0F2A47]">{completedAttempts.length}</div>
+          <div className="text-xl font-bold text-[#0F2A47]">{results.attempts.length}</div>
           <div className="text-xs text-gray-500">Total Attempts</div>
         </div>
       </div>
@@ -167,7 +120,7 @@ export default function MyExamsPage() {
         <CardContent>
           {availableExams.length === 0 ? <p className="text-sm text-gray-400 text-center py-4">No exams available right now.</p> : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {availableExams.map(({ exam, submitted, inProgress, remaining }) => (
+              {availableExams.map(exam => (
                 <div key={exam.id} className="p-4 border rounded-xl hover:border-[#C9A227] transition-colors">
                   <div className="flex items-start justify-between mb-2">
                     <div>
@@ -182,17 +135,17 @@ export default function MyExamsPage() {
                     {exam.pass_mark > 0 && <span>Pass: {exam.pass_mark}</span>}
                   </div>
                   <div className="text-[10px] text-gray-500 mb-2">
-                    {inProgress ? (
+                    {exam.state === "in_progress" ? (
                       <span className="text-amber-600 font-semibold">In progress — resume to continue</span>
-                    ) : submitted > 0 ? (
-                      <span>Attempt {submitted + 1} of {exam.max_attempts} — {remaining} left</span>
+                    ) : exam.attempts_used > 0 ? (
+                      <span>Attempt {exam.attempts_used + 1} of {exam.max_attempts} — {exam.attempts_left} left</span>
                     ) : (
                       <span>{exam.max_attempts} attempt{exam.max_attempts === 1 ? "" : "s"} allowed</span>
                     )}
                   </div>
                   <Link href={`/dashboard/cbt/${exam.id}/take`}>
                     <Button size="sm" variant="gold" className="w-full">
-                      {inProgress ? "Resume Exam" : submitted > 0 ? "Retake Exam" : "Start Exam"}
+                      {exam.state === "in_progress" ? "Resume Exam" : exam.attempts_used > 0 ? "Retake Exam" : "Start Exam"}
                     </Button>
                   </Link>
                 </div>
@@ -203,12 +156,12 @@ export default function MyExamsPage() {
       </Card>
 
       {/* Exams the student has fully used up */}
-      {exhaustedExams.length > 0 && (
+      {completedExams.length > 0 && (
         <Card>
           <CardHeader><CardTitle>Completed Exams</CardTitle></CardHeader>
           <CardContent>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {exhaustedExams.map(({ exam, submitted }) => (
+              {completedExams.map(exam => (
                 <div key={exam.id} className="p-4 border rounded-xl bg-gray-50 opacity-80">
                   <div className="flex items-start justify-between mb-2">
                     <div>
@@ -218,7 +171,9 @@ export default function MyExamsPage() {
                     <BookOpen size={16} className="text-gray-400" />
                   </div>
                   <div className="text-[10px] text-gray-500 mb-2">
-                    All {submitted} attempt{submitted === 1 ? "" : "s"} used. See your results below.
+                    {exam.state === "closed"
+                      ? "This exam is closed. See your results below."
+                      : `All ${exam.attempts_used} attempt${exam.attempts_used === 1 ? "" : "s"} used. See your results below.`}
                   </div>
                   <Button size="sm" variant="secondary" className="w-full" disabled>
                     Completed
@@ -231,36 +186,32 @@ export default function MyExamsPage() {
       )}
 
       {/* Attempt History */}
-      {completedAttempts.length > 0 && (
+      {results.attempts.length > 0 && (
         <Card>
           <CardHeader><CardTitle>My Results</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {completedAttempts.map(att => {
-                const exam = exams.find(e => e.id === att.exam_id);
-                return (
-                  <div key={att.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
-                    <div>
-                      <div className="text-sm font-semibold">{exam?.title || "Exam"}</div>
-                      <div className="text-xs text-gray-400">{att.submitted_at ? fmtDateTime(att.submitted_at) : fmtDateTime(att.started_at)} · Attempt #{att.attempt_number}</div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <div className="text-sm font-bold">{att.total_score ?? 0}/{exam?.total_marks || "?"}</div>
-                        <div className="text-xs text-gray-400">{att.percentage ?? 0}%</div>
-                      </div>
-                      {att.passed !== null && (
-                        <span className={cn("px-2 py-1 rounded text-xs font-bold", att.passed ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
-                          {att.passed ? "PASS" : "FAIL"}
-                        </span>
-                      )}
-                      {exam?.show_answers && (
-                        <button onClick={() => openReview(att)} className="text-xs text-[#C9A227] hover:underline">Review</button>
-                      )}
-                    </div>
+              {results.attempts.map(att => (
+                <div key={att.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                  <div>
+                    <div className="text-sm font-semibold">{att.exam_title}</div>
+                    <div className="text-xs text-gray-400">{att.submitted_at ? fmtDateTime(att.submitted_at) : "—"} · Attempt #{att.attempt_number ?? "—"}</div>
                   </div>
-                );
-              })}
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <div className="text-sm font-bold">{formatScore(att.total_score, att.total_marks, att.percentage)}</div>
+                    </div>
+                    {att.passed !== null && (
+                      <span className={cn("px-2 py-1 rounded text-xs font-bold", att.passed ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                        {att.passed ? "PASS" : "FAIL"}
+                      </span>
+                    )}
+                    {att.show_answers && (
+                      <button onClick={() => void openReview(att)} className="text-xs text-[#C9A227] hover:underline">Review</button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -271,11 +222,12 @@ export default function MyExamsPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Answer Review — {exams.find(e => e.id === reviewAttempt.exam_id)?.title}</CardTitle>
-              <button onClick={() => setReviewAttempt(null)} className="text-xs text-gray-500 hover:underline">Close</button>
+              <CardTitle>Answer Review — {reviewAttempt.exam_title}</CardTitle>
+              <button onClick={() => { setReviewAttempt(null); setReviewError(null); }} className="text-xs text-gray-500 hover:underline">Close</button>
             </div>
           </CardHeader>
           <CardContent>
+            {reviewError && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{reviewError}</div>}
             <div className="space-y-4">
               {reviewQuestions.map((q, i) => {
                 const answer = reviewAnswers.find(a => a.question_id === q.id);

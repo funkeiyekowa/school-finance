@@ -43,3 +43,4 @@ supabase/.temp/
 github_claude
 AGENTS.md
 PAYSLIP_FIXES.md
+.codex-stage-*.patch

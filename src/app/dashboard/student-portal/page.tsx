@@ -1,92 +1,33 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useStudentDashboard } from "@/lib/hooks/useStudentDashboard";
+import {
+  bucketExams,
+  nextUpExam,
+  formatScore,
+  formatPercentage,
+  isActionable,
+  EXAM_STATE_LABEL,
+  EXAM_STATE_BADGE,
+} from "@/lib/exams/examState";
 import { cn } from "@/lib/utils";
 import { PageHeader, KpiCard, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { GraduationCap, BookOpen, FileBarChart, Clock, Award, Play, ChevronRight, User, Calendar } from "lucide-react";
 
-interface Student { id: string; student_code: string; full_name: string; grade: string | null; status: string; must_change_password: boolean; }
-interface Exam { id: string; title: string; exam_type: string; subject_id: string | null; class_id: string | null; duration_minutes: number; status: string; starts_at: string | null; ends_at: string | null; }
-interface ExamAssignment { id: string; exam_id: string; available_from: string | null; available_to: string | null; }
-interface Attempt { id: string; exam_id: string; total_score: number | null; status: string; }
-interface ReportCard { id: string; term: string; average_score: number; grade_overall: string | null; published: boolean; }
-
 export default function StudentPortalPage() {
-  const { user, profile, org } = useAuth();
-  const router = useRouter();
+  const { org } = useAuth();
   const supabase = createClient();
-  const [loading, setLoading] = useState(true);
-  const [me, setMe] = useState<Student | null>(null);
-  const [exams, setExams] = useState<Exam[]>([]);
-  const [attempts, setAttempts] = useState<Attempt[]>([]);
-  const [reportCards, setReportCards] = useState<ReportCard[]>([]);
-  const [showChangePassword, setShowChangePassword] = useState(false);
+  const { student, exams, report_cards, stats, loading, error, reload } = useStudentDashboard();
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changing, setChanging] = useState(false);
   const [changeError, setChangeError] = useState("");
-
-  const load = useCallback(async () => {
-    if (!user) { setLoading(false); return; }
-    setLoading(true);
-
-    // Prefer the SECURITY DEFINER RPC — it bypasses RLS so a student
-    // can always resolve their own row even if a per-org policy is
-    // temporarily out of sync.
-    let student: Student | null = null;
-    const { data: ctx, error: ctxErr } = await supabase.rpc("get_my_student_context");
-    if (!ctxErr && Array.isArray(ctx) && ctx.length > 0) {
-      student = ctx[0] as Student;
-    }
-    if (!student) {
-      const { data: stu } = await supabase
-        .from("students")
-        .select("*")
-        .eq("profile_id", user.id)
-        .maybeSingle();
-      student = stu as Student | null;
-    }
-    if (!student) {
-      // fallback by guardian_email (legacy rows)
-      const { data } = await supabase.from("students").select("*")
-        .eq("guardian_email", user.email).eq("status", "active").maybeSingle();
-      student = data as Student | null;
-    }
-
-    if (!student) { setLoading(false); return; }
-    setMe(student);
-
-    if (student.must_change_password) setShowChangePassword(true);
-
-    // Load exams assigned (via class or direct assignment)
-    const [assign, published, att, rc] = await Promise.all([
-      supabase.from("cbt_exam_assignments").select("*").eq("student_id", student.id),
-      supabase.from("exams").select("*").eq("status", "published"),
-      supabase.from("exam_attempts").select("id, exam_id, total_score, status").eq("student_id", student.id),
-      supabase.from("report_cards").select("id, term, average_score, grade_overall, published")
-        .eq("student_id", student.id).eq("published", true),
-    ]);
-
-    const assignments = (assign.data ?? []) as ExamAssignment[];
-    const publishedExams = (published.data ?? []) as Exam[];
-    const assignedExamIds = new Set(assignments.map(a => a.exam_id));
-    const visibleExams = publishedExams.filter(e =>
-      assignedExamIds.has(e.id) || e.class_id === null // open to all class if unassigned
-    );
-
-    setExams(visibleExams);
-    setAttempts((att.data ?? []) as Attempt[]);
-    setReportCards((rc.data ?? []) as ReportCard[]);
-    setLoading(false);
-  }, [user, supabase]);
-
-  useEffect(() => { load(); }, [load]);
 
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -122,15 +63,15 @@ export default function StudentPortalPage() {
     // cleared while the UI acted like it had.
     const { data: verifyCtx } = await supabase.rpc("get_my_student_context");
     const verified = Array.isArray(verifyCtx) && verifyCtx.length > 0
-      ? (verifyCtx[0] as Student).must_change_password === false
+      ? (verifyCtx[0] as { must_change_password?: boolean }).must_change_password === false
       : null; // couldn't verify -- treat as unverified, not as success
 
     if (rpcErr || verified !== true) {
       // Last-resort fallback (works only if a self-update policy exists).
-      if (me) await supabase.from("students").update({ must_change_password: false }).eq("id", me.id);
+      await supabase.from("students").update({ must_change_password: false }).eq("id", student!.id);
       const { data: recheck } = await supabase.rpc("get_my_student_context");
       const stillStuck = !Array.isArray(recheck) || recheck.length === 0
-        || (recheck[0] as Student).must_change_password !== false;
+        || (recheck[0] as { must_change_password?: boolean }).must_change_password !== false;
       if (stillStuck) {
         setChangeError(
           "Your password was changed, but we couldn't confirm this screen can be dismissed. " +
@@ -141,32 +82,28 @@ export default function StudentPortalPage() {
       }
     }
 
-    // Reflect the cleared flag locally so a subsequent load() (or this one)
-    // does not bounce the student straight back to the password screen.
-    if (me) setMe({ ...me, must_change_password: false });
-    setShowChangePassword(false);
+    await reload();
     setChanging(false);
   }
 
-  const stats = useMemo(() => {
-    const availableExams = exams.filter(e => {
-      const attempt = attempts.find(a => a.exam_id === e.id);
-      if (attempt && attempt.status === "submitted") return false;
-      const now = new Date();
-      if (e.starts_at && new Date(e.starts_at) > now) return false;
-      if (e.ends_at && new Date(e.ends_at) < now) return false;
-      return true;
-    });
-    const completed = attempts.filter(a => a.status === "submitted");
-    const avgScore = completed.length > 0
-      ? completed.reduce((s, a) => s + Number(a.total_score || 0), 0) / completed.length
-      : 0;
-    return { available: availableExams.length, completed: completed.length, avgScore };
-  }, [exams, attempts]);
-
   if (loading) return <LoadingSpinner />;
 
-  if (!me) {
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title={org?.name ? `${org.name} · Student Portal` : "Student Portal"} subtitle="Your academic dashboard" />
+        <Card>
+          <CardContent className="p-6 text-center space-y-3">
+            <EmptyState message="We couldn't load your dashboard." icon={<GraduationCap />} />
+            <p className="text-xs text-gray-500">{error}</p>
+            <Button size="sm" variant="secondary" onClick={() => void reload()}>Retry</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!student) {
     return (
       <div className="space-y-6">
         <PageHeader title={org?.name ? `${org.name} · Student Portal` : "Student Portal"} subtitle="Your academic dashboard" />
@@ -175,7 +112,7 @@ export default function StudentPortalPage() {
     );
   }
 
-  if (showChangePassword) {
+  if (student.must_change_password) {
     return (
       <div className="max-w-md mx-auto space-y-4 py-8">
         <div className="text-center mb-4">
@@ -207,15 +144,42 @@ export default function StudentPortalPage() {
     );
   }
 
+  const buckets = bucketExams(exams);
+  const nextExam = nextUpExam(exams);
+  const examGroups = [
+    { label: "Available now", exams: [...buckets.inProgress, ...buckets.available] },
+    { label: "Upcoming", exams: buckets.upcoming },
+    { label: "Completed", exams: buckets.completed },
+  ].filter(group => group.exams.length > 0);
+
   return (
     <div className="space-y-6">
-      <PageHeader title={`Welcome, ${me.full_name.split(" ")[0]}!`} subtitle={`${org?.name ? org.name + " · " : ""}${me.grade || "—"} · ${me.student_code}`} />
+      <PageHeader title={`Welcome, ${student.full_name.split(" ")[0]}!`} subtitle={`${org?.name ? org.name + " · " : ""}${student.grade || "—"} · ${student.student_code}`} />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <KpiCard label="Available Exams" value={String(stats.available)} icon={<BookOpen size={18} />} colorClass="text-[#C9A227]" />
+        <KpiCard label={stats.in_progress > 0 ? `Available (${stats.in_progress} in progress)` : "Available Exams"} value={String(stats.available)} icon={<BookOpen size={18} />} colorClass="text-[#C9A227]" />
         <KpiCard label="Completed" value={String(stats.completed)} icon={<Award size={18} />} colorClass="text-green-700" />
-        <KpiCard label="Average Score" value={stats.avgScore > 0 ? `${stats.avgScore.toFixed(1)}%` : "—"} icon={<FileBarChart size={18} />} colorClass="text-blue-700" />
+        <KpiCard label="Average Score" value={formatPercentage(stats.avg_percentage)} icon={<FileBarChart size={18} />} colorClass="text-blue-700" />
       </div>
+
+      {nextExam && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Next up</div>
+                <div className="font-semibold text-sm">{nextExam.title}</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={cn("px-2 py-1 rounded text-xs font-semibold", EXAM_STATE_BADGE[nextExam.state])}>{EXAM_STATE_LABEL[nextExam.state]}</span>
+                <Link href={`/dashboard/cbt/${nextExam.id}`}>
+                  <Button size="sm" variant="gold">{EXAM_STATE_LABEL[nextExam.state]}</Button>
+                </Link>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
@@ -226,42 +190,40 @@ export default function StudentPortalPage() {
             {exams.length === 0 ? (
               <EmptyState message="No exams assigned yet." />
             ) : (
-              <div className="space-y-2">
-                {exams.map(exam => {
-                  const attempt = attempts.find(a => a.exam_id === exam.id);
-                  const now = new Date();
-                  const inWindow = (!exam.starts_at || new Date(exam.starts_at) <= now) &&
-                                   (!exam.ends_at || new Date(exam.ends_at) >= now);
-                  const isDone = attempt?.status === "submitted";
-                  return (
-                    <div key={exam.id} className={cn("p-3 border rounded-lg", isDone ? "bg-gray-50" : inWindow ? "bg-white hover:border-[#C9A227]" : "bg-amber-50")}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="font-semibold text-sm">{exam.title}</div>
-                          <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
-                            <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-semibold uppercase">{exam.exam_type}</span>
-                            <span><Clock size={10} className="inline" /> {exam.duration_minutes} min</span>
-                            {exam.ends_at && (
-                              <span><Calendar size={10} className="inline" /> Until {new Date(exam.ends_at).toLocaleDateString()}</span>
-                            )}
+              <div className="space-y-4">
+                {examGroups.map(group => (
+                  <div key={group.label} className="space-y-2">
+                    <div className="text-xs font-semibold text-gray-500 uppercase">{group.label}</div>
+                    {group.exams.map(exam => (
+                      <div key={exam.id} className={cn("p-3 border rounded-lg", exam.state === "exhausted" || exam.state === "closed" ? "bg-gray-50" : exam.state === "upcoming" ? "bg-amber-50" : "bg-white hover:border-[#C9A227]")}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="font-semibold text-sm">{exam.title}</div>
+                            <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+                              <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-semibold uppercase">{exam.exam_type}</span>
+                              <span><Clock size={10} className="inline" /> {exam.duration_minutes} min</span>
+                              {exam.ends_at && (
+                                <span><Calendar size={10} className="inline" /> Until {new Date(exam.ends_at).toLocaleDateString()}</span>
+                              )}
+                            </div>
                           </div>
+                          {exam.state === "exhausted" || exam.state === "closed" ? (
+                            <div className="text-right">
+                              <div className="text-xs text-gray-500">Score</div>
+                              <div className="font-bold text-green-700">{formatScore(exam.best_attempt?.total_score, exam.total_marks, exam.best_attempt?.percentage)}</div>
+                            </div>
+                          ) : isActionable(exam) ? (
+                            <Link href={`/dashboard/cbt/${exam.id}`}>
+                              <Button size="sm" variant="gold"><Play size={12} /> {EXAM_STATE_LABEL[exam.state]}</Button>
+                            </Link>
+                          ) : exam.starts_at ? (
+                            <span className="text-xs text-amber-700 font-semibold">{new Date(exam.starts_at).toLocaleDateString()}</span>
+                          ) : null}
                         </div>
-                        {isDone ? (
-                          <div className="text-right">
-                            <div className="text-xs text-gray-500">Score</div>
-                            <div className="font-bold text-green-700">{attempt.total_score?.toFixed(1) || "—"}</div>
-                          </div>
-                        ) : inWindow ? (
-                          <Link href={`/dashboard/cbt/${exam.id}/take`}>
-                            <Button size="sm" variant="gold"><Play size={12} /> Start</Button>
-                          </Link>
-                        ) : (
-                          <span className="text-xs text-amber-700 font-semibold">Not yet available</span>
-                        )}
                       </div>
-                    </div>
-                  );
-                })}
+                    ))}
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
@@ -272,11 +234,11 @@ export default function StudentPortalPage() {
             <CardTitle className="flex items-center gap-2"><FileBarChart size={16} /> My Report Cards</CardTitle>
           </CardHeader>
           <CardContent>
-            {reportCards.length === 0 ? (
+            {report_cards.length === 0 ? (
               <EmptyState message="No report cards published yet." />
             ) : (
               <div className="space-y-2">
-                {reportCards.map(rc => (
+                {report_cards.map(rc => (
                   <Link key={rc.id} href={`/dashboard/report-cards/${rc.id}`}
                     className="flex items-center justify-between p-3 border rounded-lg hover:border-[#C9A227]">
                     <div>
@@ -284,7 +246,7 @@ export default function StudentPortalPage() {
                       <div className="text-xs text-gray-500">Grade {rc.grade_overall || "—"}</div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="font-bold text-[#0F2A47]">{Number(rc.average_score).toFixed(1)}%</div>
+                      <div className="font-bold text-[#0F2A47]">{formatPercentage(rc.average_score)}</div>
                       <ChevronRight size={14} className="text-gray-400" />
                     </div>
                   </Link>
