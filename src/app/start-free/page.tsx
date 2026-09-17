@@ -28,30 +28,40 @@ const roles = [
     title: "Administrator",
     description: "Explore school setup, roles, oversight, and administrator workflows.",
     href: STAFF_PORTAL,
+    email: "admin@demo.smartandthrive.com",
+    password: "DemoAdmin123",
     icon: Building2,
   },
   {
     title: "Backoffice",
     description: "Review the operational workspace for finance and school administration.",
     href: STAFF_PORTAL,
+    email: "backoffice@demo.smartandthrive.com",
+    password: "DemoBackoffice123",
     icon: BriefcaseBusiness,
   },
   {
     title: "Teacher / Faculty",
     description: "Open the staff portal for teaching, classes, assessments, and related tools.",
     href: STAFF_PORTAL,
+    email: "teacher@demo.smartandthrive.com",
+    password: "DemoTeacher123",
     icon: BookOpenCheck,
   },
   {
     title: "Student",
     description: "Use the demo tenant login to access the student experience when an account is ready.",
     href: STUDENT_PARENT_LOGIN,
+    email: "student@demo.smartandthrive.com",
+    password: "DemoStudent123",
     icon: GraduationCap,
   },
   {
     title: "Parent",
     description: "Use the demo tenant login to explore the parent experience with a prepared account.",
     href: STUDENT_PARENT_LOGIN,
+    email: "parent@demo.smartandthrive.com",
+    password: "DemoParent123",
     icon: Users,
   },
 ] as const;
@@ -119,20 +129,25 @@ export default function StartFreePage() {
             <div className="mt-8 grid overflow-hidden rounded-2xl border border-slate-200 lg:grid-cols-[1fr_auto]">
               <div className="p-6 sm:p-7">
                 <div className="flex items-center gap-2 text-sm font-bold">
-                  <LockKeyhole size={17} className="text-[#C9A227]" /> Demo credential status
+                  <LockKeyhole size={17} className="text-[#C9A227]" /> Demo credentials
                 </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl bg-slate-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Email</div>
-                    <div className="mt-1 font-semibold">Demo account pending</div>
-                  </div>
-                  <div className="rounded-xl bg-slate-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Password</div>
-                    <div className="mt-1 font-semibold">Provided during demo setup</div>
-                  </div>
+                <div className="mt-4 space-y-3">
+                  {roles.map(({ title, email, password }) => (
+                    <div key={title} className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-[0.8fr_1.4fr_1fr] sm:items-center">
+                      <div className="text-sm font-bold text-[#0F2A47]">{title}</div>
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Email</div>
+                        <div className="mt-1 break-all font-mono text-xs font-semibold text-slate-700">{email}</div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Password</div>
+                        <div className="mt-1 break-all font-mono text-xs font-semibold text-slate-700">{password}</div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
                 <p className="mt-4 text-sm leading-6 text-slate-600">
-                  Demo accounts must be created in the Smart & Thrive Academy tenant before login works.
+                  These public demo-safe accounts work only in the separate Smart & Thrive Academy tenant.
                 </p>
               </div>
               <div className="flex items-center border-t border-slate-200 bg-[#FBF6E8] p-6 lg:border-l lg:border-t-0">
