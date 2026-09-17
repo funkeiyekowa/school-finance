@@ -264,3 +264,51 @@ env values requires a **redeploy**, not just a restart.
 <!-- • Constraints — anything to avoid, deadlines, must-not-break areas.              -->
 
 _(Describe the change here.)_
+
+---
+
+## MULTI-AGENT DEVELOPMENT PROTOCOL
+
+### Agent roles
+
+| Agent | Role |
+|---|---|
+| **Notion Claude** | Planning and architecture agent. Writes GitHub Issues, defines acceptance criteria, records decisions in `.ai/DECISIONS.md`. Does not write application code. |
+| **Claude Code** | Local implementation agent. Reads the Issue, implements the change, runs `typecheck` + `lint` + `test`, opens the Pull Request. |
+| **Codex** | Independent reviewer. Reviews the PR against `.ai/REVIEW.md`, posts inline comments, does not implement. |
+| **Human** | Approves high-risk changes, applies SQL migrations manually, merges to `main`, triggers or confirms deploy. |
+
+### Handoff mechanism
+
+**GitHub Issues and Pull Requests are the handoff mechanism.** Every non-trivial change
+starts with a GitHub Issue. The Issue is the source of truth for scope and acceptance
+criteria. The PR is the gate between implementation and merge. `.ai/` files are
+supporting state and working notes — they are not authoritative.
+
+### Workflow
+
+```
+PLAN → ISSUE → IMPLEMENT → TEST → PR → REVIEW → FIX → HUMAN APPROVAL → MERGE → DEPLOY → DOCUMENT
+```
+
+1. **PLAN** — Notion Claude reads `CLAUDE.md` and `AUDIT_NOTES.md`, proposes the approach.
+2. **ISSUE** — Notion Claude opens a GitHub Issue with scope, acceptance criteria, and risk flags.
+3. **IMPLEMENT** — Claude Code branches from `main`, implements, does not touch out-of-scope files.
+4. **TEST** — Claude Code runs `npm run typecheck`, `npm run lint`, `npm run test`. All must pass.
+5. **PR** — Claude Code opens a Pull Request referencing the Issue. Description states what changed and why.
+6. **REVIEW** — Codex reviews against `.ai/REVIEW.md` and posts findings as inline PR comments.
+7. **FIX** — Claude Code addresses all Codex findings. CI must be green.
+8. **HUMAN APPROVAL** — Human reviews high-risk areas (DB, auth, finance, student data) and approves.
+9. **MERGE** — Human merges to `main`. No force-push. No squash without discussion.
+10. **DEPLOY** — Vercel deploys automatically on push to `main`. Human confirms the deploy succeeded.
+11. **DOCUMENT** — Notion Claude records the decision in `.ai/DECISIONS.md` and updates `AUDIT_NOTES.md` if needed.
+
+### Rules
+
+- **Inspect before editing.** Read the existing file before proposing any change to it.
+- **Stay focused.** Changes must remain scoped to what the Issue requests. Flag side effects; do not silently expand scope.
+- **Secrets are never exposed.** No key, token, or credential in source files, comments, PR descriptions, or `.ai/` files. `SUPABASE_SERVICE_ROLE_KEY` is never committed.
+- **High-risk areas require human approval before merge.** These are: database schema, RLS policies, SQL migrations, auth/login flows, financial records (income, expenses, receipts, reconciliation), student or parent personal data, attendance records, multi-tenant isolation logic, and production environment variables or deployment configuration.
+- **Production merge, migration, and deployment require human approval.** Agents do not merge to `main`, apply migrations, or trigger deploys.
+- **`.ai/` files are supporting state, not the source of truth for code.** The code and the GitHub Issue are authoritative. `.ai/` files help agents pick up context between sessions.
+- **All CI checks must pass.** `lint → typecheck → test → build` in `.github/workflows/ci.yml` must be green before any PR is reviewed or merged.
