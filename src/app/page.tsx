@@ -24,7 +24,8 @@ async function loadContactEmail(): Promise<string> {
   }
 }
 
-const LIVE_URL = "/s/grant-schools";
+const LIVE_URL = "/s/smart-thrive-demo";
+const START_FREE_URL = "/start-free";
 
 /* ----------------------------------------------------------------- */
 /*  Icon primitives                                                  */
@@ -74,7 +75,7 @@ export default async function LandingPage() {
           <div className="header-cta">
             <a className="btn btn-ghost btn-sm" href={LIVE_URL}>See it live</a>
             <a className="btn btn-primary btn-sm" href={contactHref("Book a demo")}>Book a demo</a>
-            <a className="btn btn-gold btn-sm" href={contactHref("Start Free")}>Start Free</a>
+            <a className="btn btn-gold btn-sm" href={START_FREE_URL}>Start Free</a>
             <button className="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobilePanel"><span></span></button>
           </div>
         </div>
@@ -87,7 +88,7 @@ export default async function LandingPage() {
             <a href="#faq">FAQ</a>
             <a href={LIVE_URL}>See it live</a>
             <a className="btn btn-primary btn-block" href={contactHref("Book a demo")}>Book a demo</a>
-            <a className="btn btn-gold btn-block" href={contactHref("Start Free")}>Start Free</a>
+            <a className="btn btn-gold btn-block" href={START_FREE_URL}>Start Free</a>
           </div>
         </div>
       </header>
@@ -103,7 +104,7 @@ export default async function LandingPage() {
               <div className="hero-ctas">
                 <a className="btn btn-gold" href={contactHref("Book a demo")}>Book a demo<ArrowRight /></a>
                 <a className="btn btn-ghost" href={LIVE_URL}>See it live</a>
-                <a className="btn btn-primary" href={contactHref("Start Free")}>Start Free</a>
+                <a className="btn btn-primary" href={START_FREE_URL}>Start Free</a>
               </div>
               <p className="hero-note">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
@@ -594,7 +595,7 @@ export default async function LandingPage() {
               <div className="final-ctas">
                 <a className="btn btn-gold" href={contactHref("Book a demo")}>Book a demo<ArrowRight /></a>
                 <a className="btn btn-ghost-dark" href={LIVE_URL}>See it live</a>
-                <a className="btn btn-ghost-dark" href={contactHref("Start Free")}>Start Free</a>
+                <a className="btn btn-ghost-dark" href={START_FREE_URL}>Start Free</a>
               </div>
             </div>
           </div>
@@ -623,7 +624,7 @@ export default async function LandingPage() {
               <ul>
                 <li><a href="/contact">Contact us</a></li>
                 <li><a href={contactHref("Book a demo")}>Book a demo</a></li>
-                <li><a href={contactHref("Start Free")}>Start Free</a></li>
+                <li><a href={START_FREE_URL}>Start Free</a></li>
                 <li><a href="#faq">FAQ</a></li>
                 <li><a href="/privacy">Privacy</a></li>
                 <li><a href="/terms">Terms</a></li>
