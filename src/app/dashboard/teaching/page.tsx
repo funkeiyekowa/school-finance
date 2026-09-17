@@ -8,7 +8,7 @@ import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
-import { Users, Clock, FileBarChart, CheckCircle2, BookOpen } from "lucide-react";
+import { Users, Clock, FileBarChart, CheckCircle2, BookOpen, ChevronRight } from "lucide-react";
 
 interface AssignmentRow { id: string; class_id: string; subject_id: string | null; role: string; }
 interface ClassRow { id: string; name: string; short_code: string; }
@@ -95,6 +95,7 @@ export default function TeachingPage() {
       const pb = periods.find(p => p.id === b.period_id);
       return (pa?.sort_order ?? 0) - (pb?.sort_order ?? 0);
     });
+  const totalStudents = Object.values(studentCounts).reduce((sum, count) => sum + count, 0);
 
   return (
     <div className="p-6 space-y-5">
@@ -113,7 +114,7 @@ export default function TeachingPage() {
           <div className="text-xs text-gray-500">Assignments</div>
         </div>
         <div className="bg-white rounded-xl border p-4 text-center">
-          <div className="text-2xl font-bold text-[#0F2A47]">{Object.values(studentCounts).reduce((s, c) => s + c, 0)}</div>
+          <div className="text-2xl font-bold text-[#0F2A47]">{totalStudents}</div>
           <div className="text-xs text-gray-500">Total Students</div>
         </div>
         <div className="bg-white rounded-xl border p-4 text-center">
@@ -122,12 +123,70 @@ export default function TeachingPage() {
         </div>
       </div>
 
+      <Card className="overflow-hidden border-[#C9A227]/30">
+        <CardHeader className="border-b border-[#C9A227]/15 bg-gradient-to-r from-[#FFFCF3] to-white">
+          <CardTitle>Teaching cockpit</CardTitle>
+          <p className="text-xs text-gray-500">Today&apos;s priorities and your most-used teaching workspaces.</p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-5">
+            {[
+              {
+                href: "/dashboard/timetable",
+                label: "Today's timetable",
+                detail: `${todayEntries.length} ${todayEntries.length === 1 ? "class" : "classes"} scheduled`,
+                icon: Clock,
+              },
+              {
+                href: "/dashboard/attendance",
+                label: "Record attendance",
+                detail: `${myClasses.length} assigned ${myClasses.length === 1 ? "class" : "classes"}`,
+                icon: CheckCircle2,
+              },
+              {
+                href: "/dashboard/assessments",
+                label: "Update scores",
+                detail: `${totalStudents} ${totalStudents === 1 ? "student" : "students"}`,
+                icon: FileBarChart,
+              },
+              {
+                href: "/dashboard/cbt",
+                label: "CBT / exams",
+                detail: "Open exam workspace",
+                icon: BookOpen,
+              },
+              {
+                href: "#my-classes",
+                label: "Assigned classes",
+                detail: `${assignments.length} teaching ${assignments.length === 1 ? "assignment" : "assignments"}`,
+                icon: Users,
+              },
+            ].map(({ href, label, detail, icon: Icon }) => (
+              <Link
+                key={href}
+                href={href}
+                className="group flex items-center gap-3 border-b border-gray-100 p-4 transition-colors hover:bg-[#FBF6E8] sm:border-r lg:border-b-0 last:border-r-0"
+              >
+                <span className="rounded-lg bg-[#C9A227]/10 p-2 text-[#8A6D1A]">
+                  <Icon size={17} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-[#0F2A47]">{label}</span>
+                  <span className="block truncate text-xs text-gray-500">{detail}</span>
+                </span>
+                <ChevronRight size={14} className="text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-[#C9A227]" />
+              </Link>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Today's schedule */}
       <Card>
         <CardHeader><CardTitle>Today&apos;s Schedule ({DAYS.find(d => d.num === todayNum)?.short || "—"})</CardTitle></CardHeader>
         <CardContent>
           {todayEntries.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">No classes scheduled for today.</p>
+            <p className="text-sm text-gray-400 text-center py-4">No classes are scheduled for today. Check the timetable for upcoming lessons.</p>
           ) : (
             <div className="space-y-2">
               {todayEntries.map(entry => {
@@ -156,7 +215,7 @@ export default function TeachingPage() {
       </Card>
 
       {/* My Classes */}
-      <Card>
+      <Card id="my-classes" className="scroll-mt-24">
         <CardHeader><CardTitle>My Classes</CardTitle></CardHeader>
         <CardContent>
           {myClasses.length === 0 ? (
