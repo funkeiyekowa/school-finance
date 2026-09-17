@@ -174,7 +174,7 @@ export default function ParentPortalPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Recent Payments */}
-            <Card>
+            <Card id="payment-history" className="scroll-mt-24">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Receipt size={16} /> Recent Payments</CardTitle>
               </CardHeader>
@@ -270,9 +270,9 @@ export default function ParentPortalPage() {
                   <FileBarChart size={20} className="text-[#C9A227] mb-2" />
                   <div className="font-semibold text-sm">Report Cards</div>
                 </Link>
-                <Link href="/dashboard/receipts" className="p-4 rounded-xl border border-gray-200 hover:border-[#C9A227] transition-colors">
+                <Link href="#payment-history" className="p-4 rounded-xl border border-gray-200 hover:border-[#C9A227] transition-colors">
                   <Receipt size={20} className="text-[#C9A227] mb-2" />
-                  <div className="font-semibold text-sm">Receipts</div>
+                  <div className="font-semibold text-sm">Payment History</div>
                 </Link>
               </div>
             </CardContent>

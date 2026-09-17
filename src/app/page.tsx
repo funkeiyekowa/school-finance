@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import LandingInteractions from "./_landing/LandingInteractions";
+import RoleExplorer from "./_landing/RoleExplorer";
 import "./_landing/landing.css";
 
 export const metadata: Metadata = {
@@ -46,8 +47,7 @@ function ArrowRight() {
 
 export default async function LandingPage() {
   const CONTACT_EMAIL = await loadContactEmail();
-  const mailto = (subject: string) =>
-    `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}`;
+  const contactHref = (subject: string) => `/contact?subject=${encodeURIComponent(subject)}`;
 
   return (
     <div className="st-landing">
@@ -73,7 +73,8 @@ export default async function LandingPage() {
           </nav>
           <div className="header-cta">
             <a className="btn btn-ghost btn-sm" href={LIVE_URL}>See it live</a>
-            <a className="btn btn-primary btn-sm" href={mailto("Book a demo - Smart & Thrive O/S")}>Book a demo</a>
+            <a className="btn btn-primary btn-sm" href={contactHref("Book a demo")}>Book a demo</a>
+            <a className="btn btn-gold btn-sm" href={contactHref("Start Free")}>Start Free</a>
             <button className="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobilePanel"><span></span></button>
           </div>
         </div>
@@ -85,7 +86,8 @@ export default async function LandingPage() {
             <a href="#pricing">Pricing</a>
             <a href="#faq">FAQ</a>
             <a href={LIVE_URL}>See it live</a>
-            <a className="btn btn-primary btn-block" href={mailto("Book a demo - Smart & Thrive O/S")}>Book a demo</a>
+            <a className="btn btn-primary btn-block" href={contactHref("Book a demo")}>Book a demo</a>
+            <a className="btn btn-gold btn-block" href={contactHref("Start Free")}>Start Free</a>
           </div>
         </div>
       </header>
@@ -99,8 +101,9 @@ export default async function LandingPage() {
               <h1>Run your school <span className="italic-accent">the way it should feel</span> to run one.</h1>
               <p className="hero-sub">Admissions, finance, attendance, CBT, report cards and a parent portal — one connected suite, built for the way real schools actually work.</p>
               <div className="hero-ctas">
-                <a className="btn btn-gold" href={mailto("Book a demo - Smart & Thrive O/S")}>Book a demo<ArrowRight /></a>
+                <a className="btn btn-gold" href={contactHref("Book a demo")}>Book a demo<ArrowRight /></a>
                 <a className="btn btn-ghost" href={LIVE_URL}>See it live</a>
+                <a className="btn btn-primary" href={contactHref("Start Free")}>Start Free</a>
               </div>
               <p className="hero-note">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
@@ -207,7 +210,7 @@ export default async function LandingPage() {
         <section className="stat-band">
           <div className="container">
             <div className="stat-grid">
-              <div className="stat-item reveal is-visible"><div className="num" data-count-to="6">0</div><div className="lbl">Modules included in every plan — no locked add-ons</div></div>
+              <div className="stat-item reveal is-visible"><div className="num" data-count-to="6">0</div><div className="lbl">Connected modules available on one platform</div></div>
               <div className="stat-item reveal reveal-2 is-visible"><div className="num">&lt;7</div><div className="lbl">Days from signed-up to fully live</div></div>
               <div className="stat-item reveal reveal-3 is-visible"><div className="num" data-count-to="0">0</div><div className="lbl">Spreadsheets required to run your term</div></div>
               <div className="stat-item reveal reveal-4 is-visible"><div className="num">24/7</div><div className="lbl">Parent visibility into fees, attendance &amp; reports</div></div>
@@ -253,7 +256,7 @@ export default async function LandingPage() {
                 <p>Capture every lead, guide it through interview, offer and enrolment — no lost prospects, no forgotten follow-ups.</p>
                 <ul className="m-list">
                   <li><CheckIcon />Enquiry pipeline with clear stages</li>
-                  <li><CheckIcon />Automated follow-up reminders</li>
+                  <li><CheckIcon />Follow-up tracking and clear next actions</li>
                   <li><CheckIcon />Interview scheduling built in</li>
                   <li><CheckIcon />Offer letters &amp; enrolment in one click</li>
                 </ul>
@@ -407,6 +410,8 @@ export default async function LandingPage() {
           </div>
         </section>
 
+        <RoleExplorer />
+
         {/* ============ HOW IT WORKS ============ */}
         <section className="section how" id="how">
           <div className="container">
@@ -435,7 +440,7 @@ export default async function LandingPage() {
               <div className="sec-item">
                 <div className="sec-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x={3} y={11} width={18} height={11} rx={2} /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg></div>
                 <h3>Encrypted in transit &amp; at rest</h3>
-                <p>Every record — fees, results, guardian details — is encrypted end to end, on the wire and in storage.</p>
+                <p>Connections use transport encryption and managed storage encryption protects records at rest.</p>
               </div>
               <div className="sec-item">
                 <div className="sec-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx={12} cy={8} r={4} /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></svg></div>
@@ -444,8 +449,8 @@ export default async function LandingPage() {
               </div>
               <div className="sec-item">
                 <div className="sec-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-3.3-6.95" /><path d="M21 3v6h-6" /></svg></div>
-                <h3>Automated daily backups</h3>
-                <p>Your term is backed up every day, automatically, with point-in-time restore if you ever need it.</p>
+                <h3>Recoverable operations</h3>
+                <p>Backup and restore controls are configured for each production environment and verified during onboarding.</p>
               </div>
               <div className="sec-item">
                 <div className="sec-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></div>
@@ -454,13 +459,13 @@ export default async function LandingPage() {
               </div>
               <div className="sec-item">
                 <div className="sec-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" /><path d="M2 12h20" /></svg></div>
-                <h3>Regional data residency</h3>
-                <p>Your school&apos;s data stays close to home, hosted on infrastructure built for reliability in the region.</p>
+                <h3>School-level data isolation</h3>
+                <p>Tenant-aware database policies keep each school&apos;s records within its authorized user boundary.</p>
               </div>
               <div className="sec-item">
                 <div className="sec-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" /></svg></div>
-                <h3>Built for a 99.9% uptime target</h3>
-                <p>Report card night and fee-deadline morning are exactly when you need the system to hold steady.</p>
+                <h3>Designed for operational resilience</h3>
+                <p>Health checks, audit events and recovery procedures support the moments when schools need the system most.</p>
               </div>
             </div>
           </div>
@@ -475,11 +480,11 @@ export default async function LandingPage() {
             </div>
             <div className="badge-row reveal reveal-2">
               <span className="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x={2} y={5} width={20} height={14} rx={2} /><path d="M2 10h20" /></svg>Bank transfer &amp; POS reconciliation</span>
-              <span className="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>SMS &amp; WhatsApp alerts</span>
+              <span className="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>SMS &amp; in-app alerts</span>
               <span className="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>Excel &amp; CSV import / export</span>
               <span className="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x={2} y={4} width={20} height={16} rx={2} /><path d="m22 7-10 6L2 7" /></svg>Email notifications</span>
-              <span className="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx={12} cy={12} r={10} /><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20" /></svg>Google Workspace sign-in</span>
-              <span className="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m18 16 4-4-4-4M6 8l-4 4 4 4M14.5 4l-5 16" /></svg>Public API for custom workflows</span>
+              <span className="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx={12} cy={12} r={10} /><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20" /></svg>Mobile-friendly school portals</span>
+              <span className="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m18 16 4-4-4-4M6 8l-4 4 4 4M14.5 4l-5 16" /></svg>Secure import and export tools</span>
             </div>
           </div>
         </section>
@@ -489,8 +494,8 @@ export default async function LandingPage() {
           <div className="container">
             <div className="pricing-head reveal">
               <span className="eyebrow" style={{ justifyContent: "center" }}>Pricing</span>
-              <h2>Simple plans. No module locks.</h2>
-              <p>Everything is included in the base subscription. Only the student cap changes as you grow.</p>
+              <h2>Simple plans that grow with your school.</h2>
+              <p>Core administration is available from Starter, with advanced assessment and service options added as you grow.</p>
             </div>
             <div className="plans reveal reveal-2">
               <div className="plan">
@@ -503,7 +508,7 @@ export default async function LandingPage() {
                   <li><CheckIcon />Community help centre</li>
                   <li><CheckIcon />Guided self-serve setup</li>
                 </ul>
-                <a className="btn btn-ghost btn-block" href={mailto("Talk to us - Starter plan")}>Talk to us</a>
+                <a className="btn btn-ghost btn-block" href={contactHref("Starter plan")}>Talk to us</a>
               </div>
               <div className="plan feat">
                 <span className="plan-badge">Most popular</span>
@@ -516,7 +521,7 @@ export default async function LandingPage() {
                   <li><CheckIcon />Dedicated onboarding session</li>
                   <li><CheckIcon />Advanced finance reporting</li>
                 </ul>
-                <a className="btn btn-gold btn-block" href={mailto("Talk to us - Growth plan")}>Talk to us</a>
+                <a className="btn btn-gold btn-block" href={contactHref("Growth plan")}>Talk to us</a>
               </div>
               <div className="plan">
                 <h3>Enterprise</h3>
@@ -528,7 +533,7 @@ export default async function LandingPage() {
                   <li><CheckIcon />Custom SLAs &amp; SSO</li>
                   <li><CheckIcon />Custom contract &amp; invoicing</li>
                 </ul>
-                <a className="btn btn-ghost btn-block" href={mailto("Talk to us - Enterprise plan")}>Talk to us</a>
+                <a className="btn btn-ghost btn-block" href={contactHref("Enterprise plan")}>Talk to us</a>
               </div>
             </div>
             <p className="pricing-note reveal reveal-3">Every plan is quoted to your student cap. Ask us for a price sheet — no surprises.</p>
@@ -561,10 +566,10 @@ export default async function LandingPage() {
                 {[
                   { q: "How long does setup actually take?", a: "Most schools are fully live within a week of signing up. We provision your organisation, import your existing roster, and auto-generate logins for every student, parent and teacher — you don't touch a config file." },
                   { q: "Can we import our existing student data?", a: "Yes. Send us your current roster as a spreadsheet and we'll map classes, guardians and IDs into Smart & Thrive as part of onboarding — no manual re-entry required." },
-                  { q: "Does every plan include all six modules?", a: "Admissions, finance, attendance, report cards and the parent portal are included on every plan. CBT is included from the Growth plan up. There are no locked modules or surprise add-on fees." },
+                  { q: "Which modules are included?", a: "Core admissions, finance, attendance, report cards and portal features are available from Starter. CBT and advanced service options are included from Growth. Your written quote lists the exact scope before you subscribe." },
                   { q: "We're already mid-term — can we still switch?", a: "Absolutely. Most schools switch mid-term. We import your current fee ledgers and attendance records so nothing is lost in the transition, and your team keeps working while we set things up in the background." },
                   { q: "How does billing work?", a: "Pricing is quoted against your student cap, not per feature. Tell us roughly how many students you have and we'll send a straightforward price sheet — no hidden per-module charges." },
-                  { q: "Is our data secure?", a: "Every record is encrypted in transit and at rest, access is role-based, and daily backups run automatically. See the Security section above for the full detail." },
+                  { q: "Is our data secure?", a: "Connections are encrypted, access is role-based, and each school's database records are isolated with tenant-aware policies. Backup and recovery settings are confirmed during production onboarding." },
                   { q: "Do parents need to install an app?", a: "No. The parent portal works in any mobile browser — no app store, no download. Parents log in and see fees, attendance and reports immediately." },
                   { q: "Can we run multiple campuses under one account?", a: "Yes — that's exactly what the Enterprise plan is built for, with consolidated reporting across campuses and a dedicated success manager to help you set it up." },
                 ].map((item, i) => (
@@ -587,8 +592,9 @@ export default async function LandingPage() {
               <h2>Ready to see what a calm term feels like?</h2>
               <p>Book a 30-minute demo. We&apos;ll walk your team through the modules and answer every question — no slides, just the product.</p>
               <div className="final-ctas">
-                <a className="btn btn-gold" href={mailto("Book a demo - Smart & Thrive O/S")}>Book a demo<ArrowRight /></a>
+                <a className="btn btn-gold" href={contactHref("Book a demo")}>Book a demo<ArrowRight /></a>
                 <a className="btn btn-ghost-dark" href={LIVE_URL}>See it live</a>
+                <a className="btn btn-ghost-dark" href={contactHref("Start Free")}>Start Free</a>
               </div>
             </div>
           </div>
@@ -615,9 +621,13 @@ export default async function LandingPage() {
             <div className="footer-col">
               <h4>Company</h4>
               <ul>
-                <li><a href={`mailto:${CONTACT_EMAIL}`}>Contact us</a></li>
-                <li><a href={mailto("Book a demo - Smart & Thrive O/S")}>Book a demo</a></li>
+                <li><a href="/contact">Contact us</a></li>
+                <li><a href={contactHref("Book a demo")}>Book a demo</a></li>
+                <li><a href={contactHref("Start Free")}>Start Free</a></li>
                 <li><a href="#faq">FAQ</a></li>
+                <li><a href="/privacy">Privacy</a></li>
+                <li><a href="/terms">Terms</a></li>
+                <li><a href="/account-deletion">Account deletion</a></li>
               </ul>
             </div>
             <div className="footer-col">

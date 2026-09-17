@@ -15,6 +15,7 @@ import {
 } from "@/components/charts/LazyRecharts";
 import { TrendingUp, TrendingDown, Scale, AlertTriangle, RefreshCw, Printer, MessageSquare } from "lucide-react";
 import { useMessagingDashboardStats } from "@/lib/messaging/hooks";
+import { AdminReadinessCard } from "@/components/dashboard/AdminReadinessCard";
 import type { IncomeEntry, ExpenseEntry, StudentWithBalance } from "@/lib/types";
 
 const CHART_COLORS = ["#0F2A47", "#C9A227", "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"];
@@ -92,7 +93,7 @@ export default function DashboardPage() {
 }
 
 function FinanceDashboard() {
-  const { profile, org } = useAuth();
+  const { profile, org, isAdmin } = useAuth();
   const supabase = createClient();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -211,6 +212,8 @@ function FinanceDashboard() {
           Refresh
         </button>
       </PageHeader>
+
+      {isAdmin && <AdminReadinessCard />}
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
