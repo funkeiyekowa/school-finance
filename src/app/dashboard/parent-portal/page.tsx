@@ -165,6 +165,41 @@ export default function ParentPortalPage() {
             </CardContent>
           </Card>
 
+          <Card className="overflow-hidden border-[#C9A227]/30">
+            <CardHeader className="border-b border-[#C9A227]/15 bg-gradient-to-r from-[#FFFCF3] to-white">
+              <CardTitle>Next actions</CardTitle>
+              <p className="text-xs text-gray-500">
+                Continue with {selectedChild.full_name}&apos;s most useful records and school updates.
+              </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-5">
+                {[
+                  { href: "/dashboard/my-children", label: "Child details", description: "View linked profile", icon: Users },
+                  { href: "#attendance-summary", label: "Attendance", description: "Review recent records", icon: Clock },
+                  { href: "#payment-history", label: "Payments", description: "See payment history", icon: Receipt },
+                  { href: "#report-cards", label: "Report cards", description: "Open published results", icon: FileBarChart },
+                  { href: "/dashboard/announcements", label: "School news", description: "Read announcements", icon: MessageSquare },
+                ].map(({ href, label, description, icon: Icon }) => (
+                  <Link
+                    key={href}
+                    href={href}
+                    className="group flex items-center gap-3 border-b border-gray-100 p-4 transition-colors hover:bg-[#FBF6E8] sm:border-r lg:border-b-0 last:border-r-0"
+                  >
+                    <span className="rounded-lg bg-[#C9A227]/10 p-2 text-[#8A6D1A]">
+                      <Icon size={17} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-[#0F2A47]">{label}</span>
+                      <span className="block truncate text-xs text-gray-500">{description}</span>
+                    </span>
+                    <ChevronRight size={14} className="text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-[#C9A227]" />
+                  </Link>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <KpiCard label="Attendance" value={`${stats.attendance}%`} icon={<Clock size={18} />} colorClass="text-[#C9A227]" />
             <KpiCard label="Total Paid" value={fmtMoney(stats.totalPaid)} icon={<Wallet size={18} />} colorClass="text-green-700" />
@@ -180,7 +215,7 @@ export default function ParentPortalPage() {
               </CardHeader>
               <CardContent>
                 {childPayments.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-4">No payments recorded.</p>
+                  <p className="text-sm text-gray-400 text-center py-4">No payments have been recorded for this child yet.</p>
                 ) : (
                   <div className="space-y-2 max-h-72 overflow-y-auto">
                     {childPayments.slice(0, 10).map(p => (
@@ -198,7 +233,7 @@ export default function ParentPortalPage() {
             </Card>
 
             {/* Report Cards */}
-            <Card>
+            <Card id="report-cards" className="scroll-mt-24">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><FileBarChart size={16} /> Report Cards</CardTitle>
               </CardHeader>
@@ -230,7 +265,7 @@ export default function ParentPortalPage() {
             </Card>
 
             {/* Attendance summary */}
-            <Card className="lg:col-span-2">
+            <Card id="attendance-summary" className="scroll-mt-24 lg:col-span-2">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Clock size={16} /> Recent Attendance</CardTitle>
               </CardHeader>
@@ -247,7 +282,7 @@ export default function ParentPortalPage() {
                     </div>
                   ))}
                 </div>
-                {childAttendance.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No attendance records.</p>}
+                {childAttendance.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No attendance records are available for this child yet.</p>}
               </CardContent>
             </Card>
           </div>

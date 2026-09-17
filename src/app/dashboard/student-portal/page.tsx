@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader, KpiCard, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { GraduationCap, BookOpen, FileBarChart, Clock, Award, Play, ChevronRight, User, Calendar } from "lucide-react";
+import { GraduationCap, BookOpen, FileBarChart, Clock, Award, Play, ChevronRight, User, Calendar, MessageSquare } from "lucide-react";
 
 export default function StudentPortalPage() {
   const { org } = useAuth();
@@ -162,24 +162,56 @@ export default function StudentPortalPage() {
         <KpiCard label="Average Score" value={formatPercentage(stats.avg_percentage)} icon={<FileBarChart size={18} />} colorClass="text-blue-700" />
       </div>
 
-      {nextExam && (
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-xs text-gray-500 mb-1">Next up</div>
-                <div className="font-semibold text-sm">{nextExam.title}</div>
+      <Card className="overflow-hidden border-[#C9A227]/30">
+        <CardHeader className="border-b border-[#C9A227]/15 bg-gradient-to-r from-[#FFFCF3] to-white">
+          <CardTitle>Today / Next up</CardTitle>
+          <p className="text-xs text-gray-500">Your next academic actions, gathered in one place.</p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="border-b border-gray-100 p-4">
+            {nextExam ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-[#8A6D1A]">Next exam</div>
+                  <div className="font-semibold text-sm text-[#0F2A47]">{nextExam.title}</div>
+                  <div className="mt-1 text-xs text-gray-500">{nextExam.duration_minutes} minutes</div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={cn("px-2 py-1 rounded text-xs font-semibold", EXAM_STATE_BADGE[nextExam.state])}>{EXAM_STATE_LABEL[nextExam.state]}</span>
+                  <Link href={`/dashboard/cbt/${nextExam.id}`}>
+                    <Button size="sm" variant="gold">{EXAM_STATE_LABEL[nextExam.state]}</Button>
+                  </Link>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className={cn("px-2 py-1 rounded text-xs font-semibold", EXAM_STATE_BADGE[nextExam.state])}>{EXAM_STATE_LABEL[nextExam.state]}</span>
-                <Link href={`/dashboard/cbt/${nextExam.id}`}>
-                  <Button size="sm" variant="gold">{EXAM_STATE_LABEL[nextExam.state]}</Button>
-                </Link>
+            ) : (
+              <div className="flex items-center gap-3 rounded-lg bg-gray-50 p-3">
+                <Calendar size={18} className="text-gray-400" />
+                <div>
+                  <div className="text-sm font-semibold text-[#0F2A47]">Nothing urgent right now</div>
+                  <div className="text-xs text-gray-500">New exams and published school updates will appear here.</div>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            )}
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4">
+            {[
+              { href: "/dashboard/my-exams", label: "My exams", detail: `${stats.available} available`, icon: BookOpen },
+              { href: "/dashboard/my-results", label: "My results", detail: `${report_cards.length} report ${report_cards.length === 1 ? "card" : "cards"}`, icon: FileBarChart },
+              { href: "/dashboard/timetable", label: "Timetable", detail: "View class schedule", icon: Calendar },
+              { href: "/dashboard/announcements", label: "Announcements", detail: "Read school notices", icon: MessageSquare },
+            ].map(({ href, label, detail, icon: Icon }) => (
+              <Link key={href} href={href} className="group flex items-center gap-3 border-r border-t border-gray-100 p-4 transition-colors hover:bg-[#FBF6E8] last:border-r-0">
+                <Icon size={17} className="shrink-0 text-[#C9A227]" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-[#0F2A47]">{label}</span>
+                  <span className="block truncate text-xs text-gray-500">{detail}</span>
+                </span>
+                <ChevronRight size={14} className="text-gray-300 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
@@ -188,7 +220,7 @@ export default function StudentPortalPage() {
           </CardHeader>
           <CardContent>
             {exams.length === 0 ? (
-              <EmptyState message="No exams assigned yet." />
+              <EmptyState message="No exams are assigned right now. New exams will appear here when published." />
             ) : (
               <div className="space-y-4">
                 {examGroups.map(group => (
@@ -235,7 +267,7 @@ export default function StudentPortalPage() {
           </CardHeader>
           <CardContent>
             {report_cards.length === 0 ? (
-              <EmptyState message="No report cards published yet." />
+              <EmptyState message="No report cards have been published yet." />
             ) : (
               <div className="space-y-2">
                 {report_cards.map(rc => (
@@ -276,7 +308,7 @@ export default function StudentPortalPage() {
               <div className="font-semibold text-sm">Timetable</div>
             </Link>
             <Link href="/dashboard/announcements" className="p-4 rounded-xl border border-gray-200 hover:border-[#C9A227]">
-              <User size={20} className="text-[#C9A227] mb-2" />
+              <MessageSquare size={20} className="text-[#C9A227] mb-2" />
               <div className="font-semibold text-sm">Announcements</div>
             </Link>
           </div>
