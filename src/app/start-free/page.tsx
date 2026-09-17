@@ -37,7 +37,7 @@ const roles = [
     description: "Review the operational workspace for finance and school administration.",
     href: STAFF_PORTAL,
     email: "backoffice@demo.smartandthrive.com",
-    password: "DemoBackoffice123",
+    password: "DemoAdmin123",
     icon: BriefcaseBusiness,
   },
   {
@@ -45,7 +45,7 @@ const roles = [
     description: "Open the staff portal for teaching, classes, assessments, and related tools.",
     href: STAFF_PORTAL,
     email: "teacher@demo.smartandthrive.com",
-    password: "DemoTeacher123",
+    password: "DemoAdmin123",
     icon: BookOpenCheck,
   },
   {
@@ -53,7 +53,7 @@ const roles = [
     description: "Use the demo tenant login to access the student experience when an account is ready.",
     href: STUDENT_PARENT_LOGIN,
     email: "student@demo.smartandthrive.com",
-    password: "DemoStudent123",
+    password: "DemoAdmin123",
     icon: GraduationCap,
   },
   {
@@ -61,7 +61,7 @@ const roles = [
     description: "Use the demo tenant login to explore the parent experience with a prepared account.",
     href: STUDENT_PARENT_LOGIN,
     email: "parent@demo.smartandthrive.com",
-    password: "DemoParent123",
+    password: "DemoAdmin123",
     icon: Users,
   },
 ] as const;
