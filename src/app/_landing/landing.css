@@ -155,6 +155,9 @@
   .st-landing .mobile-panel-inner { padding: 18px clamp(20px, 4vw, 32px) 26px; display: flex; flex-direction: column; gap: 16px; }
   .st-landing .mobile-panel-inner a { font: 600 1rem var(--body); color: var(--ink); }
 }
+@media (max-width: 620px) {
+  .st-landing .header-cta .btn-primary { display: none; }
+}
 
 /* ============ HERO ============ */
 .st-landing .hero { padding: clamp(48px, 8vw, 96px) 0 clamp(60px, 8vw, 110px); position: relative; }
@@ -352,6 +355,51 @@
 .st-landing .ps-bal .v { font-family: var(--ser); font-style: italic; font-weight: 600; font-size: 1.05rem; margin-top: 4px; }
 .st-landing .ps-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 0.6rem; color: var(--ink-mute); font-weight: 700; }
 .st-landing .ps-btn { margin-top: 10px; text-align: center; background: var(--paper); border-radius: 9px; padding: 8px; font-size: 0.6rem; font-weight: 800; color: var(--gold-deep); }
+
+/* ============ EXPLORE BY ROLE ============ */
+.st-landing .role-explorer { background: var(--paper-deep); }
+.st-landing .role-explorer-head { max-width: 690px; margin: 0 auto; text-align: center; }
+.st-landing .role-explorer-head h2 { margin-top: 16px; font-size: clamp(1.9rem, 2.4vw + 1rem, 2.8rem); }
+.st-landing .role-explorer-head p { margin-top: 16px; color: var(--ink-mute); font-size: 1.05rem; }
+.st-landing .role-grid {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 18px; margin-top: 52px;
+}
+.st-landing .role-card {
+  grid-column: span 2; min-height: 100%; padding: 28px; border: 1px solid var(--line);
+  border-radius: var(--r-lg); background: var(--card); box-shadow: var(--shadow-sm);
+  transition: transform .28s cubic-bezier(.2, .7, .3, 1), box-shadow .28s, border-color .28s;
+}
+.st-landing .role-card:nth-last-child(-n+2) { grid-column: span 3; }
+.st-landing .role-card:hover { transform: translateY(-5px); border-color: rgba(201, 162, 39, 0.5); box-shadow: var(--shadow-md); }
+.st-landing .role-icon {
+  width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+  border-radius: 13px; background: rgba(201, 162, 39, 0.14); color: var(--gold-deep);
+}
+.st-landing .role-icon svg { width: 21px; height: 21px; }
+.st-landing .role-card h3 { margin-top: 20px; font-size: 1.18rem; }
+.st-landing .role-card > p { margin-top: 10px; color: var(--ink-mute); font-size: 0.9rem; line-height: 1.6; }
+.st-landing .role-card ul { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+.st-landing .role-card li { display: flex; gap: 9px; align-items: flex-start; color: var(--ink); font-size: 0.83rem; font-weight: 600; line-height: 1.45; }
+.st-landing .role-card li span {
+  width: 7px; height: 7px; margin-top: 5px; flex-shrink: 0; border-radius: 50%; background: var(--sage-bright);
+}
+.st-landing .role-demo {
+  margin-top: 24px; padding: 24px 28px; display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  border: 1px solid var(--line); border-radius: var(--r-lg); background: rgba(255, 255, 255, 0.58);
+}
+.st-landing .role-demo h3 { font-size: 1.08rem; }
+.st-landing .role-demo p { margin-top: 5px; color: var(--ink-mute); font-size: 0.86rem; }
+@media (max-width: 900px) {
+  .st-landing .role-grid { grid-template-columns: repeat(2, 1fr); }
+  .st-landing .role-card, .st-landing .role-card:nth-last-child(-n+2) { grid-column: span 1; }
+  .st-landing .role-card:last-child { grid-column: 1 / -1; }
+}
+@media (max-width: 620px) {
+  .st-landing .role-grid { grid-template-columns: 1fr; }
+  .st-landing .role-card:last-child { grid-column: auto; }
+  .st-landing .role-demo { align-items: stretch; flex-direction: column; }
+  .st-landing .role-demo .btn { width: 100%; }
+}
 
 /* ============ HOW IT WORKS ============ */
 .st-landing .how { background: var(--paper-deep); }
