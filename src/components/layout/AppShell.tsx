@@ -106,6 +106,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/parent-portal", label: "Overview", icon: <LayoutDashboard size={17} />, module: "parent_portal" },
       { href: "/dashboard/my-children", label: "My Children", icon: <Users size={17} />, module: "parent_portal" },
+      { href: "/dashboard/child-courses", label: "Child Courses", icon: <GraduationCap size={17} />, feature: "child_courses", module: "lms" },
     ],
   },
   {
