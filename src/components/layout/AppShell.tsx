@@ -184,6 +184,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/announcements", label: "Announcements", icon: <MessageSquare size={17} />, module: "communication" },
       { href: "/dashboard/leads", label: "Enquiries", icon: <Inbox size={17} />, module: "crm" },
+      { href: "/dashboard/admissions", label: "Admissions", icon: <ClipboardList size={17} />, feature: "admissions", module: "crm" },
       { href: "/dashboard/website", label: "Website Studio", icon: <Globe size={17} />, module: "website", feature: "website" },
     ],
   },

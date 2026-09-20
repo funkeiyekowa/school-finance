@@ -137,6 +137,7 @@ export const APP_FEATURES = [
   // ---- Communication ----
   { key: "announcements", label: "Announcements", group: "Communication" },
   { key: "leads", label: "Enquiries (Leads)", group: "Communication" },
+  { key: "admissions", label: "Admissions", group: "Communication" },
   { key: "website", label: "Website Studio", group: "Communication" },
   // ---- Operations ----
   { key: "inventory", label: "Inventory", group: "Operations" },
