@@ -3,12 +3,17 @@
 -- profile in an admin's organization (Team page "Reset Password" action)
 -- =====================================================================
 -- Run order: after saas_foundation.sql (#22 — defines is_org_admin(),
--- is_platform_admin(), org_memberships) and
+-- is_platform_admin(), org_memberships),
 -- fix_teacher_login_and_password_change.sql (#47 — adds
--- profiles.must_change_password, which this sets). Independent of
--- cbt_upgrade_migration.sql's reset_student_password() — this does not
--- call that function, it duplicates the same safe bcrypt-update pattern
--- so it works even on a database where that migration wasn't applied.
+-- profiles.must_change_password, which this sets), and
+-- 20260905120000_phase1_security_enforcement.sql (installs
+-- phase1_sensitive_write_guard on students — see the students UPDATE
+-- below, which must satisfy that guard's service_role exemption).
+-- Independent of cbt_upgrade_migration.sql's reset_student_password() —
+-- this does not call that function, it duplicates the same safe
+-- bcrypt-update pattern so it works even on a database where that
+-- migration wasn't applied. Adds no RLS policy, so it is order-
+-- independent with respect to rls_role_scoped_access.sql.
 --
 -- WHY: dashboard/team lists every user (admins, teachers, staff, parents,
 -- students) but only had Approve/Deactivate actions — no way for a School
@@ -126,10 +131,46 @@ BEGIN
   -- Student portal enforces its own must_change_password flag separately
   -- from profiles (see ForcePasswordChange.tsx comment) — flip it too if
   -- this profile is linked to a student record.
-  UPDATE students
-     SET must_change_password = true,
-         updated_at = now()
-   WHERE profile_id = p_user_id;
+  --
+  -- students carries phase1_sensitive_write_guard (installed by
+  -- 20260905120000_phase1_security_enforcement.sql). That BEFORE ROW
+  -- trigger evaluates the ACTUAL caller's JWT, not this function's
+  -- SECURITY DEFINER owner, so it re-checks phase1_same_org(NEW.
+  -- organization_id) and phase1_hr_access(). For an admin whose default
+  -- org membership is not the org being administered, phase1_same_org()
+  -- is false and the trigger raises 'organization boundary violation',
+  -- which would abort this whole call and roll back the auth.users
+  -- password change — leaving the user with a password nobody knows.
+  --
+  -- Satisfy the guard's OWN built-in service_role exemption for this one
+  -- statement, exactly as fix_clear_must_change_password_guard_conflict.sql
+  -- already does for clear_must_change_password(). The guard itself is not
+  -- touched, disabled or weakened, and this does NOT widen authorization:
+  -- is_org_admin(v_org) above has already authorized the caller and the
+  -- target's membership in v_org has already been verified. set_config's
+  -- third argument is true (LOCAL) so it is scoped to this transaction
+  -- and never leaks to later statements or sessions, and the claims are
+  -- merged via jsonb_set rather than overwritten so 'sub' and every other
+  -- claim survive.
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'students'
+      AND column_name = 'must_change_password'
+  ) THEN
+    PERFORM set_config(
+      'request.jwt.claims',
+      jsonb_set(
+        COALESCE(NULLIF(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb),
+        '{role}', '"service_role"'
+      )::text,
+      true
+    );
+
+    UPDATE students
+       SET must_change_password = true,
+           updated_at = now()
+     WHERE profile_id = p_user_id;
+  END IF;
 
   RETURN jsonb_build_object(
     'ok', true,
@@ -157,3 +198,10 @@ SELECT 'V2 anon cannot execute' AS check, p.proname
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'public' AND p.proname = 'admin_reset_user_password'
   AND has_function_privilege('anon', p.oid, 'EXECUTE');
+
+-- V3. phase1_sensitive_write_guard is untouched — it must still carry its
+--     own service_role/supabase_admin exemption (this migration relies on
+--     that exemption, it does not modify the guard). Expect true.
+SELECT 'V3 guard untouched' AS check,
+       pg_get_functiondef(oid) LIKE '%service_role%supabase_admin%' AS still_has_exemption
+FROM pg_proc WHERE proname = 'phase1_sensitive_write_guard';
