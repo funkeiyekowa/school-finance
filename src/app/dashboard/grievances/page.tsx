@@ -67,13 +67,22 @@ export default function GrievancesPage() {
     // Resolve the students a grievance is about, for display only.
     const ids = Array.from(new Set(list.map((g) => g.student_id).filter(Boolean))) as string[];
     if (ids.length) {
-      const { data: studs } = await supabase
+      // full_name is NOT NULL on students; first_name/last_name were added
+      // later and can be null, so compose from them only as a fallback.
+      const { data: studs, error: studErr } = await supabase
         .from("students")
-        .select("id, first_name, last_name")
+        .select("id, full_name, first_name, last_name")
         .in("id", ids);
+      if (studErr) notify(`Could not load student names: ${studErr.message}`, "error");
       const map: Record<string, string> = {};
-      for (const s of (studs ?? []) as { id: string; first_name: string; last_name: string }[]) {
-        map[s.id] = `${s.first_name} ${s.last_name}`.trim();
+      for (const s of (studs ?? []) as {
+        id: string; full_name: string | null;
+        first_name: string | null; last_name: string | null;
+      }[]) {
+        map[s.id] =
+          s.full_name?.trim() ||
+          [s.first_name, s.last_name].filter(Boolean).join(" ").trim() ||
+          "Student";
       }
       setNames(map);
     }
