@@ -280,7 +280,6 @@ export default function WebsiteStudioPage() {
   async function createSite(themeKey: string) {
     setError(null);
     setSaving(true);
-    console.log("[WebsiteStudio] creating site", { themeKey, orgId });
     const { data, error: err } = await supabase.rpc("provision_website", {
       p_org: orgId,
       p_theme: themeKey,
@@ -296,7 +295,6 @@ export default function WebsiteStudioPage() {
       return;
     }
     const res = data as { ok?: boolean; website_id?: string; created?: boolean; error?: string } | null;
-    console.log("[WebsiteStudio] provision_website result", res);
     if (res?.ok) {
       flash(res.created === false
         ? "Website already exists — reloading it."

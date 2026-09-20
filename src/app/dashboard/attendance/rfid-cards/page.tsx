@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { ArrowLeft, CreditCard, Radio, UserPlus } from "lucide-react";
@@ -43,6 +44,7 @@ interface Student {
 }
 
 export default function RfidCardsPage() {
+  const { orgId } = useAuth();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,12 +126,16 @@ export default function RfidCardsPage() {
 
   async function assignCard() {
     if (!selectedStudentId || !uidInput.trim()) return;
+    // rfid_card_assignments.org_id is NOT NULL with no default, so an insert
+    // without it can never succeed — stamp the tenant explicitly.
+    if (!orgId) { setError("No organization in scope — reload and try again."); return; }
     setSaving(true);
     setError(null);
     try {
       const { error: insertErr } = await supabase
         .from("rfid_card_assignments")
         .insert({
+          org_id: orgId,
           student_id: selectedStudentId,
           card_uid: uidInput.trim().toUpperCase(),
           active: true,

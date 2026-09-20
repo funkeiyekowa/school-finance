@@ -492,6 +492,7 @@ function SmsGatewayTab() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [connTestResult, setConnTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [connTesting, setConnTesting] = useState(false);
@@ -565,18 +566,32 @@ function SmsGatewayTab() {
         payload[k] = val;
       }
     });
+    // Returns an error message, or null on success. A silently discarded
+    // error here made the form report "✓ Saved" for a write that never landed.
     if (settingsId) {
-      await supabase.from("school_settings").update(payload).eq("id", settingsId);
-    } else {
-      const { data } = await supabase.from("school_settings").insert({ ...payload, school_name: "My School" }).select("id").single();
-      if (data) setSettingsId(data.id);
+      const { error } = await supabase.from("school_settings").update(payload).eq("id", settingsId);
+      return error ? error.message : null;
     }
+    const { data, error } = await supabase
+      .from("school_settings")
+      .insert({ ...payload, school_name: "My School" })
+      .select("id")
+      .single();
+    if (error) return error.message;
+    if (data) setSettingsId(data.id);
+    return null;
   }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    await persist();
+    setSaveError(null);
+    const err = await persist();
+    if (err) {
+      setSaving(false);
+      setSaveError(`Could not save settings: ${err}`);
+      return;
+    }
     await supabase.from("activity_log").insert({
       user_email: profile?.email, user_name: profile?.full_name,
       action: "Update SMS Gateway Settings", details: `Auto-credit: ${form.sms_auto_credit ? "ON" : "OFF"}`,
@@ -810,6 +825,11 @@ function SmsGatewayTab() {
               )}
               {saved && <span className="text-green-600 text-sm font-medium">✓ Saved</span>}
             </div>
+            {saveError && (
+              <div role="alert" className="mt-3 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                {saveError}
+              </div>
+            )}
           </form>
 
           {connTestResult && (

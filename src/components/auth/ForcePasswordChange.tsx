@@ -45,12 +45,23 @@ export default function ForcePasswordChange() {
       return;
     }
 
+    // The auth password has already been changed at this point. If the flag
+    // cannot be cleared, this modal re-renders on the next profile refresh
+    // and the user is trapped behind it with no way out — so the fallback's
+    // error must be surfaced, not discarded.
     const { error: rpcErr } = await supabase.rpc("clear_must_change_password");
     if (rpcErr) {
-      await supabase
+      const { error: fallbackErr } = await supabase
         .from("profiles")
         .update({ must_change_password: false })
         .eq("id", profile?.id ?? "");
+      if (fallbackErr) {
+        setError(
+          `Your new password was saved — sign in with it from now on. We could not clear the "change password" flag (${fallbackErr.message}). Sign out and back in; if this screen returns, ask an administrator to clear it.`
+        );
+        setSaving(false);
+        return;
+      }
     }
 
     await refreshProfile();

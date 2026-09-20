@@ -231,17 +231,30 @@ export default function ParentsPage() {
       const toAdd = selectedStudentIds.filter((sid) => !existing.includes(sid));
       const toRemove = existing.filter((sid) => !selectedStudentIds.includes(sid));
 
+      // A silent failure here leaves the parent saved but with no children
+      // linked — the parent portal then shows an empty account and it reads
+      // as an RLS bug much later. Surface it instead.
       if (toAdd.length) {
-        await supabase.from("parent_student_links").insert(
+        const { error: linkErr } = await supabase.from("parent_student_links").insert(
           toAdd.map((student_id) => ({ organization_id: orgId, parent_id: parentId, student_id }))
         );
+        if (linkErr) {
+          setSaveError(`Parent saved, but linking children failed: ${linkErr.message}`);
+          setSaving(false);
+          return;
+        }
       }
       if (toRemove.length) {
-        await supabase
+        const { error: unlinkErr } = await supabase
           .from("parent_student_links")
           .delete()
           .eq("parent_id", parentId)
           .in("student_id", toRemove);
+        if (unlinkErr) {
+          setSaveError(`Parent saved, but removing a child link failed: ${unlinkErr.message}`);
+          setSaving(false);
+          return;
+        }
       }
     }
 
