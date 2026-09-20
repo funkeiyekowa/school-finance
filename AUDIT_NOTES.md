@@ -121,21 +121,77 @@ Three purpose-built entry points:
 
 ---
 
+## Open items from the 2026-09-19 completion audit
+
+### Requires manual SQL apply (written, committed, NOT yet applied)
+- **`supabase/fix_cross_tenant_admin_rpcs.sql`** — closes cross-tenant
+  holes in `admin_delete_staff`, `admin_delete_parent`,
+  `admin_merge_profiles` (all guarded only by the org-unscoped
+  `_is_org_admin()`) and adds the missing authorization check to
+  `promote_pending_profile`. **Until this is applied, those RPCs remain
+  exploitable in production.** Apply in the Supabase SQL editor, then run
+  its V1–V3 verification queries.
+- **`supabase/admin_reset_team_member_password.sql`** — the Team page
+  "Reset PW" action calls `admin_reset_user_password`. The UI ships
+  without it; the button returns a "function not found" error until the
+  migration is applied.
+
+### Known-incomplete features (surfaced, not fixed)
+- **Automations** (`dashboard/automations`) — no rule runner exists
+  anywhere in the repo. `automation_rules` / `automation_logs` appear
+  only in the page and three SQL files; no edge function, cron or trigger
+  executes a rule. The page carries an honest banner, but admins can
+  build reminders that never fire. Consider gating behind a feature flag
+  until a runner ships.
+- **SMS / email broadcast** (`src/lib/notifications/send.ts`) —
+  `sendSms()` and `sendEmail()` short-circuit to `ok:false` behind a
+  TODO, and nothing in `src/` imports them. Meanwhile
+  `announcements/broadcast-settings` accepts and encrypts a real provider
+  API key, so an admin can configure Termii/Twilio/Resend and reasonably
+  expect delivery. Either wire a provider or warn on the settings page.
+- **`auth_email_exists(text)`** is granted to `anon` and allows
+  platform-wide account enumeration. Deliberately left in place — it
+  backs the pre-login `/auth/forgot-password` flow. The fix is rate
+  limiting plus a neutral "if an account exists we've sent a link"
+  response, which is a product decision.
+- **`'ChangeMe123!'` universal provisioning password** — every
+  auto-provisioned account across every tenant starts with the same
+  publicly-known credential. `must_change_password` is an app-layer
+  prompt, not an auth-layer block, so the credential is valid from the
+  moment the account exists. Architectural; needs its own change.
+- **~15 remaining unchecked Supabase mutations** — the highest-impact
+  ones (settings save, parent↔child links, lesson progress, RFID card
+  assignment) were fixed on 2026-09-19. Still outstanding:
+  `students/page.tsx:379`, `roles/page.tsx:91-92`, `platform/page.tsx:276`,
+  `students/promotion/page.tsx:315`, `report-cards/generate/page.tsx:376`,
+  `cbt/page.tsx:596,620,650`, `library/page.tsx:357`,
+  `lms/[courseId]/page.tsx:207,376,506`, `sms-alerts/page.tsx:807`,
+  `website/page.tsx:2511-2512`, and server-side
+  `lib/alerts/processor.ts:503,511,516,681,689`.
+
+### Deferred branch
+- **PR #4 (`codex/cleanup-20260905`)** — grounded report-card explainer.
+  5 commits ahead but **81 behind** `main`; much of it (class-teachers,
+  lms-study-help, ai/client, rateLimit) already landed on `main` by
+  another path. Only the explainer route/component/tests remain. Needs a
+  rebase and fresh review — deliberately NOT merged during the
+  2026-09-19 release to avoid pulling stale, conflict-prone code into
+  production.
+
+---
+
 ## Remaining work / risks (not touched this session)
 
 ### Medium priority
-1. **`dashboard/leads/page.tsx`** — `website_submissions` mutations
-   (`update status`, `update notes`, spam toggle) don't check errors.
-   If RLS blocks the update (e.g. if leads are cross-tenant), the UI
-   claims success. Suggested: wrap each `.update()` in
-   `{ error }` and alert on failure.
-2. **`dashboard/staff/page.tsx`** — `insert`/`update` don't surface
-   errors. Same pattern as above.
-3. **`dashboard/inventory/page.tsx`** — insert/update/stock movement
-   flows don't surface errors.
-4. **`dashboard/timetable/page.tsx`** — timetable entry insert
-   already captures `error` on line 144 but only `console.warn`s it;
-   should `alert`.
+1. ~~**`dashboard/leads/page.tsx`**~~ — **DONE.** All four
+   `website_submissions` mutations now destructure `error` and
+   `notify()` on failure.
+2. ~~**`dashboard/staff/page.tsx`**~~ — **DONE.** insert/update
+   surface errors.
+3. ~~**`dashboard/inventory/page.tsx`**~~ — **DONE.** insert/update/
+   stock-movement flows surface errors.
+4. ~~**`dashboard/timetable/page.tsx`**~~ — **DONE.** The entry insert
+   now `notify()`s and special-cases `23505`; the `console.warn` is gone.
 5. **`dashboard/parent-portal/page.tsx`** — consider calling
    `get_my_parent_children()` RPC as the primary child-lookup path
    (mirrors the student-portal fix in `76934ea`).
