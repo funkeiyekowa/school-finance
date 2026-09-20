@@ -167,7 +167,21 @@ Note this is **hygiene, not a blocker** for the two pending migrations
 below: both are root-level ad-hoc files applied by hand in the SQL editor
 per CLAUDE.md §5, and never travel through `db push`.
 
-### Requires manual SQL apply (written, committed, NOT yet applied)
+### ✅ Applied by the owner, 2026-09-20
+
+Both migrations below were applied by hand in the Supabase SQL editor and
+their V1–V3 verification queries were run. Recorded on the owner's report;
+agents cannot read this database to re-confirm.
+
+- **`supabase/fix_cross_tenant_admin_rpcs.sql`** — the cross-tenant
+  deletion and privilege-escalation paths described below are **closed in
+  production** as of this date.
+- **`supabase/admin_reset_team_member_password.sql`** — `admin_reset_user_password`
+  now exists. The Team page button that calls it ships with PR #10.
+
+The original pre-apply description is kept below for the record.
+
+### Was: requires manual SQL apply (written, committed, NOT yet applied)
 - **`supabase/fix_cross_tenant_admin_rpcs.sql`** — closes cross-tenant
   holes in `admin_delete_staff`, `admin_delete_parent`,
   `admin_merge_profiles` (all guarded only by the org-unscoped
@@ -212,6 +226,35 @@ per CLAUDE.md §5, and never travel through `db push`.
   `lms/[courseId]/page.tsx:207,376,506`, `sms-alerts/page.tsx:807`,
   `website/page.tsx:2511-2512`, and server-side
   `lib/alerts/processor.ts:503,511,516,681,689`.
+
+### ⚠️ Local-only branch with unbacked-up work
+
+**`backup/local-gmt-work-before-demo-password-fix`** — 5 commits that exist
+**only on this machine**. They have never been pushed to any remote, so
+there is no second copy anywhere.
+
+Commits: `42496f5` server-resolve exam state + percentage-based averages ·
+`609a11d` landing role exploration · `32147a1` admin onboarding readiness
+hub · `d20f70f` parent/student next actions · `916118f` teacher dashboard
+priorities.
+
+Two of those (`32147a1`, `609a11d`) already reached `main` under different
+SHAs. The rest did not — 6 of its 7 new files are absent from `main`,
+including `src/lib/exams/examState.ts`, `src/lib/hooks/useStudentDashboard.ts`,
+`src/lib/hooks/useStudentResults.ts`, `src/lib/types/student-dashboard.ts`,
+`src/lib/tests/student-dashboard.test.ts`, and a 308-line
+`supabase/20260916000000_student_dashboard_rpcs.sql`.
+
+Deliberately **not** merged during the 2026-09-20 closeout: ~1,361 added
+lines of portal/dashboard work plus a DB migration, with no PR, no review,
+and no validation against current `main` (which has moved substantially
+since the snapshot). Pulling it into a release at closeout would repeat
+the PR #4 mistake.
+
+**Recommended:** push the branch (`git push -u origin
+backup/local-gmt-work-before-demo-password-fix`) purely so it is backed
+up, then evaluate whether the student-dashboard work is still wanted and
+rebase it properly if so. Do not delete this branch — it is the only copy.
 
 ### Deferred branch
 - **PR #4 (`codex/cleanup-20260905`)** — grounded report-card explainer.

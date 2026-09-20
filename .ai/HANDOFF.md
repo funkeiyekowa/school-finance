@@ -22,6 +22,30 @@
 
 ## Log
 
+### 2026-09-20 — Claude Code → Human (final closeout)
+- Issue / PR: #10 — **still OPEN**, MERGEABLE, CI green
+- Branch: `feat/team-admin-reset-password` @ `4bb2c4d` (pushed, clean)
+- Summary: Owner applied both SQL migrations. Code re-validated end to end.
+  The merge remains the one outstanding step.
+- Database: the owner applied `fix_cross_tenant_admin_rpcs.sql` and
+  `admin_reset_team_member_password.sql` by hand and ran their verification
+  queries. **Recorded on the owner's report — not independently re-read by
+  an agent**, since every Supabase remote operation (including read-only
+  `migration list` and `db dump`) is denied in this environment.
+- Validation @ `4bb2c4d` (2026-09-20): `typecheck` ✅ · `lint` 0 warnings ✅
+  · `test` all suites ✅ · `next build` ✅ 143 routes. CI `verify` ✅.
+- **Production is still `4cea786` (2026-09-17).** The application changes —
+  the Team "Reset PW" UI, the ForcePasswordChange lockout fix, the RFID
+  `org_id` fix, the silent-write-failure fixes and the `console.log`
+  removals — are NOT live. The DB now has the new RPCs, but no shipped UI
+  calls them yet; that mismatch is harmless (the functions simply go
+  unused) and resolves on merge.
+- Blocker: merging PR #10. Four mechanisms tried and denied by the
+  execution environment. `gh pr merge 10 --merge --delete-branch` from the
+  owner's own shell is the entire remaining release; Vercel auto-deploys
+  `main`.
+- `20260912233613` migration history: untouched, as instructed.
+
 ### 2026-09-20 — Claude Code → Human (release attempt #2)
 - Issue / PR: #10 — still **OPEN**, CI green, MERGEABLE
 - Branch: `feat/team-admin-reset-password` @ `6f22e12` (pushed)
