@@ -227,11 +227,29 @@ The original pre-apply description is kept below for the record.
   `website/page.tsx:2511-2512`, and server-side
   `lib/alerts/processor.ts:503,511,516,681,689`.
 
-### ⚠️ Local-only branch with unbacked-up work
+### ✅ Released to production — 2026-09-20
 
-**`backup/local-gmt-work-before-demo-password-fix`** — 5 commits that exist
-**only on this machine**. They have never been pushed to any remote, so
-there is no second copy anywhere.
+PR #10 merged as **`cf78143`** and deployed to Vercel Production at
+2026-09-20T04:08:31Z. Both migrations above were applied by the owner the
+same day, so the database and the application code are in sync.
+
+Live as of this release: the Team page "Reset PW" action; the
+ForcePasswordChange fix for a modal that could trap a user permanently;
+the RFID card assignment `org_id` fix (the feature could never succeed
+before); surfaced write failures in Settings, parent↔child links and
+lesson progress; removal of two `console.log`s that printed the tenant
+`orgId` to the browser console; and removal of a committed long-lived
+production anon JWT from `scripts/e2e-tests.mjs`.
+
+Production smoke test passed on the real deployment — all public routes
+200, `/dashboard/team` correctly 307s anonymous requests, zero console
+errors.
+
+### ⚠️ Local-only branch — now backed up
+
+**`backup/local-gmt-work-before-demo-password-fix`** — 5 commits that used
+to exist **only on this machine**. Pushed to `origin` on 2026-09-20, so
+they are now backed up. Still unmerged and unreviewed by design.
 
 Commits: `42496f5` server-resolve exam state + percentage-based averages ·
 `609a11d` landing role exploration · `32147a1` admin onboarding readiness
@@ -251,10 +269,10 @@ and no validation against current `main` (which has moved substantially
 since the snapshot). Pulling it into a release at closeout would repeat
 the PR #4 mistake.
 
-**Recommended:** push the branch (`git push -u origin
-backup/local-gmt-work-before-demo-password-fix`) purely so it is backed
-up, then evaluate whether the student-dashboard work is still wanted and
-rebase it properly if so. Do not delete this branch — it is the only copy.
+**Next step:** evaluate whether the student-dashboard work is still wanted
+and rebase it properly onto current `main` if so. Its 308-line
+`20260916000000_student_dashboard_rpcs.sql` would need a manual apply.
+Do not delete the branch until that decision is made.
 
 ### Deferred branch
 - **PR #4 (`codex/cleanup-20260905`)** — grounded report-card explainer.

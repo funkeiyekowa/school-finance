@@ -22,6 +22,37 @@
 
 ## Log
 
+### 2026-09-20 — RELEASE COMPLETE (Human merged → Claude Code verified)
+- Issue / PR: #10 — **MERGED** at 2026-09-20T04:07:47Z as `cf78143`
+- Branch: `feat/team-admin-reset-password` — merged and deleted (local +
+  remote). `main` fast-forwarded `4cea786..cf78143`.
+- **Production: `cf78143`, deployed 2026-09-20T04:08:31Z, state success.**
+  The owner performed the merge; the agent environment denied it across
+  four mechanisms.
+- Verified on the real production deployment, not preview:
+  - `/`, `/login`, `/staff-portal`, `/admin-console`,
+    `/auth/forgot-password` → 200. `/dashboard/team` → 307, the correct
+    anonymous auth redirect.
+  - Login page renders; Supabase client initialises; **zero console
+    errors** (notably not even the preview-only Vercel feedback-widget CSP
+    error, confirming a true production build).
+  - Deployed ref `cf78143` confirmed to contain every change:
+    `admin_reset_user_password`, the `KeyRound` / "Reset PW" UI, both
+    migration files, the ForcePasswordChange `fallbackErr` fix, the RFID
+    `org_id` stamp, and 0 remaining Website Studio `console.log`s.
+- Validation re-run on merged `main`: typecheck ✅ · lint 0 warnings ✅ ·
+  all test suites ✅ · `next build` ✅ 143 routes.
+- Database: both migrations applied by the owner on 2026-09-20. Recorded
+  on their report — agents cannot read this database to re-confirm.
+- `backup/local-gmt-work-before-demo-password-fix` was pushed to origin,
+  so its 5 previously machine-only commits are now backed up. Still
+  unmerged and unreviewed by design — see AUDIT_NOTES.md.
+- `20260912233613` migration history: untouched, as instructed.
+- Open, non-blocking: PR #4 (rebase needed), the inert Automations and
+  broadcast features, ~15 remaining unchecked mutations, the
+  `auth_email_exists` enumeration tradeoff, and the `ChangeMe123!` default
+  credential. All tracked in AUDIT_NOTES.md.
+
 ### 2026-09-20 — Claude Code → Human (final closeout)
 - Issue / PR: #10 — **still OPEN**, MERGEABLE, CI green
 - Branch: `feat/team-admin-reset-password` @ `4bb2c4d` (pushed, clean)
