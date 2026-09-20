@@ -121,21 +121,164 @@ Three purpose-built entry points:
 
 ---
 
+## Open items from the 2026-09-19 completion audit
+
+### Migration-history mismatch: `20260912233613` (diagnosed, NOT reconciled)
+
+`supabase db push` fails with `LegacyDbPushMissingLocalError` — the remote
+`supabase_migrations.schema_migrations` table holds version
+**`20260912233613`** (2026-09-12 23:36:13) with no corresponding file in
+`supabase/migrations/`.
+
+What was established (read-only):
+- The version has **never existed in git**. `git log --all` over the whole
+  repo history finds no file with that timestamp, in `supabase/` or
+  anywhere else. It was applied directly against the remote database
+  out-of-band, not through this repo.
+- It sits between two committed migrations that both touch `activity_log`
+  RLS — `20260912000003_fix_activity_log_rls.sql` and the next day's
+  `20260913000001_drop_stale_activity_log_policies.sql` — so the most
+  likely explanation is a hand-applied hotfix in that area. **This is an
+  inference, not a confirmed identification.** Confirming it requires
+  reading `supabase_migrations.schema_migrations` (its `name` /
+  `statements` columns) on the remote database.
+
+Why it was NOT reconciled here: identifying the migration needs remote DB
+read access, and every Supabase remote operation is blocked in the agent
+environment (see `.ai/HANDOFF.md`). Reconciling blind would mean either
+deleting a production history row or committing a placeholder whose body
+does not match what actually ran — on a rebuilt database that placeholder
+would silently skip real DDL.
+
+**Recommended procedure (for the owner, least-destructive first):**
+1. In the Supabase SQL editor, identify it:
+   `SELECT version, name, statements FROM supabase_migrations.schema_migrations WHERE version = '20260912233613';`
+2. If it corresponds to SQL already committed elsewhere in `supabase/`,
+   create `supabase/migrations/20260912233613_<name>.sql` containing that
+   SQL. Local and remote histories then align with **no change to the
+   remote history table and no schema change**, and `db push` works.
+3. Only if step 2 is impossible (statements unrecoverable and the DDL is
+   genuinely obsolete) use
+   `supabase migration repair --status reverted 20260912233613`, which
+   deletes the history row. It does not alter the schema, but it is a
+   history rewrite — prefer step 2.
+
+Note this is **hygiene, not a blocker** for the two pending migrations
+below: both are root-level ad-hoc files applied by hand in the SQL editor
+per CLAUDE.md §5, and never travel through `db push`.
+
+### ✅ Applied by the owner, 2026-09-20
+
+Both migrations below were applied by hand in the Supabase SQL editor and
+their V1–V3 verification queries were run. Recorded on the owner's report;
+agents cannot read this database to re-confirm.
+
+- **`supabase/fix_cross_tenant_admin_rpcs.sql`** — the cross-tenant
+  deletion and privilege-escalation paths described below are **closed in
+  production** as of this date.
+- **`supabase/admin_reset_team_member_password.sql`** — `admin_reset_user_password`
+  now exists. The Team page button that calls it ships with PR #10.
+
+The original pre-apply description is kept below for the record.
+
+### Was: requires manual SQL apply (written, committed, NOT yet applied)
+- **`supabase/fix_cross_tenant_admin_rpcs.sql`** — closes cross-tenant
+  holes in `admin_delete_staff`, `admin_delete_parent`,
+  `admin_merge_profiles` (all guarded only by the org-unscoped
+  `_is_org_admin()`) and adds the missing authorization check to
+  `promote_pending_profile`. **Until this is applied, those RPCs remain
+  exploitable in production.** Apply in the Supabase SQL editor, then run
+  its V1–V3 verification queries.
+- **`supabase/admin_reset_team_member_password.sql`** — the Team page
+  "Reset PW" action calls `admin_reset_user_password`. The UI ships
+  without it; the button returns a "function not found" error until the
+  migration is applied.
+
+### Known-incomplete features (surfaced, not fixed)
+- **Automations** (`dashboard/automations`) — no rule runner exists
+  anywhere in the repo. `automation_rules` / `automation_logs` appear
+  only in the page and three SQL files; no edge function, cron or trigger
+  executes a rule. The page carries an honest banner, but admins can
+  build reminders that never fire. Consider gating behind a feature flag
+  until a runner ships.
+- **SMS / email broadcast** (`src/lib/notifications/send.ts`) —
+  `sendSms()` and `sendEmail()` short-circuit to `ok:false` behind a
+  TODO, and nothing in `src/` imports them. Meanwhile
+  `announcements/broadcast-settings` accepts and encrypts a real provider
+  API key, so an admin can configure Termii/Twilio/Resend and reasonably
+  expect delivery. Either wire a provider or warn on the settings page.
+- **`auth_email_exists(text)`** is granted to `anon` and allows
+  platform-wide account enumeration. Deliberately left in place — it
+  backs the pre-login `/auth/forgot-password` flow. The fix is rate
+  limiting plus a neutral "if an account exists we've sent a link"
+  response, which is a product decision.
+- **`'ChangeMe123!'` universal provisioning password** — every
+  auto-provisioned account across every tenant starts with the same
+  publicly-known credential. `must_change_password` is an app-layer
+  prompt, not an auth-layer block, so the credential is valid from the
+  moment the account exists. Architectural; needs its own change.
+- **~15 remaining unchecked Supabase mutations** — the highest-impact
+  ones (settings save, parent↔child links, lesson progress, RFID card
+  assignment) were fixed on 2026-09-19. Still outstanding:
+  `students/page.tsx:379`, `roles/page.tsx:91-92`, `platform/page.tsx:276`,
+  `students/promotion/page.tsx:315`, `report-cards/generate/page.tsx:376`,
+  `cbt/page.tsx:596,620,650`, `library/page.tsx:357`,
+  `lms/[courseId]/page.tsx:207,376,506`, `sms-alerts/page.tsx:807`,
+  `website/page.tsx:2511-2512`, and server-side
+  `lib/alerts/processor.ts:503,511,516,681,689`.
+
+### ⚠️ Local-only branch with unbacked-up work
+
+**`backup/local-gmt-work-before-demo-password-fix`** — 5 commits that exist
+**only on this machine**. They have never been pushed to any remote, so
+there is no second copy anywhere.
+
+Commits: `42496f5` server-resolve exam state + percentage-based averages ·
+`609a11d` landing role exploration · `32147a1` admin onboarding readiness
+hub · `d20f70f` parent/student next actions · `916118f` teacher dashboard
+priorities.
+
+Two of those (`32147a1`, `609a11d`) already reached `main` under different
+SHAs. The rest did not — 6 of its 7 new files are absent from `main`,
+including `src/lib/exams/examState.ts`, `src/lib/hooks/useStudentDashboard.ts`,
+`src/lib/hooks/useStudentResults.ts`, `src/lib/types/student-dashboard.ts`,
+`src/lib/tests/student-dashboard.test.ts`, and a 308-line
+`supabase/20260916000000_student_dashboard_rpcs.sql`.
+
+Deliberately **not** merged during the 2026-09-20 closeout: ~1,361 added
+lines of portal/dashboard work plus a DB migration, with no PR, no review,
+and no validation against current `main` (which has moved substantially
+since the snapshot). Pulling it into a release at closeout would repeat
+the PR #4 mistake.
+
+**Recommended:** push the branch (`git push -u origin
+backup/local-gmt-work-before-demo-password-fix`) purely so it is backed
+up, then evaluate whether the student-dashboard work is still wanted and
+rebase it properly if so. Do not delete this branch — it is the only copy.
+
+### Deferred branch
+- **PR #4 (`codex/cleanup-20260905`)** — grounded report-card explainer.
+  5 commits ahead but **81 behind** `main`; much of it (class-teachers,
+  lms-study-help, ai/client, rateLimit) already landed on `main` by
+  another path. Only the explainer route/component/tests remain. Needs a
+  rebase and fresh review — deliberately NOT merged during the
+  2026-09-19 release to avoid pulling stale, conflict-prone code into
+  production.
+
+---
+
 ## Remaining work / risks (not touched this session)
 
 ### Medium priority
-1. **`dashboard/leads/page.tsx`** — `website_submissions` mutations
-   (`update status`, `update notes`, spam toggle) don't check errors.
-   If RLS blocks the update (e.g. if leads are cross-tenant), the UI
-   claims success. Suggested: wrap each `.update()` in
-   `{ error }` and alert on failure.
-2. **`dashboard/staff/page.tsx`** — `insert`/`update` don't surface
-   errors. Same pattern as above.
-3. **`dashboard/inventory/page.tsx`** — insert/update/stock movement
-   flows don't surface errors.
-4. **`dashboard/timetable/page.tsx`** — timetable entry insert
-   already captures `error` on line 144 but only `console.warn`s it;
-   should `alert`.
+1. ~~**`dashboard/leads/page.tsx`**~~ — **DONE.** All four
+   `website_submissions` mutations now destructure `error` and
+   `notify()` on failure.
+2. ~~**`dashboard/staff/page.tsx`**~~ — **DONE.** insert/update
+   surface errors.
+3. ~~**`dashboard/inventory/page.tsx`**~~ — **DONE.** insert/update/
+   stock-movement flows surface errors.
+4. ~~**`dashboard/timetable/page.tsx`**~~ — **DONE.** The entry insert
+   now `notify()`s and special-cases `23505`; the `console.warn` is gone.
 5. **`dashboard/parent-portal/page.tsx`** — consider calling
    `get_my_parent_children()` RPC as the primary child-lookup path
    (mirrors the student-portal fix in `76934ea`).

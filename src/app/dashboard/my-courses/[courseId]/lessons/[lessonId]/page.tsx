@@ -78,11 +78,13 @@ export default function LessonViewerPage() {
     const currentStatus = (lp as { status: string } | null)?.status ?? "not_started";
     setProgressStatus(currentStatus);
     if (currentStatus === "not_started") {
-      await supabase.from("lms_lesson_progress").upsert(
+      // Only reflect "in progress" in the UI if the write actually landed —
+      // otherwise the student sees progress that was never recorded.
+      const { error: progressErr } = await supabase.from("lms_lesson_progress").upsert(
         { lesson_id: lessonId, student_id: stuId, status: "in_progress", started_at: new Date().toISOString(), organization_id: orgId },
         { onConflict: "lesson_id,student_id" }
       );
-      setProgressStatus("in_progress");
+      if (!progressErr) setProgressStatus("in_progress");
     }
 
     const { data: q } = await supabase.from("lms_quizzes").select("id, title, pass_mark_percent, max_attempts").eq("lesson_id", lessonId).maybeSingle();
