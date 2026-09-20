@@ -60,8 +60,20 @@ import { createClient } from "@supabase/supabase-js";
 // -----------------------------------------------------------------------
 // CONFIG
 // -----------------------------------------------------------------------
-const SUPABASE_URL     = process.env.NEXT_PUBLIC_SUPABASE_URL     || "https://dqlsdocmjudzyzmqisrx.supabase.co";
-const SUPABASE_ANONKEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxbHNkb2NtanVkenl6bXFpc3J4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxODE3MjUsImV4cCI6MjEwMjc1NzcyNX0.IEjg4SbWeoCzhpYfDiFXiWa3Fy1StbIxxuFetA4byrE";
+// No hardcoded fallbacks. A committed key is a long-lived credential pinned
+// to one project, and as a *fallback* it silently retargets this script at
+// production whenever the env vars are unset. Both must be supplied by the
+// environment (.env.local locally) — see CLAUDE.md §4.
+const SUPABASE_URL     = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANONKEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANONKEY) {
+  console.error(
+    "Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.\n" +
+    "Export them (or source .env.local) before running the e2e suite."
+  );
+  process.exit(2);
+}
 
 /**
  * FILL IN — real accounts that already exist in the Grant Schools DB.
