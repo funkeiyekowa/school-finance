@@ -79,8 +79,17 @@ BEGIN
   IF v_org IS NULL THEN RETURN 'not_found'; END IF;
 
   -- Authorize against the target's org, not "any org".
+  -- NOTE: the row must be read before the org is known, so an authorized
+  -- admin of some other org can distinguish "no such staff id" from
+  -- "not_authorized". UUIDs are unguessable, so this existence oracle is
+  -- weak, and org-scoped authorization cannot be evaluated any earlier.
   IF NOT public.is_org_admin(v_org) THEN RAISE EXCEPTION 'not_authorized'; END IF;
 
+  -- BEHAVIOUR CHANGE (deliberate): a staff_members row that was never
+  -- linked to an auth user (user_id IS NULL) used to return 'not_found'
+  -- and could therefore never be deleted, so the Staff page's delete
+  -- silently no-opped on those rows. It is now deleted, still gated by
+  -- is_org_admin(v_org) above.
   IF v_uid IS NULL THEN
     DELETE FROM public.staff_members WHERE id = p_staff_id;
     RETURN 'ok';
@@ -103,6 +112,10 @@ BEGIN
   RETURN 'ok';
 END $$;
 
+-- CREATE OR REPLACE preserves an existing ACL, but a function created fresh
+-- (new/rebuilt database) defaults to EXECUTE for PUBLIC — which would expose
+-- these destructive RPCs to anon. Revoke explicitly, then grant.
+REVOKE ALL ON FUNCTION public.admin_delete_staff(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.admin_delete_staff(uuid) TO authenticated;
 
 
@@ -150,6 +163,7 @@ BEGIN
   RETURN 'ok';
 END $$;
 
+REVOKE ALL ON FUNCTION public.admin_delete_parent(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.admin_delete_parent(uuid) TO authenticated;
 
 
@@ -213,6 +227,7 @@ BEGIN
   RETURN 'ok';
 END $$;
 
+REVOKE ALL ON FUNCTION public.admin_merge_profiles(uuid, uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.admin_merge_profiles(uuid, uuid) TO authenticated;
 
 
@@ -269,6 +284,7 @@ BEGIN
   RETURN v_role;
 END $$;
 
+REVOKE ALL ON FUNCTION public.promote_pending_profile(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.promote_pending_profile(uuid) TO authenticated;
 
 
