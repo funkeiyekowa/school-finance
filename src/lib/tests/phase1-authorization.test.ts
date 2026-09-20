@@ -46,3 +46,4 @@ assert.ok(Object.values(matrix).every((entry) => entry.allow.length > 0 && entry
 
 console.log(`Phase 1 authorization contract checks passed for ${Object.keys(matrix).length} personas.`);
 console.log("Live Supabase role/account tests remain required; this test intentionally does not claim database verification.");
+console.log("Executable database-backed checks: npm run test:db (src/lib/tests/db/).");
