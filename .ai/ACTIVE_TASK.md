@@ -8,16 +8,35 @@
 
 ## Status
 
-**NONE** — no task is currently active.
+**BLOCKED — awaiting human action.** Code is complete; release is not.
 
-Last closed: **2026-09-19 — Team admin password reset + repo completion pass**
-(PR #10, branch `feat/team-admin-reset-password`, merged to `main`).
+Task: **Team admin password reset + repo completion pass**
+PR #10, branch `feat/team-admin-reset-password` @ `6f22e12`.
+Code complete, CI green, preview verified. **NOT merged. NOT deployed.**
 
-### ⚠️ Carried-over action for the human owner
+| Gate | State |
+|---|---|
+| Code complete | ✅ |
+| CI (`verify`) | ✅ green |
+| Preview verified | ✅ `8ec965b` |
+| Merged to `main` | ❌ blocked |
+| Production deployed | ❌ still on `4cea786` (2026-09-17) |
+| Security migration applied | ❌ |
+| Password-reset migration applied | ❌ |
+| Production smoke tested | ❌ (nothing new is live) |
 
-Two committed SQL migrations are **written but NOT applied**. Agents cannot
-run SQL against this project; the owner applies migrations by hand in the
-Supabase SQL editor.
+### ⚠️ Three actions required from the human owner
+
+**1. Merge and deploy** (Vercel auto-deploys `main`):
+
+```
+gh pr merge 10 --merge --delete-branch
+```
+
+**2 & 3. Apply both migrations** by hand in the Supabase SQL editor, then
+run the `V1`–`V3` verification queries at the bottom of each file. Agents
+cannot run SQL against this project — every Supabase remote operation is
+denied in the agent environment, and the CLI has no arbitrary-SQL command.
 
 1. **`supabase/fix_cross_tenant_admin_rpcs.sql`** — SECURITY. Closes
    cross-tenant account deletion and a privilege-escalation path in

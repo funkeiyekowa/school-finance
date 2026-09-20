@@ -123,6 +123,50 @@ Three purpose-built entry points:
 
 ## Open items from the 2026-09-19 completion audit
 
+### Migration-history mismatch: `20260912233613` (diagnosed, NOT reconciled)
+
+`supabase db push` fails with `LegacyDbPushMissingLocalError` — the remote
+`supabase_migrations.schema_migrations` table holds version
+**`20260912233613`** (2026-09-12 23:36:13) with no corresponding file in
+`supabase/migrations/`.
+
+What was established (read-only):
+- The version has **never existed in git**. `git log --all` over the whole
+  repo history finds no file with that timestamp, in `supabase/` or
+  anywhere else. It was applied directly against the remote database
+  out-of-band, not through this repo.
+- It sits between two committed migrations that both touch `activity_log`
+  RLS — `20260912000003_fix_activity_log_rls.sql` and the next day's
+  `20260913000001_drop_stale_activity_log_policies.sql` — so the most
+  likely explanation is a hand-applied hotfix in that area. **This is an
+  inference, not a confirmed identification.** Confirming it requires
+  reading `supabase_migrations.schema_migrations` (its `name` /
+  `statements` columns) on the remote database.
+
+Why it was NOT reconciled here: identifying the migration needs remote DB
+read access, and every Supabase remote operation is blocked in the agent
+environment (see `.ai/HANDOFF.md`). Reconciling blind would mean either
+deleting a production history row or committing a placeholder whose body
+does not match what actually ran — on a rebuilt database that placeholder
+would silently skip real DDL.
+
+**Recommended procedure (for the owner, least-destructive first):**
+1. In the Supabase SQL editor, identify it:
+   `SELECT version, name, statements FROM supabase_migrations.schema_migrations WHERE version = '20260912233613';`
+2. If it corresponds to SQL already committed elsewhere in `supabase/`,
+   create `supabase/migrations/20260912233613_<name>.sql` containing that
+   SQL. Local and remote histories then align with **no change to the
+   remote history table and no schema change**, and `db push` works.
+3. Only if step 2 is impossible (statements unrecoverable and the DDL is
+   genuinely obsolete) use
+   `supabase migration repair --status reverted 20260912233613`, which
+   deletes the history row. It does not alter the schema, but it is a
+   history rewrite — prefer step 2.
+
+Note this is **hygiene, not a blocker** for the two pending migrations
+below: both are root-level ad-hoc files applied by hand in the SQL editor
+per CLAUDE.md §5, and never travel through `db push`.
+
 ### Requires manual SQL apply (written, committed, NOT yet applied)
 - **`supabase/fix_cross_tenant_admin_rpcs.sql`** — closes cross-tenant
   holes in `admin_delete_staff`, `admin_delete_parent`,
