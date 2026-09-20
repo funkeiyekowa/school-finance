@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/lib/hooks/useToast";
-import { Plus, Save, Zap, Play, History, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, Save, Zap, Play, History, Trash2 } from "lucide-react";
 
 interface RuleRow { id: string; name: string; description: string | null; trigger_event: string; conditions: unknown[]; actions: unknown[]; enabled: boolean; execution_count: number; last_executed_at: string | null; last_status: string | null; created_at: string; }
 interface LogRow { id: string; rule_name: string | null; trigger_event: string | null; status: string; error_message: string | null; created_at: string; }
@@ -53,6 +53,7 @@ export default function AutomationsPage() {
   const [rules, setRules] = useState<RuleRow[]>([]);
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [tab, setTab] = useState<"rules" | "history">("rules");
+  const [running, setRunning] = useState(false);
 
   // Form state
   const [showForm, setShowForm] = useState(false);
@@ -75,6 +76,25 @@ export default function AutomationsPage() {
   }, [supabase]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function runNow() {
+    if (!orgId) return;
+    setRunning(true);
+    const resp = await fetch("/api/cron/automations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationId: orgId }),
+    });
+    const payload = await resp.json().catch(() => ({}));
+    setRunning(false);
+    if (!resp.ok) { notify(payload.error || "Could not run automations.", "error"); return; }
+    notify(
+      payload.processed === 0
+        ? "No rules were due to run."
+        : `Ran ${payload.processed} rule${payload.processed === 1 ? "" : "s"}: ${payload.succeeded} succeeded, ${payload.failed} failed.`
+    );
+    load();
+  }
 
   function openForm(rule?: RuleRow) {
     if (rule) {
@@ -136,21 +156,25 @@ export default function AutomationsPage() {
 
       {/*
         Backend runner status.
-        The automation_rules and automation_logs tables are populated by
-        this UI, but no server-side runner (edge function, database
-        trigger, or scheduled job) is currently wired up to execute the
-        rules. Rules created here are stored but will not fire until
-        the runner is deployed. This banner is here to prevent the
-        misleading appearance of a working system.
+        get_due_automation_triggers() / record_automation_execution()
+        (supabase/automation_engine.sql) detect and log; /api/cron/automations
+        runs the actual send_sms/send_email/send_announcement/log_activity
+        actions and calls them. Vercel Cron (vercel.json) invokes it once
+        daily -- the Hobby plan's own limit, not a code shortfall. "Run now"
+        below calls the SAME route immediately, scoped to this org only, for
+        testing a rule without waiting for the next scheduled run.
       */}
-      <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
-        <AlertTriangle size={16} className="mt-0.5 text-amber-600 shrink-0" />
-        <div className="text-amber-900">
-          <div className="font-semibold">Preview: rule engine backend not yet deployed</div>
-          <p className="text-xs mt-0.5 text-amber-800">
-            Rules you create here are saved but not fired automatically. Wire up the runner (edge function or database trigger) before relying on any rule for parent notifications or fee reminders. The history tab reflects real execution — it&apos;s currently empty by design.
+      <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
+        <Zap size={16} className="mt-0.5 text-blue-600 shrink-0" />
+        <div className="text-blue-900 flex-1">
+          <div className="font-semibold">Rule engine runs once daily</div>
+          <p className="text-xs mt-0.5 text-blue-800">
+            Enabled rules are checked automatically every day. Use &quot;Run now&quot; to test a rule against recent activity immediately instead of waiting for the next scheduled run.
           </p>
         </div>
+        <Button size="sm" variant="secondary" onClick={runNow} disabled={running}>
+          <Play size={12} /> {running ? "Running..." : "Run now"}
+        </Button>
       </div>
 
       <div className="flex gap-2">
