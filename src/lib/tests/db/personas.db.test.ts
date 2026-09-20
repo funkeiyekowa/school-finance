@@ -110,6 +110,18 @@ async function main() {
     userIds.push(adminB.userId);
     await enrol(orgB, adminB.userId, "admin", `adminb-${tag}@example.test`, "Admin B");
 
+    // A second parent in org A, linked to NEITHER child -- the genuine
+    // "unrelated, non-staff, not the raiser" persona. is_staff_user()
+    // deliberately includes 'teacher' (and 'bursar'), so those two are NOT
+    // a valid stand-in for "unrelated" on staff-triage-queue features like
+    // grievances; a second parent is.
+    const parent2 = await createPersona(env, admin, `parent2-${tag}@example.test`);
+    userIds.push(parent2.userId);
+    await enrol(orgA, parent2.userId, "parent", `parent2-${tag}@example.test`, "Parent A2");
+    await admin.from("parent_profiles").insert({
+      profile_id: parent2.userId, organization_id: orgA, full_name: "Parent A2",
+    });
+
     /* ---------------- PARENT ---------------- */
     const linked = await parent.client.rpc("my_linked_student_ids");
     const linkedIds = Array.isArray(linked.data)
@@ -223,28 +235,148 @@ async function main() {
     if (!(await rpcExists(admin, "enrol_my_child_in_course", enrolArgs))) {
       skip("enrol_my_child_in_course", "not applied to this database (PR #12 migration)");
     } else {
+      // Positive path first: a real published course in org A, enrolled by the
+      // parent's own client (not the service role) for their OWN linked child.
+      const { data: course } = await admin.from("lms_courses").insert({
+        title: `Course ${tag}`, status: "published", organization_id: orgA,
+      }).select("id").single();
+      const courseId = (course as { id: string } | null)?.id;
+
+      if (!courseId) {
+        skip("enrol_my_child_in_course positive path", "could not seed lms_courses fixture");
+      } else {
+        const enrolResult = await parent.client.rpc("enrol_my_child_in_course", {
+          p_course_id: courseId, p_student_id: child1,
+        });
+        expectAllowed(enrolResult, "parent CAN enrol their OWN linked child in a published course");
+
+        // Ground truth: confirm lms_enrollments actually gained the row, in
+        // the right org, for the right course/student pair -- not just that
+        // the RPC returned ok:true.
+        const { data: enrRow } = await admin
+          .from("lms_enrollments").select("id, status, organization_id")
+          .eq("course_id", courseId).eq("student_id", child1).maybeSingle();
+        ok(
+          (enrRow as { status: string; organization_id: string } | null)?.status === "active"
+            && (enrRow as { organization_id: string } | null)?.organization_id === orgA,
+          "enrol_my_child_in_course: lms_enrollments row was actually created, active, in org A"
+        );
+      }
+
       expectDenied(
         await parent.client.rpc("enrol_my_child_in_course", {
-          p_course_id: child1, p_student_id: childB,
+          p_course_id: courseId ?? child1, p_student_id: childB,
         }),
         "parent CANNOT enrol another org's student"
       );
       expectDenied(
         await parent.client.rpc("enrol_my_child_in_course", {
-          p_course_id: child1, p_student_id: child2,
+          p_course_id: courseId ?? child1, p_student_id: child2,
         }),
         "parent CANNOT enrol an unlinked child"
       );
+
+      // Student self-enrolment restriction remains intact: a signed-in
+      // TEACHER (not the child, and not a parent) may not call this
+      // parent-only RPC on someone else's behalf either.
+      if (courseId) {
+        expectDenied(
+          await teacher.client.rpc("enrol_my_child_in_course", {
+            p_course_id: courseId, p_student_id: child1,
+          }),
+          "teacher CANNOT use the parent enrolment RPC (not linked to the student as a parent)"
+        );
+      }
     }
 
     /* ---------------- PR #13: admissions ---------------- */
     if (!(await rpcExists(admin, "admit_application", { p_application_id: child1 }))) {
       skip("admit_application", "not applied to this database (PR #13 migration)");
     } else {
-      expectDenied(
-        await parent.client.rpc("admit_application", { p_application_id: child1 }),
-        "parent CANNOT run the admissions admit operation"
-      );
+      // Seed a real application in 'accepted' status -- admit_application()
+      // only operates on that status -- and exercise it end to end with an
+      // AUTHORIZED admin's own client, not the service role.
+      const { data: app } = await admin.from("admission_applications").insert({
+        organization_id: orgA, applicant_name: `Applicant ${tag}`, status: "accepted",
+      }).select("id").single();
+      const appId = (app as { id: string } | null)?.id;
+
+      if (!appId) {
+        skip("admit_application positive path", "could not seed admission_applications fixture");
+      } else {
+        // Negative: unauthorized personas rejected BEFORE the authorized call,
+        // so we can prove they didn't change any state either.
+        expectDenied(
+          await parent.client.rpc("admit_application", { p_application_id: appId }),
+          "parent CANNOT run the admissions admit operation"
+        );
+        expectDenied(
+          await teacher.client.rpc("admit_application", { p_application_id: appId }),
+          "teacher CANNOT run the admissions admit operation"
+        );
+        expectDenied(
+          await adminB.client.rpc("admit_application", { p_application_id: appId }),
+          "admin of a DIFFERENT org CANNOT admit org A's application (cross-tenant)"
+        );
+        const { data: stillPending } = await admin
+          .from("admission_applications").select("status, student_id").eq("id", appId).single();
+        ok(
+          (stillPending as { status: string } | null)?.status === "accepted"
+            && (stillPending as { student_id: string | null } | null)?.student_id === null,
+          "admission_applications row unchanged after the three denied attempts (verified via service role)"
+        );
+
+        // Positive: org A's own admin, authorized, actually admits it.
+        const admitResult = await adminA.client.rpc("admit_application", { p_application_id: appId });
+        expectAllowed(admitResult, "admin of org A CAN admit their own org's accepted application");
+
+        const { data: afterAdmit } = await admin
+          .from("admission_applications").select("status, student_id").eq("id", appId).single();
+        const newStudentId = (afterAdmit as { student_id: string | null } | null)?.student_id;
+        ok(
+          (afterAdmit as { status: string } | null)?.status === "enrolled" && !!newStudentId,
+          "admit_application: application status flipped to enrolled and student_id was set"
+        );
+
+        if (newStudentId) {
+          const { data: newStudent } = await admin
+            .from("students").select("id, organization_id, status").eq("id", newStudentId).maybeSingle();
+          ok(
+            (newStudent as { organization_id: string } | null)?.organization_id === orgA
+              && (newStudent as { status: string } | null)?.status === "active",
+            "admit_application: a real, active student row was created in org A (verified via service role)"
+          );
+
+          // Error/idempotency behaviour: admitting the SAME application again
+          // must not create a second student or error out destructively --
+          // the RPC's own contract is to report already_admitted:true.
+          const secondAdmit = await adminA.client.rpc("admit_application", { p_application_id: appId });
+          expectAllowed(secondAdmit, "re-admitting an already-admitted application does not error");
+          const secondData = secondAdmit.data as { ok?: boolean; already_admitted?: boolean; student_id?: string } | null;
+          ok(
+            secondData?.already_admitted === true && secondData?.student_id === newStudentId,
+            "admit_application: re-admission reports already_admitted and returns the SAME student_id (no duplicate created)"
+          );
+        }
+      }
+
+      // Error path: an application NOT in 'accepted' status must be refused
+      // with a clear error, not silently no-op or partially apply.
+      const { data: pendingApp } = await admin.from("admission_applications").insert({
+        organization_id: orgA, applicant_name: `Pending Applicant ${tag}`, status: "new",
+      }).select("id").single();
+      const pendingId = (pendingApp as { id: string } | null)?.id;
+      if (pendingId) {
+        const rejectedAttempt = await adminA.client.rpc("admit_application", { p_application_id: pendingId });
+        expectDenied(rejectedAttempt, "admit_application REFUSES an application that is not in 'accepted' status");
+        const { data: stillNew } = await admin
+          .from("admission_applications").select("status, student_id").eq("id", pendingId).single();
+        ok(
+          (stillNew as { status: string } | null)?.status === "new"
+            && (stillNew as { student_id: string | null } | null)?.student_id === null,
+          "admit_application: the wrong-status application was left completely unchanged (verified via service role)"
+        );
+      }
     }
 
     /* ---------------- PR #11: grievances ---------------- */
@@ -252,18 +384,56 @@ async function main() {
     if (grvProbe && (grvProbe as { code?: string }).code === "PGRST205") {
       skip("grievances RLS", "table not applied to this database (PR #11 migration)");
     } else {
-      const { data: g } = await admin.from("grievances").insert({
+      // Positive path: the PARENT's own client creates the grievance --
+      // proving grievance creation genuinely works for a permitted user,
+      // not just that the service role can insert one.
+      const createResult = await parent.client.from("grievances").insert({
         organization_id: orgA, raised_by: parent.userId, student_id: child1,
         subject: `probe ${tag}`, category: "academic", status: "submitted",
-      }).select("id").single();
-      if (g) {
+      }).select("id");
+      expectAllowed(createResult, "parent CAN create a grievance for their own linked child (own client, not service role)");
+
+      const created = Array.isArray(createResult.data) ? createResult.data[0] : null;
+      const gId = (created as { id: string } | null)?.id;
+
+      if (!gId) {
+        skip("grievances positive-path follow-on checks", "creation via parent client did not return a row");
+      } else {
         expectRows(
-          await parent.client.from("grievances").select("id").eq("id", (g as { id: string }).id),
+          await parent.client.from("grievances").select("id").eq("id", gId),
           "grievances: raiser CAN read their own grievance"
         );
         expectNoRows(
-          await adminB.client.from("grievances").select("id").eq("id", (g as { id: string }).id),
+          await adminB.client.from("grievances").select("id").eq("id", gId),
           "grievances: admin of org B CANNOT read org A's grievance"
+        );
+        // Ownership restriction, not just tenant: a genuinely UNRELATED
+        // persona (same org, not staff, not the raiser, not linked to the
+        // student) cannot read someone else's grievance.
+        expectNoRows(
+          await parent2.client.from("grievances").select("id").eq("id", gId),
+          "grievances: an unrelated parent (same org, no relation to this grievance) CANNOT read it"
+        );
+        // By contrast, is_staff_user() deliberately includes 'teacher' (see
+        // rls_role_scoped_access.sql), and the grievances_select policy
+        // grants any staff user the whole org's queue for triage -- this is
+        // the PR's documented design ("staff read the whole org queue"), so
+        // a teacher CAN read a grievance they did not raise. Proving this
+        // positively, not just assuming it, since it looks identical to a
+        // hole if you don't check the intended design first.
+        expectRows(
+          await teacher.client.from("grievances").select("id").eq("id", gId),
+          "grievances: a teacher (is_staff_user()=true) CAN read another user's grievance -- staff triage queue, by design"
+        );
+        // Staff-scoped update: org A's admin (an org admin) should be able to
+        // triage a grievance raised in their own org.
+        const staffUpdate = await adminA.client
+          .from("grievances").update({ status: "in_progress" }).eq("id", gId).select();
+        expectAllowed(staffUpdate, "org A's admin CAN update (triage) a grievance in their org");
+        const { data: gAfter } = await admin.from("grievances").select("status").eq("id", gId).single();
+        ok(
+          (gAfter as { status: string } | null)?.status === "in_progress",
+          "grievances: the triage update actually changed the row's status (verified via service role)"
         );
       }
     }
