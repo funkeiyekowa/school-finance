@@ -18,7 +18,7 @@
 
 import {
   requireTestDb, adminClient, createPersona,
-  ok, expectRows, expectNoRows, expectDenied, expectAllowed, summary,
+  ok, expectRows, expectNoRows, expectDenied, expectAllowed, expectUpdateBlocked, summary,
   type TestEnv,
 } from "./harness";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -137,29 +137,57 @@ async function main() {
       await teacher.client.from("students").select("id").eq("id", childB),
       "teacher CANNOT read another org's student"
     );
-    expectDenied(
+    // UPDATE blocked by RLS matches zero rows and returns {data:[], error:null}
+    // -- see expectUpdateBlocked()'s doc comment. Confirmed with a
+    // service-role read, not just the client's empty response.
+    expectUpdateBlocked(
       await teacher.client.from("org_memberships")
         .update({ role: "admin" }).eq("user_id", teacher.userId).select(),
       "teacher CANNOT promote self to admin"
     );
+    const { data: teacherRoleCheck } = await admin
+      .from("org_memberships").select("role")
+      .eq("user_id", teacher.userId).eq("organization_id", orgA).single();
+    ok(
+      (teacherRoleCheck as { role: string } | null)?.role === "teacher",
+      "teacher's blocked self-escalation did NOT actually change their role (verified via service role)"
+    );
 
     /* ---------------- FINANCE ---------------- */
-    const { data: incA, error: incErr } = await admin.from("income_entries").insert({
-      receipt_no: `RCT-${tag}`, date: new Date().toISOString().slice(0, 10),
+    // Two income entries: one for the parent's OWN linked child (child1),
+    // one for a DIFFERENT child in the same org (child2). This matters:
+    // phase1_income_self_read (20260905120000_phase1_security_enforcement.sql)
+    // deliberately grants a parent/student read access to income_entries
+    // where student_id IN my_linked_student_ids() -- a parent is meant to see
+    // their own child's fee/payment history. That is a designed feature, not
+    // a hole, and the real boundary to test is narrower than "no access to
+    // the ledger at all": self-read yes, anyone-else's entries no.
+    const { data: incChild1, error: incErr1 } = await admin.from("income_entries").insert({
+      receipt_no: `RCT-C1-${tag}`, date: new Date().toISOString().slice(0, 10),
       category: "School Fees", amount: 1000, payment_method: "Cash",
       organization_id: orgA, student_id: child1,
     }).select("id").single();
-    if (incErr) {
-      skip("finance fixtures", `could not seed income_entries: ${incErr.message}`);
+    const { data: incChild2, error: incErr2 } = await admin.from("income_entries").insert({
+      receipt_no: `RCT-C2-${tag}`, date: new Date().toISOString().slice(0, 10),
+      category: "School Fees", amount: 1000, payment_method: "Cash",
+      organization_id: orgA, student_id: child2,
+    }).select("id").single();
+
+    if (incErr1 || incErr2) {
+      skip("finance fixtures", `could not seed income_entries: ${incErr1?.message ?? incErr2?.message}`);
     } else {
-      ok(!!incA, "finance: seeded an income entry in org A");
+      ok(!!incChild1 && !!incChild2, "finance: seeded income entries in org A");
       expectNoRows(
         await adminB.client.from("income_entries").select("id").eq("organization_id", orgA),
         "admin B CANNOT read org A's income entries"
       );
+      expectRows(
+        await parent.client.from("income_entries").select("id").eq("id", (incChild1 as { id: string }).id),
+        "parent CAN read the income entry for their OWN linked child (designed self-service read)"
+      );
       expectNoRows(
-        await parent.client.from("income_entries").select("id").eq("organization_id", orgA),
-        "parent CANNOT read the org's income ledger"
+        await parent.client.from("income_entries").select("id").eq("id", (incChild2 as { id: string }).id),
+        "parent CANNOT read an income entry for a DIFFERENT child in the same org"
       );
       expectRows(
         await bursar.client.from("income_entries").select("id").eq("organization_id", orgA),

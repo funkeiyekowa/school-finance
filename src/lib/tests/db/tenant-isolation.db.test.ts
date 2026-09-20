@@ -22,7 +22,7 @@
 
 import {
   requireTestDb, adminClient, anonClient, createPersona,
-  ok, expectRows, expectNoRows, expectDenied, summary,
+  ok, expectRows, expectNoRows, expectDenied, expectUpdateBlocked, summary,
   type TestEnv,
 } from "./harness";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -154,15 +154,34 @@ async function main() {
       }),
       "admin A CANNOT insert a student into org B"
     );
-    expectDenied(
+    // UPDATE, not INSERT: a write blocked by RLS's USING clause matches zero
+    // rows and returns { data: [], error: null } -- that empty array IS the
+    // denial signal here, not an error. See expectUpdateBlocked()'s doc
+    // comment; this suite's own investigation confirmed the row is genuinely
+    // untouched (checked via a service-role read) before relying on this.
+    expectUpdateBlocked(
       await A.adminClient.from("students").update({ full_name: "Hijacked" }).eq("id", B.studentRowId).select(),
       "admin A CANNOT update org B's student"
     );
+    // Ground truth, not just the client's view: read the row back with the
+    // service role (bypasses RLS) and confirm it was genuinely untouched.
+    const { data: stuBCheck } = await admin.from("students").select("full_name").eq("id", B.studentRowId).single();
+    ok(
+      (stuBCheck as { full_name: string } | null)?.full_name === `Student OrgB ${tag}`,
+      "admin A's blocked update did NOT actually mutate org B's student row (verified via service role)"
+    );
 
     /* ---------- Student must not escalate ---------- */
-    expectDenied(
+    expectUpdateBlocked(
       await A.studentClient.from("org_memberships").update({ role: "admin" }).eq("user_id", A.studentUserId).select(),
       "student A CANNOT promote self to admin"
+    );
+    const { data: memCheck } = await admin
+      .from("org_memberships").select("role")
+      .eq("user_id", A.studentUserId).eq("organization_id", A.orgId).single();
+    ok(
+      (memCheck as { role: string } | null)?.role === "student",
+      "student A's blocked self-escalation did NOT actually change their role (verified via service role)"
     );
 
     /* ---------- Anonymous must see nothing ---------- */

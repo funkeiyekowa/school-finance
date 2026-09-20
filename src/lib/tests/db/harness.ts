@@ -201,6 +201,36 @@ export function expectDenied(
   ok(result.error !== null, `${label} (expected denial, got ${result.error ? "denied" : "SUCCESS — authorization hole"})`);
 }
 
+/**
+ * Assert a write was blocked by RLS. Use this instead of expectDenied() for
+ * UPDATE (and DELETE) calls made with `.select()`.
+ *
+ * Under Postgres RLS, a write whose USING clause excludes every matching row
+ * does NOT raise an error — it silently affects zero rows. PostgREST then
+ * returns `{ data: [], error: null }`. That empty-array response IS the
+ * correct denial signal for an UPDATE/DELETE; checking `error !== null` alone
+ * (as expectDenied does) produces a false "authorization hole" here, because
+ * a correctly-blocked update looks identical, over the wire, to one that
+ * matched zero rows for an unrelated reason.
+ *
+ * This still only proves the CLIENT saw no rows change. Call sites that need
+ * to rule out a write that mutated rows without returning them (a `.select()`
+ * omitted, or a trigger side effect) should additionally verify the row's
+ * actual state with a service-role read, as this suite's investigation of two
+ * initial false failures did.
+ */
+export function expectUpdateBlocked(
+  result: { data: unknown[] | null; error: { message: string } | null },
+  label: string
+): void {
+  const blocked = result.error !== null || (Array.isArray(result.data) && result.data.length === 0);
+  const rowCount = Array.isArray(result.data) ? result.data.length : "n/a";
+  ok(
+    blocked,
+    `${label} (expected 0 rows updated or an error; got rowCount=${rowCount}${result.error ? `, error: ${result.error.message}` : ""})`
+  );
+}
+
 /** Assert a write/RPC succeeded. */
 export function expectAllowed(
   result: { data?: unknown; error: { message: string } | null },
