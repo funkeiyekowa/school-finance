@@ -12,7 +12,7 @@ import { StatusBadge } from "@/components/ui/Badge";
 import { useToast } from "@/lib/hooks/useToast";
 import {
   Users, CheckCircle, XCircle, UserPlus, Search, ArrowUpDown,
-  Shield, GraduationCap, UserCircle2, Wrench, Sparkles, Download,
+  Shield, GraduationCap, UserCircle2, Wrench, Sparkles, Download, KeyRound,
 } from "lucide-react";
 import type { Profile, Role } from "@/lib/types";
 
@@ -63,6 +63,8 @@ export default function TeamPage() {
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [joinCode, setJoinCode] = useState<string | null>(null);
+  const [resettingId, setResettingId] = useState<string | null>(null);
+  const [pwResult, setPwResult] = useState<{ name: string; email: string; password: string } | null>(null);
   const [activeTab, setActiveTab] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
@@ -140,6 +142,25 @@ export default function TeamPage() {
   async function deactivateUser(id: string) {
     if (id === profile?.id) { alert("You cannot deactivate your own account."); return; }
     await updateUser(id, { active: false });
+  }
+
+  async function resetUserPassword(u: Profile) {
+    if (u.id === profile?.id) { alert("Use your profile menu to change your own password."); return; }
+    if (!confirm(`Reset ${u.full_name || u.email}'s password?\n\nTheir current password stops working immediately. They'll sign in with a new temporary password and be forced to set their own.`)) return;
+    setResettingId(u.id);
+    const { data, error } = await supabase.rpc("admin_reset_user_password", { p_user_id: u.id, p_org: orgId });
+    setResettingId(null);
+    if (error) { notify(`Reset failed: ${error.message}`, "error"); return; }
+    const result = data as { ok: boolean; email?: string; temporary_password?: string } | null;
+    if (!result?.ok) { notify("Password reset was rejected.", "error"); return; }
+    setPwResult({ name: u.full_name || u.email, email: result.email || u.email, password: result.temporary_password || "" });
+    await supabase.from("activity_log").insert({
+      user_email: profile?.email,
+      user_name: profile?.full_name,
+      action: "Reset Password",
+      details: `${u.email} — temporary password issued, must change on next login`,
+      organization_id: orgId,
+    });
   }
 
   /* -------- filter + sort -------- */
@@ -360,6 +381,16 @@ export default function TeamPage() {
                               <CheckCircle size={12} /> Approve
                             </Button>
                           )}
+                          {u.id !== profile?.id && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={resettingId === u.id}
+                              onClick={() => resetUserPassword(u)}
+                            >
+                              <KeyRound size={12} /> {resettingId === u.id ? "Resetting…" : "Reset PW"}
+                            </Button>
+                          )}
                           {u.active && u.id !== profile?.id && (
                             <Button size="sm" variant="ghost" onClick={() => deactivateUser(u.id)}>
                               <XCircle size={12} /> Deactivate
@@ -385,6 +416,30 @@ export default function TeamPage() {
           onClose={() => setShowInvite(false)}
           onRegenerated={(code) => setJoinCode(code)}
         />
+      )}
+
+      {pwResult && (
+        <Modal open onClose={() => setPwResult(null)} title="Password reset" size="sm">
+          <div className="space-y-3">
+            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-900">
+              Share these credentials with <strong>{pwResult.name}</strong>. They&apos;ll be
+              required to set their own password on next sign-in.
+            </div>
+            <div className="text-xs space-y-1 bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <div><span className="text-gray-500">Email:</span> <strong>{pwResult.email}</strong></div>
+              <div><span className="text-gray-500">Temporary password:</span> <strong className="font-mono">{pwResult.password}</strong></div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => navigator.clipboard?.writeText(`${pwResult.email} / ${pwResult.password}`)}
+              >
+                Copy
+              </Button>
+              <Button variant="gold" onClick={() => setPwResult(null)}>Done</Button>
+            </div>
+          </div>
+        </Modal>
       )}
       <ToastHost />
     </div>
