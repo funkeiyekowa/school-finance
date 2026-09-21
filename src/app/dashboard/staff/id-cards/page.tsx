@@ -45,7 +45,7 @@ function Inner() {
   useEffect(() => {
     if (!orgId) return;
     (async () => {
-      let q = supabase.from("staff").select("id, staff_code, full_name, job_title, email, phone, department_id, date_joined")
+      let q = supabase.from("staff_members").select("id, staff_code, full_name, job_title, email, phone, department_id, date_joined")
         .eq("status", "active");
       if (ids.length > 0) q = q.in("id", ids);
       const [{ data: s }, { data: d }] = await Promise.all([

@@ -19,7 +19,7 @@ import { CommandPalette, useNavCommandItems } from "@/components/ui/CommandPalet
 import { useUnreadMessagesBadge } from "@/lib/messaging/hooks";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, DollarSign, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock, Camera, FileCheck2, PenTool } from "lucide-react";
+import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, DollarSign, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock, Camera, FileCheck2, PenTool, MessageSquareWarning } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /* Navigation configuration                                           */
@@ -95,6 +95,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/my-exams", label: "My Exams", icon: <BookOpen size={17} />, module: "student_portal" },
       { href: "/dashboard/my-results", label: "My Results", icon: <FileBarChart size={17} />, module: "student_portal" },
       { href: "/dashboard/my-courses", label: "My Courses", icon: <GraduationCap size={17} />, module: "lms" },
+      { href: "/dashboard/my-grievances", label: "My Grievances", icon: <MessageSquareWarning size={17} />, feature: "my_grievances", module: "student_portal" },
     ],
   },
   {
@@ -106,6 +107,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/parent-portal", label: "Overview", icon: <LayoutDashboard size={17} />, module: "parent_portal" },
       { href: "/dashboard/my-children", label: "My Children", icon: <Users size={17} />, module: "parent_portal" },
+      { href: "/dashboard/my-grievances", label: "My Grievances", icon: <MessageSquareWarning size={17} />, feature: "my_grievances", module: "parent_portal" },
+      { href: "/dashboard/child-courses", label: "Child Courses", icon: <GraduationCap size={17} />, feature: "child_courses", module: "lms" },
     ],
   },
   {
@@ -185,6 +188,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/announcements", label: "Announcements", icon: <MessageSquare size={17} />, module: "communication" },
       { href: "/dashboard/leads", label: "Enquiries", icon: <Inbox size={17} />, module: "crm" },
       { href: "/dashboard/admissions", label: "Admissions", icon: <ClipboardList size={17} />, feature: "admissions", module: "crm" },
+      { href: "/dashboard/grievances", label: "Grievances", icon: <MessageSquareWarning size={17} />, feature: "grievances", module: "communication" },
       { href: "/dashboard/website", label: "Website Studio", icon: <Globe size={17} />, module: "website", feature: "website" },
     ],
   },
