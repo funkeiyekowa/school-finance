@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
+import { PurgeButton } from "@/components/ui/PurgeButton";
 import { fmtDateTime, cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -54,6 +56,8 @@ function buildTabs(staffTypes: Record<string, string>): TabDef[] {
 
 export default function TeamPage() {
   const { isAdmin, profile, orgId } = useAuth();
+  const perms = useDeletePermissions();
+  const canPurge = perms.canPurge();
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
   const [users, setUsers] = useState<Profile[]>([]);
@@ -253,6 +257,24 @@ export default function TeamPage() {
       <PageHeader title="Team" subtitle="Manage user access grouped by role — search, sort and export.">
         <Button variant="ghost" onClick={exportCsv}><Download size={14} /> Export CSV</Button>
         <Button onClick={() => setShowInvite(true)}><UserPlus size={14} /> Invite User</Button>
+        <PurgeButton
+          itemLabel="non-admin team members"
+          canPurge={canPurge}
+          onPurge={async () => {
+            if (!orgId) return;
+            // Purge only non-privileged memberships. Preserves owner/admin/
+            // super_admin rows so the caller can't lock themselves (and their
+            // colleagues) out of the school with one click.
+            const { error } = await supabase
+              .from("org_memberships")
+              .delete()
+              .eq("organization_id", orgId)
+              .not("role", "in", "(owner,admin,super_admin)");
+            if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
+            notify("Non-admin team members removed");
+            load();
+          }}
+        />
       </PageHeader>
 
       {/* Duplicates panel (find-duplicates on Team page) */}

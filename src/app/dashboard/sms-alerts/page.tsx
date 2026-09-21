@@ -11,6 +11,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { StatusBadge } from "@/components/ui/Badge";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { useToast } from "@/lib/hooks/useToast";
 import { MessageSquare, Search, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
@@ -46,7 +47,10 @@ function getAlertKind(alert: {
 }
 
 export default function SmsAlertsPage() {
-  const { profile, canEdit, isDeveloper, orgId } = useAuth();
+  const { profile, canEdit, orgId } = useAuth();
+  const perms = useDeletePermissions();
+  const canDelete = perms.canDelete("sms_alerts");
+  const canPurge = perms.canPurge();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
   const [alerts, setAlerts] = useState<SmsInbox[]>([]);
@@ -242,7 +246,8 @@ export default function SmsAlertsPage() {
         <>
           <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="payment alerts"
             onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
-            onSelectAll={selectAll} onClearSelection={clearSelection} isDeveloper={isDeveloper} />
+            onSelectAll={selectAll} onClearSelection={clearSelection}
+            canDelete={canDelete} canPurge={canPurge} />
           {/* Archive/Restore bulk actions */}
           {selectedIds.size > 0 && canEdit && filterStatus !== "archive" && (
             <div className="flex items-center gap-2 px-4 py-2 bg-purple-50 border border-purple-200 rounded-lg">
@@ -265,7 +270,7 @@ export default function SmsAlertsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[#0F2A47] text-white">
-                  {isDeveloper && <th className="w-8 px-2 py-3" />}
+                  {canDelete && <th className="w-8 px-2 py-3" />}
                   <th className="text-left px-4 py-3 text-xs font-semibold">Type</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Received</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Code</th>
@@ -279,7 +284,7 @@ export default function SmsAlertsPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={isDeveloper ? 10 : 9}><EmptyState message="No SMS alerts found." icon={<MessageSquare size={32} />} /></td></tr>
+                  <tr><td colSpan={canDelete ? 10 : 9}><EmptyState message="No SMS alerts found." icon={<MessageSquare size={32} />} /></td></tr>
                 ) : (
                   filtered.map(alert => {
                     const kind = getAlertKind(alert);
@@ -289,7 +294,7 @@ export default function SmsAlertsPage() {
                     <tr key={alert.id}
                       className={cn("border-b border-gray-50 hover:bg-gray-50 cursor-pointer", (alert.match_status === "needs_review" || isUnknown) && "bg-amber-50/30")}
                       onClick={() => setSelected(alert)}>
-                      <RowCheckbox id={alert.id} selectedIds={selectedIds} onToggle={toggleSelect} isDeveloper={isDeveloper} />
+                      <RowCheckbox id={alert.id} selectedIds={selectedIds} onToggle={toggleSelect} canDelete={canDelete} />
                       <td className="px-4 py-3">
                         <span className={cn(
                           "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold",

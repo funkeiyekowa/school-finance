@@ -25,6 +25,8 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
+import { PurgeButton } from "@/components/ui/PurgeButton";
 import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtMoney, fmtDate, cn } from "@/lib/utils";
@@ -61,6 +63,8 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 
 export default function PayrollPage() {
   const { canEdit, orgId } = useAuth();
+  const perms = useDeletePermissions();
+  const canPurge = perms.canPurge();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
 
@@ -317,6 +321,30 @@ export default function PayrollPage() {
         )}
         {canEdit && tab === "components" && (
           <Button variant="gold" onClick={() => openCompForm()}><Plus size={16} /> New Component</Button>
+        )}
+        {tab === "runs" && (
+          <PurgeButton
+            itemLabel="payroll runs"
+            canPurge={canPurge}
+            onPurge={async () => {
+              if (!orgId) return;
+              const { error } = await supabase.from("payroll_runs").delete().eq("organization_id", orgId);
+              if (error) { alert(`Purge failed: ${error.message}`); return; }
+              load();
+            }}
+          />
+        )}
+        {tab === "components" && (
+          <PurgeButton
+            itemLabel="salary components"
+            canPurge={canPurge}
+            onPurge={async () => {
+              if (!orgId) return;
+              const { error } = await supabase.from("payroll_components").delete().eq("organization_id", orgId);
+              if (error) { alert(`Purge failed: ${error.message}`); return; }
+              load();
+            }}
+          />
         )}
       </PageHeader>
 

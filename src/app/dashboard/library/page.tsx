@@ -25,6 +25,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
+import { PurgeButton } from "@/components/ui/PurgeButton";
 import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtDate, fmtMoney, cn, generateCode } from "@/lib/utils";
@@ -63,6 +65,8 @@ const FINE_PER_DAY = 50; // school's overdue fine rate, in local currency units 
 
 export default function LibraryPage() {
   const { canEdit, orgId } = useAuth();
+  const perms = useDeletePermissions();
+  const canPurge = perms.canPurge();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
 
@@ -413,6 +417,16 @@ export default function LibraryPage() {
             <Button variant="gold" onClick={() => openBookForm()}><Plus size={16} /> Add Book</Button>
           </>
         )}
+        <PurgeButton
+          itemLabel="library books"
+          canPurge={canPurge}
+          onPurge={async () => {
+            if (!orgId) return;
+            const { error } = await supabase.from("library_books").delete().eq("organization_id", orgId);
+            if (error) { alert(`Purge failed: ${error.message}`); return; }
+            load();
+          }}
+        />
       </PageHeader>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">

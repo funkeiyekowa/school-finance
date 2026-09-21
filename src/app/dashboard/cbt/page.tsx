@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
+import { PurgeButton } from "@/components/ui/PurgeButton";
 import { fmtDateTime, cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -76,6 +78,8 @@ matching,"Match the country to its capital.","","","","","","","medium","3","Geo
 
 export default function CbtPage() {
   const { canEdit, profile, orgId } = useAuth();
+  const perms = useDeletePermissions();
+  const canPurge = perms.canPurge();
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
@@ -675,7 +679,38 @@ export default function CbtPage() {
     <div className="p-6 space-y-5">
       <PageHeader
         icon={<FileText size={24} />}
-        gradient="navy" title="CBT / Online Exams" subtitle="Manage question bank, create and assign exams" />
+        gradient="navy" title="CBT / Online Exams" subtitle="Manage question bank, create and assign exams">
+        <PurgeButton
+          itemLabel="exams"
+          canPurge={canPurge}
+          onPurge={async () => {
+            if (!orgId) return;
+            const { error } = await supabase.from("exams").delete().eq("organization_id", orgId);
+            if (error) { alert(`Purge failed: ${error.message}`); return; }
+            load();
+          }}
+        />
+        <PurgeButton
+          itemLabel="questions"
+          canPurge={canPurge}
+          onPurge={async () => {
+            if (!orgId) return;
+            const { error } = await supabase.from("questions").delete().eq("organization_id", orgId);
+            if (error) { alert(`Purge failed: ${error.message}`); return; }
+            load();
+          }}
+        />
+        <PurgeButton
+          itemLabel="violation log"
+          canPurge={canPurge}
+          onPurge={async () => {
+            if (!orgId) return;
+            const { error } = await supabase.from("proctoring_events").delete().eq("organization_id", orgId);
+            if (error) { alert(`Purge failed: ${error.message}`); return; }
+            void loadViolationLog();
+          }}
+        />
+      </PageHeader>
 
       <div className="flex gap-2">
         <button onClick={() => setTab("exams")} className={cn("flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg", tab === "exams" ? "bg-[#0F2A47] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}><FileText size={14} /> Exams ({exams.length})</button>

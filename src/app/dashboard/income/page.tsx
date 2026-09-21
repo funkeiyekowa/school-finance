@@ -13,6 +13,7 @@ import { Input, Select } from "@/components/ui/Input";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { Modal } from "@/components/ui/Modal";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { useToast } from "@/lib/hooks/useToast";
 import { cn } from "@/lib/utils";
@@ -22,7 +23,10 @@ import { INCOME_CATEGORIES, PAYMENT_METHODS } from "@/lib/types";
 
 function IncomePageInner() {
   const searchParams = useSearchParams();
-  const { canEdit, profile, isDeveloper, orgId } = useAuth();
+  const { canEdit, profile, orgId } = useAuth();
+  const perms = useDeletePermissions();
+  const canDelete = perms.canDelete("income");
+  const canPurge = perms.canPurge();
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
   const [entries, setEntries] = useState<IncomeEntry[]>([]);
@@ -168,7 +172,7 @@ function IncomePageInner() {
 
       {loading ? <LoadingSpinner /> : (
         <>
-          {/* Developer bulk delete bar */}
+          {/* Bulk delete + purge control strip */}
           <BulkDeleteBar
             selectedIds={selectedIds}
             totalCount={filtered.length}
@@ -177,14 +181,15 @@ function IncomePageInner() {
             onDeleteAll={bulkDeleteAll}
             onSelectAll={selectAll}
             onClearSelection={clearSelection}
-            isDeveloper={isDeveloper}
+            canDelete={canDelete}
+            canPurge={canPurge}
           />
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[#0F2A47] text-white">
-                  {isDeveloper && <th className="w-8 px-2 py-3" />}
+                  {canDelete && <th className="w-8 px-2 py-3" />}
                   <th className="text-left px-4 py-3 text-xs font-semibold">Receipt</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Date</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Student</th>
@@ -198,11 +203,11 @@ function IncomePageInner() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={isDeveloper ? 10 : 9}><EmptyState message="No income records found." /></td></tr>
+                  <tr><td colSpan={canDelete ? 10 : 9}><EmptyState message="No income records found." /></td></tr>
                 ) : (
                   filtered.map(entry => (
                     <tr key={entry.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                      <RowCheckbox id={entry.id} selectedIds={selectedIds} onToggle={toggleSelect} isDeveloper={isDeveloper} />
+                      <RowCheckbox id={entry.id} selectedIds={selectedIds} onToggle={toggleSelect} canDelete={canDelete} />
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-[#0F2A47]">{entry.receipt_no}</td>
                       <td className="px-4 py-3 text-gray-600">{fmtDate(entry.date)}</td>
                       <td className="px-4 py-3">

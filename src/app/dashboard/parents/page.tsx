@@ -15,6 +15,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
+import { PurgeButton } from "@/components/ui/PurgeButton";
 import { cn } from "@/lib/utils";
 import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
@@ -65,6 +67,8 @@ const EMPTY: Omit<ParentRow, "id" | "profile_id" | "organization_id" | "created_
 
 export default function ParentsPage() {
   const { orgId, canEdit } = useAuth();
+  const perms = useDeletePermissions();
+  const canPurge = perms.canPurge();
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
@@ -321,6 +325,16 @@ export default function ParentsPage() {
         <Button variant="ghost" onClick={exportCsv}><Download size={14} /> Export CSV</Button>
         {canEdit && <Button variant="secondary" onClick={() => setShowBulk(true)}><UploadCloud size={14} /> Bulk import</Button>}
         {canEdit && <Button variant="gold" onClick={openNew}><Plus size={14} /> Add Parent</Button>}
+        <PurgeButton
+          itemLabel="parent profiles"
+          canPurge={canPurge}
+          onPurge={async () => {
+            if (!orgId) return;
+            const { error } = await supabase.from("parent_profiles").delete().eq("organization_id", orgId);
+            if (error) { alert(`Purge failed: ${error.message}`); return; }
+            load();
+          }}
+        />
       </PageHeader>
 
       {credNotice && (

@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
+import { PurgeButton } from "@/components/ui/PurgeButton";
 import { fmtMoney, today } from "@/lib/utils";
 import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
@@ -18,6 +20,8 @@ import { VENDOR_CATEGORIES } from "@/lib/types";
 export default function VendorsPage() {
   const { canEdit, profile, orgId } = useAuth();
   const supabase = createClient();
+  const perms = useDeletePermissions();
+  const canPurge = perms.canPurge();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorTotals, setVendorTotals] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -65,6 +69,16 @@ export default function VendorsPage() {
             </Button>
           </>
         )}
+        <PurgeButton
+          itemLabel="vendors"
+          canPurge={canPurge}
+          onPurge={async () => {
+            if (!orgId) return;
+            const { error } = await supabase.from("vendors").delete().eq("organization_id", orgId);
+            if (error) { alert(`Purge failed: ${error.message}`); return; }
+            load();
+          }}
+        />
       </PageHeader>
 
       <div className="relative">

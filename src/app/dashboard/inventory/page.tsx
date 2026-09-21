@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
+import { PurgeButton } from "@/components/ui/PurgeButton";
 import { useToast } from "@/lib/hooks/useToast";
 import { fmtMoney, cn } from "@/lib/utils";
 import { BulkImportModal } from "@/components/import/BulkImportModal";
@@ -17,6 +19,8 @@ interface ItemRow { id: string; name: string; item_code: string | null; category
 
 export default function InventoryPage() {
   const { canEdit, profile, orgId } = useAuth();
+  const perms = useDeletePermissions();
+  const canPurge = perms.canPurge();
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
   const [loading, setLoading] = useState(true);
@@ -132,6 +136,16 @@ export default function InventoryPage() {
         </Button>
         {canEdit && <Button variant="secondary" onClick={() => setShowBulk(true)}><UploadCloud size={14} /> Bulk import</Button>}
         {canEdit && <Button variant="gold" onClick={() => openItemForm()}><Plus size={14} /> Add Item</Button>}
+        <PurgeButton
+          itemLabel="inventory items"
+          canPurge={canPurge}
+          onPurge={async () => {
+            if (!orgId) return;
+            const { error } = await supabase.from("inventory_items").delete().eq("organization_id", orgId);
+            if (error) { alert(`Purge failed: ${error.message}`); return; }
+            load();
+          }}
+        />
       </PageHeader>
 
       {loadError && (

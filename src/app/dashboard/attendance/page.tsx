@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
+import { PurgeButton } from "@/components/ui/PurgeButton";
 import { cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -19,6 +21,8 @@ interface RecordRow { id: string; student_id: string; status_code: string; remar
 
 export default function AttendancePage() {
   const { profile, canEdit, orgId, user, membership } = useAuth();
+  const perms = useDeletePermissions();
+  const canPurge = perms.canPurge();
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
@@ -275,7 +279,18 @@ export default function AttendancePage() {
     <div className="p-6 space-y-5">
       <PageHeader
         icon={<ClipboardCheck size={24} />}
-        gradient="emerald" title="Attendance" subtitle="Record daily student attendance by class" />
+        gradient="emerald" title="Attendance" subtitle="Record daily student attendance by class">
+        <PurgeButton
+          itemLabel="attendance records"
+          canPurge={canPurge}
+          onPurge={async () => {
+            if (!orgId) return;
+            const { error } = await supabase.from("attendance_records").delete().eq("organization_id", orgId);
+            if (error) { alert(`Purge failed: ${error.message}`); return; }
+            loadClassData();
+          }}
+        />
+      </PageHeader>
 
       {/* Controls */}
       <Card>
