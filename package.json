@@ -19,7 +19,7 @@
     "test:login-context": "tsx src/lib/tests/login-context.test.ts",
     "test:timetable": "tsx src/lib/tests/timetable-authorization.test.ts",
     "test:timetable-setup": "tsx src/lib/tests/timetable-setup.test.ts",
-    "test:db": "tsx src/lib/tests/db/notifications-broadcast.db.test.ts"
+    "test:db": "tsx src/lib/tests/db/notifications-broadcast.db.test.ts && tsx src/lib/tests/db/automation-engine.db.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
