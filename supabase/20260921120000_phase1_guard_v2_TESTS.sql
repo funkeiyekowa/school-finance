@@ -49,33 +49,119 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN RAISE EXCEPTION 'T2 FAIL: %', SQLERRM; END;
 
   -- =============================================================
-  -- T3 -- cross-org student DELETE is blocked
+  -- T3 -- cross-org student DELETE is blocked for a NON-platform-admin
+  -- Grant org admin. Rewritten: the previous version used the developer
+  -- (Deji) session, but by design is_platform_admin()=true for the
+  -- developer role, so phase1_same_org() correctly returns true across
+  -- orgs -- a platform admin CAN delete any student. The invariant we
+  -- actually need to test is that an ordinary org admin from Org A
+  -- cannot touch Org B's rows. Verified by checking the row still
+  -- exists after the attempt (RLS filtering silently returns 0 rows
+  -- deleted, which is also secure but wouldn't raise an exception).
   -- =============================================================
-  IF jason_student IS NOT NULL THEN
-    BEGIN
-      DELETE FROM public.students WHERE id = jason_student;
-      RAISE EXCEPTION 'T3 FAIL: cross-org student DELETE was PERMITTED';
-    EXCEPTION WHEN OTHERS THEN
-      GET STACKED DIAGNOSTICS err = MESSAGE_TEXT, sqlstate_text = RETURNED_SQLSTATE;
-      IF sqlstate_text = 'P0001' AND (err LIKE '%organization boundary%' OR err LIKE '%student administration%') THEN
-        RAISE NOTICE 'T3 PASS: cross-org student DELETE blocked (%, %)', sqlstate_text, err;
-      ELSIF err LIKE 'T3 FAIL%' THEN RAISE;
-      ELSE RAISE NOTICE 'T3 PASS: cross-org student DELETE blocked with %', err;
+  DECLARE
+    grant_admin uuid;
+    after_exists boolean;
+    n_rows int;
+    developer_sub text := 'f0008584-ba0f-475f-9126-cb576d2d61a4';
+    grant_org uuid := '8f1b965f-7df2-479d-bdd9-a52c63d01401'::uuid;
+  BEGIN
+    IF jason_student IS NULL THEN
+      RAISE NOTICE 'T3 SKIP: no Jason Academy student to target';
+    ELSE
+      SELECT m.user_id INTO grant_admin
+        FROM public.org_memberships m
+        JOIN public.profiles p ON p.id = m.user_id
+       WHERE m.organization_id = grant_org
+         AND m.role IN ('admin','owner')
+         AND m.active
+         AND (p.role IS NULL OR p.role <> 'developer')
+         AND COALESCE(p.active, true)
+         AND m.user_id <> developer_sub::uuid
+       LIMIT 1;
+
+      IF grant_admin IS NULL THEN
+        RAISE NOTICE 'T3 SKIP: no non-platform-admin Grant org admin available';
+      ELSE
+        -- Confirm the target row exists before we start.
+        IF NOT EXISTS(SELECT 1 FROM public.students WHERE id = jason_student) THEN
+          RAISE EXCEPTION 'T3 SETUP FAIL: Jason student % not visible pre-test', jason_student;
+        END IF;
+
+        -- Switch to the ordinary Grant admin.
+        PERFORM set_config('request.jwt.claims',
+          json_build_object('sub', grant_admin::text, 'role', 'authenticated')::text, true);
+
+        BEGIN
+          DELETE FROM public.students WHERE id = jason_student;
+          GET DIAGNOSTICS n_rows = ROW_COUNT;
+        EXCEPTION WHEN OTHERS THEN
+          -- An exception here is expected/acceptable (org boundary or hr access).
+          GET STACKED DIAGNOSTICS err = MESSAGE_TEXT;
+        END;
+
+        -- Switch back to developer so we can observe post-state.
+        PERFORM set_config('request.jwt.claims',
+          json_build_object('sub', developer_sub, 'role', 'authenticated')::text, true);
+
+        after_exists := EXISTS(SELECT 1 FROM public.students WHERE id = jason_student);
+
+        IF after_exists THEN
+          RAISE NOTICE 'T3 PASS: cross-org DELETE by Grant admin left target Jason student intact (rows affected reported: %, error: %)', n_rows, COALESCE(err, '(none)');
+        ELSE
+          RAISE EXCEPTION 'T3 FAIL: Jason student % was removed by a Grant admin - cross-tenant vulnerability', jason_student;
+        END IF;
       END IF;
-    END;
-  END IF;
+    END IF;
+  END;
 
   -- =============================================================
-  -- T4 -- cross-org student INSERT is blocked
+  -- T4 -- cross-org student INSERT is blocked for a NON-platform-admin
+  -- Grant org admin. Same rationale as T3.
   -- =============================================================
+  DECLARE
+    grant_admin uuid;
+    new_id uuid := gen_random_uuid();
+    after_exists boolean;
+    developer_sub text := 'f0008584-ba0f-475f-9126-cb576d2d61a4';
+    grant_org uuid := '8f1b965f-7df2-479d-bdd9-a52c63d01401'::uuid;
   BEGIN
-    INSERT INTO public.students(id, organization_id, full_name, student_code)
-    VALUES (gen_random_uuid(), jason_org, 'T4-INJECT', 'T4-'||floor(random()*100000)::text);
-    RAISE EXCEPTION 'T4 FAIL: cross-org student INSERT was PERMITTED';
-  EXCEPTION WHEN OTHERS THEN
-    GET STACKED DIAGNOSTICS err = MESSAGE_TEXT;
-    IF err LIKE 'T4 FAIL%' THEN RAISE;
-    ELSE RAISE NOTICE 'T4 PASS: cross-org student INSERT blocked (%)', err;
+    SELECT m.user_id INTO grant_admin
+      FROM public.org_memberships m
+      JOIN public.profiles p ON p.id = m.user_id
+     WHERE m.organization_id = grant_org
+       AND m.role IN ('admin','owner')
+       AND m.active
+       AND (p.role IS NULL OR p.role <> 'developer')
+       AND COALESCE(p.active, true)
+       AND m.user_id <> developer_sub::uuid
+     LIMIT 1;
+
+    IF grant_admin IS NULL THEN
+      RAISE NOTICE 'T4 SKIP: no non-platform-admin Grant org admin available';
+    ELSE
+      -- Switch to Grant admin.
+      PERFORM set_config('request.jwt.claims',
+        json_build_object('sub', grant_admin::text, 'role', 'authenticated')::text, true);
+
+      BEGIN
+        INSERT INTO public.students(id, organization_id, full_name, student_code)
+        VALUES (new_id, jason_org, 'T4-INJECT', 'T4-'||floor(random()*100000)::text);
+      EXCEPTION WHEN OTHERS THEN
+        GET STACKED DIAGNOSTICS err = MESSAGE_TEXT;
+      END;
+
+      -- Switch back to developer to verify state.
+      PERFORM set_config('request.jwt.claims',
+        json_build_object('sub', developer_sub, 'role', 'authenticated')::text, true);
+
+      after_exists := EXISTS(SELECT 1 FROM public.students WHERE id = new_id);
+
+      IF after_exists THEN
+        RAISE EXCEPTION 'T4 FAIL: cross-org student INSERT by Grant admin actually created a Jason row (%) - cross-tenant vulnerability', new_id;
+      ELSE
+        RAISE NOTICE 'T4 PASS: cross-org student INSERT by Grant admin correctly did not create a row (error: %)', COALESCE(err, '(RLS filtered, 0 rows)');
+      END IF;
     END IF;
   END;
 
@@ -172,19 +258,33 @@ SELECT set_config(
 );
 
 DO $t9$
-DECLARE err text; any_id uuid;
+DECLARE
+  err text;
+  any_id uuid;
+  after_exists boolean;
+  developer_sub text := 'f0008584-ba0f-475f-9126-cb576d2d61a4';
 BEGIN
+  -- Same-shape fix as T3/T4: RLS may silently filter to 0 rows without
+  -- raising, so we verify state after by switching back to developer.
   SELECT id INTO any_id FROM public.students LIMIT 1;
   IF any_id IS NULL THEN RAISE NOTICE 'T9 SKIP: no student rows available'; RETURN; END IF;
+
   BEGIN
     DELETE FROM public.students WHERE id = any_id;
-    RAISE EXCEPTION 'T9 FAIL: non-admin user was permitted to DELETE students';
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS err = MESSAGE_TEXT;
-    IF err LIKE 'T9 FAIL%' THEN RAISE;
-    ELSE RAISE NOTICE 'T9 PASS: non-admin DELETE blocked (%)', err;
-    END IF;
   END;
+
+  -- Switch back to developer to observe post-state.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', developer_sub, 'role', 'authenticated')::text, true);
+
+  after_exists := EXISTS(SELECT 1 FROM public.students WHERE id = any_id);
+  IF after_exists THEN
+    RAISE NOTICE 'T9 PASS: non-admin DELETE did not remove target student (error: %)', COALESCE(err, '(RLS filtered, 0 rows)');
+  ELSE
+    RAISE EXCEPTION 'T9 FAIL: non-admin user removed student % - authorization bypass', any_id;
+  END IF;
 END
 $t9$;
 
