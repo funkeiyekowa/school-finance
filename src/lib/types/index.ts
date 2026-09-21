@@ -144,6 +144,7 @@ export const APP_FEATURES = [
   { key: "website", label: "Website Studio", group: "Communication" },
   // ---- Operations ----
   { key: "inventory", label: "Inventory", group: "Operations" },
+  { key: "shop", label: "Shop", group: "Operations" },
   { key: "automations", label: "Automations", group: "Operations" },
   // ---- Reporting / Admin ----
   { key: "reports", label: "Reports", group: "Admin" },
@@ -194,7 +195,7 @@ export const ROLE_PRESETS: Record<string, Partial<Record<FeatureKey, boolean>>> 
   bursar: {
     finance_overview: true, income: true, expenses: true, receipts: true,
     reconciliation: true, sms_alerts: true, student_finance: true, vendors: true,
-    reports: true, students: true,
+    reports: true, students: true, shop: true,
   },
   editor: {
     students: true, attendance: true, assessments: true, cbt: true,

@@ -19,7 +19,7 @@ import { CommandPalette, useNavCommandItems } from "@/components/ui/CommandPalet
 import { useUnreadMessagesBadge } from "@/lib/messaging/hooks";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, DollarSign, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock, Camera, FileCheck2, PenTool, MessageSquareWarning } from "lucide-react";
+import { LayoutDashboard, TrendingUp, TrendingDown, GraduationCap, Building2, ArrowLeftRight, FileBarChart, Receipt, Settings, Shield, Users, Activity, MessageSquare, Menu, X, LogOut, Clock, BookOpen, Globe, ShieldCheck, LifeBuoy, Inbox, HelpCircle, ChevronDown, Wallet, DollarSign, Package, Megaphone, BarChart3, Briefcase, UserCircle, Sparkles, KeyRound, Bus, Trophy, Library, BedDouble, ClipboardList, Boxes, Stethoscope, Printer, CalendarClock, Camera, FileCheck2, PenTool, ShoppingBag, MessageSquareWarning } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /* Navigation configuration                                           */
@@ -167,6 +167,7 @@ const NAV_GROUPS: NavGroup[] = [
     icon: <Package size={16} />,
     items: [
       { href: "/dashboard/inventory", label: "Inventory", icon: <Package size={17} />, module: "inventory" },
+      { href: "/dashboard/shop", label: "Shop", icon: <ShoppingBag size={17} />, feature: "shop", module: "inventory" },
       { href: "/dashboard/procurement", label: "Procurement", icon: <ClipboardList size={17} />, module: "procurement" },
       { href: "/dashboard/assets", label: "Assets", icon: <Boxes size={17} />, module: "assets" },
       { href: "/dashboard/clinic", label: "Health / Clinic", icon: <Stethoscope size={17} />, module: "clinic" },
