@@ -18,6 +18,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
+import { PurgeButton } from "@/components/ui/PurgeButton";
 import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtMoney, fmtDate, cn, generateCode, today } from "@/lib/utils";
@@ -71,6 +73,8 @@ const emptyAssetForm = {
 
 export default function AssetsPage() {
   const { canEdit, orgId } = useAuth();
+  const perms = useDeletePermissions();
+  const canPurge = perms.canPurge();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
 
@@ -498,6 +502,16 @@ export default function AssetsPage() {
         {canEdit && tab === "maintenance" && (
           <Button variant="gold" onClick={() => openMaintenanceForm()}><Plus size={16} /> Log Maintenance</Button>
         )}
+        <PurgeButton
+          itemLabel="assets"
+          canPurge={canPurge}
+          onPurge={async () => {
+            if (!orgId) return;
+            const { error } = await supabase.from("assets").delete().eq("organization_id", orgId);
+            if (error) { alert(`Purge failed: ${error.message}`); return; }
+            load();
+          }}
+        />
       </PageHeader>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

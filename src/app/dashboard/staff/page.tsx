@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
+import { PurgeButton } from "@/components/ui/PurgeButton";
 import { cn } from "@/lib/utils";
 import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
@@ -57,6 +59,8 @@ interface StaffStats {
 
 export default function StaffPage() {
   const { canEdit, profile, orgId } = useAuth();
+  const perms = useDeletePermissions();
+  const canPurge = perms.canPurge();
   const [showBulkImport, setShowBulkImport] = useState(false);
   const supabase = useMemo(() => createClient(), []);
   const [departments, setDepartments] = useState<DeptRow[]>([]);
@@ -386,6 +390,16 @@ export default function StaffPage() {
           </Button>
         )}
         {canEdit && <Button variant="gold" onClick={() => openForm()}><Plus size={14} /> Add Staff</Button>}
+        <PurgeButton
+          itemLabel="staff members"
+          canPurge={canPurge}
+          onPurge={async () => {
+            if (!orgId) return;
+            const { error } = await supabase.from("staff_members").delete().eq("organization_id", orgId);
+            if (error) { alert(`Purge failed: ${error.message}`); return; }
+            refetch();
+          }}
+        />
       </PageHeader>
 
       {staffError && (

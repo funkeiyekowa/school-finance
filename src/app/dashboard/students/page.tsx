@@ -29,6 +29,7 @@ import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { ImportStudentsModal } from "@/components/students/ImportStudentsModal";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { useToast } from "@/lib/hooks/useToast";
 import { cn, today } from "@/lib/utils";
@@ -48,6 +49,9 @@ function StudentsPageInner() {
   const { canEdit, isAdmin, isDeveloper, profile, orgId } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
+  const perms = useDeletePermissions();
+  const canDeleteStudents = perms.canDelete("students");
+  const canPurgeStudents = perms.canPurge();
   const searchParams = useSearchParams();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -330,14 +334,15 @@ function StudentsPageInner() {
         <>
           <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="students"
             onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
-            onSelectAll={bulkSelectAll} onClearSelection={bulkClear} isDeveloper={isDeveloper} />
+            onSelectAll={bulkSelectAll} onClearSelection={bulkClear}
+            canDelete={canDeleteStudents} canPurge={canPurgeStudents} />
 
           <Card>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-[#0F2A47] text-white">
-                    {isDeveloper && <th className="w-8 px-2 py-3" />}
+                    {canDeleteStudents && <th className="w-8 px-2 py-3" />}
                     <th className="text-left px-4 py-3 text-xs font-semibold">ID</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold">Last Name</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold">First Name</th>
@@ -352,14 +357,14 @@ function StudentsPageInner() {
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={isDeveloper ? 12 : 11}>
+                    <tr><td colSpan={canDeleteStudents ? 12 : 11}>
                       <EmptyState message="No students match your search." icon={<GraduationCap size={32} />} />
                     </td></tr>
                   ) : filtered.map(s => {
                     const busy = savingId === s.id;
                     return (
                       <tr key={s.id} className={cn("border-b border-gray-50 hover:bg-gray-50 group", busy && "opacity-50")}>
-                        <RowCheckbox id={s.id} selectedIds={selectedIds} onToggle={toggleBulk} isDeveloper={isDeveloper} />
+                        <RowCheckbox id={s.id} selectedIds={selectedIds} onToggle={toggleBulk} canDelete={canDeleteStudents} />
                         <td className="px-4 py-3 font-mono text-xs text-gray-500 font-semibold">{s.student_code}</td>
                         <EditCell id={s.id} field="last_name" value={(s as Record<string, unknown>).last_name as string ?? ""}
                           editing={editingCell} editValue={editValue} setEditValue={setEditValue}

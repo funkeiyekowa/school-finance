@@ -12,6 +12,7 @@ import { Input, Select } from "@/components/ui/Input";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { Modal } from "@/components/ui/Modal";
 import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
 import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { useToast } from "@/lib/hooks/useToast";
 import { Plus, Search, Download, CheckCircle, Circle, TrendingDown, Printer, Sparkles } from "lucide-react";
@@ -19,7 +20,10 @@ import type { ExpenseEntry, Vendor } from "@/lib/types";
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "@/lib/types";
 
 export default function ExpensesPage() {
-  const { canEdit, profile, isDeveloper, orgId } = useAuth();
+  const { canEdit, profile, orgId } = useAuth();
+  const perms = useDeletePermissions();
+  const canDelete = perms.canDelete("expenses");
+  const canPurge = perms.canPurge();
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
   const [entries, setEntries] = useState<ExpenseEntry[]>([]);
@@ -146,13 +150,14 @@ export default function ExpensesPage() {
         <>
           <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="expense entries"
             onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
-            onSelectAll={selectAll} onClearSelection={clearSelection} isDeveloper={isDeveloper} />
+            onSelectAll={selectAll} onClearSelection={clearSelection}
+            canDelete={canDelete} canPurge={canPurge} />
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[#0F2A47] text-white">
-                  {isDeveloper && <th className="w-8 px-2 py-3" />}
+                  {canDelete && <th className="w-8 px-2 py-3" />}
                   <th className="text-left px-4 py-3 text-xs font-semibold">Voucher</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Date</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Vendor</th>
@@ -166,11 +171,11 @@ export default function ExpensesPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={isDeveloper ? 10 : 9}><EmptyState message="No expense records found." /></td></tr>
+                  <tr><td colSpan={canDelete ? 10 : 9}><EmptyState message="No expense records found." /></td></tr>
                 ) : (
                   filtered.map(entry => (
                     <tr key={entry.id} className="border-b border-gray-50 hover:bg-gray-50">
-                      <RowCheckbox id={entry.id} selectedIds={selectedIds} onToggle={toggleSelect} isDeveloper={isDeveloper} />
+                      <RowCheckbox id={entry.id} selectedIds={selectedIds} onToggle={toggleSelect} canDelete={canDelete} />
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-[#0F2A47]">{entry.voucher_no}</td>
                       <td className="px-4 py-3 text-gray-600">{fmtDate(entry.date)}</td>
                       <td className="px-4 py-3 font-medium">{entry.vendor_name || "—"}</td>
