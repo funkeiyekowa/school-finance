@@ -790,7 +790,7 @@ export default function LibraryPage() {
                 status: "available",
               });
             }
-            const { error: cErr } = await supabase.from("library_copies").insert(copies);
+            const { error: cErr } = await supabase.from("library_book_copies").insert(copies);
             if (cErr) { errs.push(`${r.title} copies: ${cErr.message}`); continue; }
             booksCreated++;
             copiesCreated += nCopies;

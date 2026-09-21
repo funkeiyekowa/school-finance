@@ -31,11 +31,15 @@ interface DispensedRow {
   id: string; medication_name: string; dosage: string | null; quantity_dispensed: number;
 }
 interface StudentRow {
-  id: string; first_name: string | null; last_name: string | null; admission_number: string | null;
-  date_of_birth: string | null; class_id: string | null;
+  // students has student_code + grade. admission_number / class_id do not
+  // exist on this table; full_name is NOT NULL while first/last were added
+  // later by student_name_fields_migration and are nullable.
+  id: string; full_name: string | null; first_name: string | null; last_name: string | null;
+  student_code: string | null; date_of_birth: string | null; grade: string | null;
 }
 interface StaffRow {
-  id: string; first_name: string | null; last_name: string | null; staff_code: string | null;
+  // staff_members stores one full_name column, not first/last.
+  id: string; full_name: string | null; staff_code: string | null;
 }
 interface PatientRow {
   id: string; subject_type: string; student_id: string | null; staff_id: string | null;
@@ -63,25 +67,25 @@ export default function ClinicVisitPrintPage() {
       setVisit(v);
       if (!v) { setLoading(false); return; }
 
-      const { data: dd } = await supabase.from("clinic_dispensed_medications").select("*").eq("visit_id", visitId);
+      const { data: dd } = await supabase.from("clinic_medications_dispensed").select("*").eq("visit_id", visitId);
       setDispensed((dd as DispensedRow[]) ?? []);
 
       // Subject: student or staff
       if (v.student_id) {
-        const { data } = await supabase.from("students").select("id, first_name, last_name, admission_number, date_of_birth, class_id").eq("id", v.student_id).maybeSingle();
+        const { data } = await supabase.from("students").select("id, full_name, first_name, last_name, student_code, date_of_birth, grade").eq("id", v.student_id).maybeSingle();
         setSubject(data as StudentRow ?? null);
         // patient record via student_id
         const { data: p } = await supabase.from("clinic_patient_records").select("*").eq("student_id", v.student_id).maybeSingle();
         setPatient(p as PatientRow ?? null);
       } else if (v.staff_id) {
-        const { data } = await supabase.from("staff").select("id, first_name, last_name, staff_code").eq("id", v.staff_id).maybeSingle();
+        const { data } = await supabase.from("staff_members").select("id, full_name, staff_code").eq("id", v.staff_id).maybeSingle();
         setSubject(data as StaffRow ?? null);
         const { data: p } = await supabase.from("clinic_patient_records").select("*").eq("staff_id", v.staff_id).maybeSingle();
         setPatient(p as PatientRow ?? null);
       }
 
       if (v.attended_by_staff_id) {
-        const { data } = await supabase.from("staff").select("id, first_name, last_name, staff_code").eq("id", v.attended_by_staff_id).maybeSingle();
+        const { data } = await supabase.from("staff_members").select("id, full_name, staff_code").eq("id", v.attended_by_staff_id).maybeSingle();
         setAttendedBy(data as StaffRow ?? null);
       }
 
@@ -92,11 +96,23 @@ export default function ClinicVisitPrintPage() {
   if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (!visit) return <div className="p-8 text-center text-gray-500">Visit not found.</div>;
 
-  const subjectName = subject ? `${(subject as StudentRow | StaffRow).first_name ?? ""} ${(subject as StudentRow | StaffRow).last_name ?? ""}`.trim() : "Unknown";
+  // Both students and staff_members carry full_name; only students also has
+  // the nullable first/last pair, used purely as a fallback.
+  const nameOf = (r: StudentRow | StaffRow | null): string => {
+    if (!r) return "";
+    if (r.full_name?.trim()) return r.full_name.trim();
+    if ("first_name" in r) {
+      const composed = [r.first_name, r.last_name].filter(Boolean).join(" ").trim();
+      if (composed) return composed;
+    }
+    return "";
+  };
+
+  const subjectName = nameOf(subject) || "Unknown";
   const subjectCode = subject
-    ? ("admission_number" in subject ? subject.admission_number : (subject as StaffRow).staff_code) ?? ""
+    ? ("student_code" in subject ? subject.student_code : (subject as StaffRow).staff_code) ?? ""
     : "";
-  const attName = attendedBy ? `${attendedBy.first_name ?? ""} ${attendedBy.last_name ?? ""}`.trim() : "";
+  const attName = nameOf(attendedBy);
 
   return (
     <div className="min-h-screen bg-gray-100 print:bg-white">

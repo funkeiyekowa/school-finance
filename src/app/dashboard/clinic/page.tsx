@@ -1179,7 +1179,7 @@ export default function ClinicPage() {
             expiry_date: r.expiry_date || null,
             active: true,
           }));
-          const { error } = await supabase.from("clinic_medications").insert(payload);
+          const { error } = await supabase.from("clinic_medications_inventory").insert(payload);
           if (error) return { ok: false, message: error.message };
           await load();
           return { ok: true, message: `Imported ${payload.length} medication(s).` };
