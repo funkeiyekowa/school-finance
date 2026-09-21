@@ -16,7 +16,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
-import { PurgeButton } from "@/components/ui/PurgeButton";
+import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { cn } from "@/lib/utils";
 import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
@@ -68,6 +69,7 @@ const EMPTY: Omit<ParentRow, "id" | "profile_id" | "organization_id" | "created_
 export default function ParentsPage() {
   const { orgId, canEdit } = useAuth();
   const perms = useDeletePermissions();
+  const canDelete = perms.canDelete("parents");
   const canPurge = perms.canPurge();
   const supabase = createClient();
 
@@ -141,6 +143,22 @@ export default function ParentsPage() {
     });
     return list;
   }, [parents, search, sortKey, sortDir, childrenByParent]);
+
+  const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(filtered.map(p => p.id));
+
+  async function bulkDeleteSelected(ids: string[]) {
+    if (ids.length === 0) return;
+    const { error } = await supabase.from("parent_profiles").delete().in("id", ids);
+    if (error) { alert(`Bulk delete failed: ${error.message}`); return; }
+    load();
+  }
+
+  async function bulkDeleteAll() {
+    if (!orgId) { alert("Purge failed: no organization context"); return; }
+    const { error } = await supabase.from("parent_profiles").delete().eq("organization_id", orgId);
+    if (error) { alert(`Purge failed: ${error.message}`); return; }
+    load();
+  }
 
   function toggleSort(k: SortKey) {
     if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -325,16 +343,6 @@ export default function ParentsPage() {
         <Button variant="ghost" onClick={exportCsv}><Download size={14} /> Export CSV</Button>
         {canEdit && <Button variant="secondary" onClick={() => setShowBulk(true)}><UploadCloud size={14} /> Bulk import</Button>}
         {canEdit && <Button variant="gold" onClick={openNew}><Plus size={14} /> Add Parent</Button>}
-        <PurgeButton
-          itemLabel="parent profiles"
-          canPurge={canPurge}
-          onPurge={async () => {
-            if (!orgId) return;
-            const { error } = await supabase.from("parent_profiles").delete().eq("organization_id", orgId);
-            if (error) { alert(`Purge failed: ${error.message}`); return; }
-            load();
-          }}
-        />
       </PageHeader>
 
       {credNotice && (
@@ -381,11 +389,16 @@ export default function ParentsPage() {
         </div>
       </div>
 
+      <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="parent profiles"
+        onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
+        onSelectAll={selectAll} onClearSelection={clearSelection}
+        canDelete={canDelete} canPurge={canPurge} />
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-[#0F2A47] text-white">
+                {canDelete && <th className="w-8 px-2 py-3" />}
                 <ThSort label="Parent"     k="name"     current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <ThSort label="Email"      k="email"    current={sortKey} dir={sortDir} onClick={toggleSort} />
                 <ThSort label="Phone"      k="phone"    current={sortKey} dir={sortDir} onClick={toggleSort} />
@@ -395,10 +408,11 @@ export default function ParentsPage() {
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={5}><EmptyState message={search ? "No matches." : "No parents yet. Add one to give a family portal access."} icon={<Users size={32} />} /></td></tr>
+                <tr><td colSpan={canDelete ? 6 : 5}><EmptyState message={search ? "No matches." : "No parents yet. Add one to give a family portal access."} icon={<Users size={32} />} /></td></tr>
               ) : (
                 filtered.map((p) => (
                   <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <RowCheckbox id={p.id} selectedIds={selectedIds} onToggle={toggleSelect} canDelete={canDelete} />
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-full bg-[#0F2A47] flex items-center justify-center shrink-0">

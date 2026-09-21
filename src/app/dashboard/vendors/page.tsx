@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
-import { PurgeButton } from "@/components/ui/PurgeButton";
 import { fmtMoney, today } from "@/lib/utils";
 import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
@@ -12,6 +11,9 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
+import { useToast } from "@/lib/hooks/useToast";
 import { Plus, Search, ChevronRight, Building2, UploadCloud } from "lucide-react";
 import Link from "next/link";
 import type { Vendor } from "@/lib/types";
@@ -20,7 +22,9 @@ import { VENDOR_CATEGORIES } from "@/lib/types";
 export default function VendorsPage() {
   const { canEdit, profile, orgId } = useAuth();
   const supabase = createClient();
+  const { notify, ToastHost } = useToast();
   const perms = useDeletePermissions();
+  const canDelete = perms.canDelete("vendors");
   const canPurge = perms.canPurge();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorTotals, setVendorTotals] = useState<Record<string, number>>({});
@@ -54,8 +58,27 @@ export default function VendorsPage() {
     return !q || v.name.toLowerCase().includes(q) || v.vendor_code.toLowerCase().includes(q) || (v.category || "").toLowerCase().includes(q);
   });
 
+  const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(filtered.map(v => v.id));
+
+  async function bulkDeleteSelected(ids: string[]) {
+    if (ids.length === 0) return;
+    const { error } = await supabase.from("vendors").delete().in("id", ids);
+    if (error) { notify(`Bulk delete failed: ${error.message}`, "error"); return; }
+    notify(`Deleted ${ids.length} vendors`);
+    load();
+  }
+
+  async function bulkDeleteAll() {
+    if (!orgId) { notify("Purge failed: no organization context", "error"); return; }
+    const { error } = await supabase.from("vendors").delete().eq("organization_id", orgId);
+    if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
+    notify("All vendors deleted");
+    load();
+  }
+
   return (
     <div className="p-6 space-y-5">
+      <ToastHost />
       <PageHeader
         icon={<Building2 size={24} />}
         gradient="navy" title="Vendors" subtitle={`${vendors.length} vendors registered`}>
@@ -69,16 +92,6 @@ export default function VendorsPage() {
             </Button>
           </>
         )}
-        <PurgeButton
-          itemLabel="vendors"
-          canPurge={canPurge}
-          onPurge={async () => {
-            if (!orgId) return;
-            const { error } = await supabase.from("vendors").delete().eq("organization_id", orgId);
-            if (error) { alert(`Purge failed: ${error.message}`); return; }
-            load();
-          }}
-        />
       </PageHeader>
 
       <div className="relative">
@@ -89,11 +102,17 @@ export default function VendorsPage() {
       </div>
 
       {loading ? <LoadingSpinner /> : (
+        <>
+        <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="vendors"
+          onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
+          onSelectAll={selectAll} onClearSelection={clearSelection}
+          canDelete={canDelete} canPurge={canPurge} />
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[#0F2A47] text-white">
+                  {canDelete && <th className="w-8 px-2 py-3" />}
                   <th className="text-left px-4 py-3 text-xs font-semibold">Vendor</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Category</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold">Contact Person</th>
@@ -104,10 +123,11 @@ export default function VendorsPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={6}><EmptyState message="No vendors found." icon={<Building2 size={32} />} /></td></tr>
+                  <tr><td colSpan={canDelete ? 7 : 6}><EmptyState message="No vendors found." icon={<Building2 size={32} />} /></td></tr>
                 ) : (
                   filtered.map(v => (
                     <tr key={v.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                      <RowCheckbox id={v.id} selectedIds={selectedIds} onToggle={toggleSelect} canDelete={canDelete} />
                       <td className="px-4 py-3">
                         <div className="font-medium text-gray-900">{v.name}</div>
                         <div className="text-xs text-gray-400 font-mono">{v.vendor_code}</div>
@@ -129,6 +149,7 @@ export default function VendorsPage() {
             </table>
           </div>
         </Card>
+        </>
       )}
 
       {showAdd && <AddVendorModal onClose={() => { setShowAdd(false); load(); }} />}

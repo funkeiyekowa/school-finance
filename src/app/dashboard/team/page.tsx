@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
-import { PurgeButton } from "@/components/ui/PurgeButton";
+import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { fmtDateTime, cn } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -57,6 +58,7 @@ function buildTabs(staffTypes: Record<string, string>): TabDef[] {
 export default function TeamPage() {
   const { isAdmin, profile, orgId } = useAuth();
   const perms = useDeletePermissions();
+  const canDelete = perms.canDelete("team");
   const canPurge = perms.canPurge();
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
@@ -223,6 +225,33 @@ export default function TeamPage() {
     return list.slice().sort(cmp);
   }, [users, tabs, activeTab, search, sortKey, sortDir]);
 
+  const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(filtered.map(u => u.id));
+
+  async function bulkDeleteSelected(ids: string[]) {
+    if (ids.length === 0 || !orgId) return;
+    // Delete only NON-privileged memberships among the selected -- can't
+    // accidentally lock the caller (or another admin) out.
+    const { error } = await supabase.from("org_memberships")
+      .delete()
+      .eq("organization_id", orgId)
+      .in("user_id", ids)
+      .not("role", "in", "(owner,admin,super_admin)");
+    if (error) { notify(`Bulk delete failed: ${error.message}`, "error"); return; }
+    notify(`Removed selected team members`);
+    load();
+  }
+
+  async function bulkDeleteAll() {
+    if (!orgId) { notify("Purge failed: no organization context", "error"); return; }
+    const { error } = await supabase.from("org_memberships")
+      .delete()
+      .eq("organization_id", orgId)
+      .not("role", "in", "(owner,admin,super_admin)");
+    if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
+    notify("All non-admin team members removed");
+    load();
+  }
+
   function toggleSort(key: SortKey) {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir("asc"); }
@@ -257,24 +286,6 @@ export default function TeamPage() {
       <PageHeader title="Team" subtitle="Manage user access grouped by role — search, sort and export.">
         <Button variant="ghost" onClick={exportCsv}><Download size={14} /> Export CSV</Button>
         <Button onClick={() => setShowInvite(true)}><UserPlus size={14} /> Invite User</Button>
-        <PurgeButton
-          itemLabel="non-admin team members"
-          canPurge={canPurge}
-          onPurge={async () => {
-            if (!orgId) return;
-            // Purge only non-privileged memberships. Preserves owner/admin/
-            // super_admin rows so the caller can't lock themselves (and their
-            // colleagues) out of the school with one click.
-            const { error } = await supabase
-              .from("org_memberships")
-              .delete()
-              .eq("organization_id", orgId)
-              .not("role", "in", "(owner,admin,super_admin)");
-            if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
-            notify("Non-admin team members removed");
-            load();
-          }}
-        />
       </PageHeader>
 
       {/* Duplicates panel (find-duplicates on Team page) */}
@@ -324,11 +335,17 @@ export default function TeamPage() {
       </div>
 
       {loading ? <LoadingSpinner /> : (
+        <>
+        <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="non-admin team members"
+          onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
+          onSelectAll={selectAll} onClearSelection={clearSelection}
+          canDelete={canDelete} canPurge={canPurge} />
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[#0F2A47] text-white">
+                  {canDelete && <th className="w-8 px-2 py-3" />}
                   <ThSort label="User"   sortKey="name"   currentKey={sortKey} currentDir={sortDir} onClick={toggleSort} />
                   <ThSort label="Email"  sortKey="email"  currentKey={sortKey} currentDir={sortDir} onClick={toggleSort} />
                   <ThSort label="Role"   sortKey="role"   currentKey={sortKey} currentDir={sortDir} onClick={toggleSort} />
@@ -340,10 +357,11 @@ export default function TeamPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={7}><EmptyState message={search ? "No matches for that search." : "No users in this group yet."} icon={<Users size={32} />} /></td></tr>
+                  <tr><td colSpan={canDelete ? 8 : 7}><EmptyState message={search ? "No matches for that search." : "No users in this group yet."} icon={<Users size={32} />} /></td></tr>
                 ) : (
                   filtered.map((u) => (
                     <tr key={u.id} className={cn("border-b border-gray-50 hover:bg-gray-50", !u.active && "opacity-60")}>
+                      <RowCheckbox id={u.id} selectedIds={selectedIds} onToggle={toggleSelect} canDelete={canDelete} />
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <div className="w-7 h-7 rounded-full bg-[#0F2A47] flex items-center justify-center shrink-0">
@@ -427,6 +445,7 @@ export default function TeamPage() {
             </table>
           </div>
         </Card>
+        </>
       )}
 
       {showInvite && (
