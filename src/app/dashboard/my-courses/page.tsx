@@ -44,16 +44,19 @@ export default function MyCoursesPage() {
     setLoading(true);
 
     let stuId: string | null = null;
-    const { data: byProfile } = await supabase.from("students").select("id").eq("profile_id", user.id).maybeSingle();
+    let bp = supabase.from("students").select("id").eq("profile_id", user.id);
+    if (orgId) bp = bp.eq("organization_id", orgId);
+    const { data: byProfile } = await bp.maybeSingle();
     stuId = (byProfile as { id: string } | null)?.id ?? null;
     if (!stuId) { setLoading(false); return; }
     setStudentId(stuId);
 
-    const [cRes, enRes, badgeRes] = await Promise.all([
-      supabase.from("lms_courses").select("id, title, description, cover_color, subject_id, class_id").eq("status", "published"),
-      supabase.from("lms_enrollments").select("id, course_id, status").eq("student_id", stuId),
-      supabase.from("lms_student_badges").select("id, earned_at, lms_badges(id, name, description, icon)").eq("student_id", stuId).order("earned_at", { ascending: false }),
-    ]);
+    let cQ = supabase.from("lms_courses").select("id, title, description, cover_color, subject_id, class_id").eq("status", "published");
+    const enQ = supabase.from("lms_enrollments").select("id, course_id, status").eq("student_id", stuId);
+    const bQ = supabase.from("lms_student_badges").select("id, earned_at, lms_badges(id, name, description, icon)").eq("student_id", stuId).order("earned_at", { ascending: false });
+    if (orgId) cQ = cQ.eq("organization_id", orgId);
+    // lms_enrollments + lms_student_badges derive tenancy via student_id — safe transitively.
+    const [cRes, enRes, badgeRes] = await Promise.all([cQ, enQ, bQ]);
     setAllCourses((cRes.data as CourseRow[]) ?? []);
     const enrollRows = (enRes.data as EnrollmentRow[]) ?? [];
     setEnrollments(enrollRows);
@@ -76,7 +79,7 @@ export default function MyCoursesPage() {
     }
 
     setLoading(false);
-  }, [user, supabase]);
+  }, [user, supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

@@ -17,7 +17,7 @@ interface QuestionRow { id: string; question_text: string; options: { id: string
 interface AssignmentRow { id: string; exam_id: string; available_from: string | null; available_to: string | null; }
 
 export default function MyExamsPage() {
-  const { user } = useAuth();
+  const { user, orgId } = useAuth();
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
   const [exams, setExams] = useState<ExamRow[]>([]);
@@ -36,28 +36,29 @@ export default function MyExamsPage() {
     // Find the student linked to this user. The canonical link is
     // students.profile_id; fall back to guardian_email for legacy rows.
     let stuData: { id: string; grade: string | null } | null = null;
-    const { data: byProfile } = await supabase.from("students")
-      .select("id, grade")
-      .eq("profile_id", user.id)
-      .maybeSingle();
+    let byProfileQ = supabase.from("students").select("id, grade").eq("profile_id", user.id);
+    if (orgId) byProfileQ = byProfileQ.eq("organization_id", orgId);
+    const { data: byProfile } = await byProfileQ.maybeSingle();
     stuData = byProfile as { id: string; grade: string | null } | null;
     if (!stuData) {
-      const { data: byEmail } = await supabase.from("students")
-        .select("id, grade")
-        .eq("guardian_email", user.email)
-        .eq("status", "active")
-        .limit(1).maybeSingle();
+      let byEmailQ = supabase.from("students").select("id, grade").eq("guardian_email", user.email).eq("status", "active");
+      if (orgId) byEmailQ = byEmailQ.eq("organization_id", orgId);
+      const { data: byEmail } = await byEmailQ.limit(1).maybeSingle();
       stuData = byEmail as { id: string; grade: string | null } | null;
     }
     if (!stuData) { setLoading(false); return; }
     setStudentId(stuData.id);
     setStudentGrade(stuData.grade);
 
-    const [examResp, attResp, assignResp] = await Promise.all([
-      supabase.from("exams").select("*").eq("status", "published"),
-      supabase.from("exam_attempts").select("*").eq("student_id", stuData.id).order("started_at", { ascending: false }),
-      supabase.from("cbt_exam_assignments").select("*").eq("student_id", stuData.id),
-    ]);
+    let examQ = supabase.from("exams").select("*").eq("status", "published");
+    let attQ = supabase.from("exam_attempts").select("*").eq("student_id", stuData.id).order("started_at", { ascending: false });
+    let assignQ = supabase.from("cbt_exam_assignments").select("*").eq("student_id", stuData.id);
+    if (orgId) {
+      examQ = examQ.eq("organization_id", orgId);
+      assignQ = assignQ.eq("organization_id", orgId);
+      // exam_attempts derives tenancy via student_id + exam_id — safe transitively.
+    }
+    const [examResp, attResp, assignResp] = await Promise.all([examQ, attQ, assignQ]);
     const allExams = (examResp.data ?? []) as ExamRow[];
     const attemptsData = (attResp.data ?? []) as AttemptRow[];
     const assignments = (assignResp.data ?? []) as AssignmentRow[];
@@ -87,7 +88,7 @@ export default function MyExamsPage() {
     setExams(myExams);
     setAttempts(attemptsData);
     setLoading(false);
-  }, [user, supabase]);
+  }, [user, supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

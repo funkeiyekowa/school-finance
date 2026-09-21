@@ -28,18 +28,20 @@ interface Ann {
 export default function AnnouncementPrintPage() {
   const params = useParams<{ id: string }>();
   const supabase = useMemo(() => createClient(), []);
-  const { profile } = useAuth();
+  const { profile, orgId } = useAuth();
   const branding = useBranding();
   const [ann, setAnn] = useState<Ann | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("announcements").select("*").eq("id", params.id).maybeSingle();
+      let q = supabase.from("announcements").select("*").eq("id", params.id);
+      if (orgId) q = q.eq("organization_id", orgId);
+      const { data } = await q.maybeSingle();
       setAnn((data as Ann) ?? null);
       setLoading(false);
     })();
-  }, [supabase, params.id]);
+  }, [supabase, params.id, orgId]);
 
   if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (!ann) return <div className="p-8 text-center text-gray-500">Announcement not found.</div>;

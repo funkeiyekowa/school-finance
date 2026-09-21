@@ -21,7 +21,7 @@ interface SuggestedMatch {
 }
 
 export default function ReconciliationPage() {
-  const { canEdit, profile } = useAuth();
+  const { canEdit, profile, orgId } = useAuth();
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
   const [bankTxns, setBankTxns] = useState<BankTransaction[]>([]);
@@ -34,16 +34,20 @@ export default function ReconciliationPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [btRes, incRes, expRes] = await Promise.all([
-      supabase.from("bank_transactions").select("*").order("date", { ascending: false }),
-      supabase.from("income_entries").select("*").eq("reconciled", false).order("date", { ascending: false }),
-      supabase.from("expense_entries").select("*").eq("reconciled", false).order("date", { ascending: false }),
-    ]);
+    let btQ = supabase.from("bank_transactions").select("*").order("date", { ascending: false });
+    let incQ = supabase.from("income_entries").select("*").eq("reconciled", false).order("date", { ascending: false });
+    let expQ = supabase.from("expense_entries").select("*").eq("reconciled", false).order("date", { ascending: false });
+    if (orgId) {
+      btQ = btQ.eq("organization_id", orgId);
+      incQ = incQ.eq("organization_id", orgId);
+      expQ = expQ.eq("organization_id", orgId);
+    }
+    const [btRes, incRes, expRes] = await Promise.all([btQ, incQ, expQ]);
     setBankTxns(btRes.data ?? []);
     setIncome(incRes.data ?? []);
     setExpenses(expRes.data ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

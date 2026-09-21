@@ -12,6 +12,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { useToast } from "@/lib/hooks/useToast";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -55,6 +56,7 @@ export default function LeadsPage() {
 
 function LeadsPageInner() {
   const supabase = useMemo(() => createClient(), []);
+  const { orgId } = useAuth();
   const searchParams = useSearchParams();
   const { notify, ToastHost } = useToast();
 
@@ -70,11 +72,13 @@ function LeadsPageInner() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error: err } = await supabase
+    let q = supabase
       .from("website_submissions")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(500);
+    if (orgId) q = q.eq("organization_id", orgId);
+    const { data, error: err } = await q;
 
     if (err) {
       setError(
@@ -87,7 +91,7 @@ function LeadsPageInner() {
       setRows((data ?? []) as Submission[]);
     }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

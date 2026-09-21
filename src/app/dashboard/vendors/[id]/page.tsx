@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { fmtMoney, fmtDate, cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
@@ -14,20 +15,24 @@ export default function VendorDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const supabase = createClient();
+  const { orgId } = useAuth();
   const [vendor, setVendor] = useState<Vendor | null>(null);
   const [history, setHistory] = useState<ExpenseEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [venRes, histRes] = await Promise.all([
-      supabase.from("vendors").select("*").eq("id", id).single(),
-      supabase.from("expense_entries").select("*").eq("vendor_id", id).order("date", { ascending: false }),
-    ]);
+    let venQ = supabase.from("vendors").select("*").eq("id", id);
+    let histQ = supabase.from("expense_entries").select("*").eq("vendor_id", id).order("date", { ascending: false });
+    if (orgId) {
+      venQ = venQ.eq("organization_id", orgId);
+      histQ = histQ.eq("organization_id", orgId);
+    }
+    const [venRes, histRes] = await Promise.all([venQ.single(), histQ]);
     setVendor(venRes.data);
     setHistory(histRes.data ?? []);
     setLoading(false);
-  }, [id, supabase]);
+  }, [id, supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 
