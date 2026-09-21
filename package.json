@@ -19,7 +19,7 @@
     "test:login-context": "tsx src/lib/tests/login-context.test.ts",
     "test:timetable": "tsx src/lib/tests/timetable-authorization.test.ts",
     "test:timetable-setup": "tsx src/lib/tests/timetable-setup.test.ts",
-    "test:db": "tsx src/lib/tests/db/automation-engine.db.test.ts"
+    "test:db": "tsx src/lib/tests/db/notifications-broadcast.db.test.ts && tsx src/lib/tests/db/automation-engine.db.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
@@ -32,6 +32,7 @@
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.33.0",
     "next": "16.3.3",
+    "nodemailer": "^10.0.10",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -42,6 +43,7 @@
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
     "eslint": "9.39.5",

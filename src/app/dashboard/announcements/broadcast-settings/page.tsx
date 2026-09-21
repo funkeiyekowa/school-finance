@@ -53,10 +53,19 @@ const SMS_PROVIDERS: { id: string; label: string; help: string; keyLabel: string
   { id: "webhook", label: "Custom webhook", help: "Point at your own HTTP endpoint that accepts {to, message} and sends the SMS itself.", keyLabel: "Webhook secret / API key (optional)", extraFields: [{ key: "webhook_url", label: "Webhook URL", placeholder: "https://..." }] },
 ];
 
-const EMAIL_PROVIDERS: { id: string; label: string; help: string; keyLabel: string }[] = [
+const EMAIL_PROVIDERS: { id: string; label: string; help: string; keyLabel: string; extraFields?: { key: string; label: string; placeholder?: string }[] }[] = [
   { id: "resend", label: "Resend", help: "Developer-friendly transactional email. Recommended for most schools.", keyLabel: "Resend API Key" },
   { id: "sendgrid", label: "SendGrid", help: "Widely used transactional email provider.", keyLabel: "SendGrid API Key" },
-  { id: "smtp", label: "Custom SMTP", help: "Any SMTP server your school already has (Google Workspace, Zoho Mail, cPanel hosting, etc.)", keyLabel: "SMTP password" },
+  {
+    id: "smtp", label: "Custom SMTP",
+    help: "Any SMTP server your school already has (Google Workspace, Zoho Mail, cPanel hosting, etc.)",
+    keyLabel: "SMTP password",
+    extraFields: [
+      { key: "host", label: "SMTP host", placeholder: "smtp.gmail.com" },
+      { key: "port", label: "SMTP port", placeholder: "587" },
+      { key: "username", label: "SMTP username", placeholder: "school@yourschool.com" },
+    ],
+  },
 ];
 
 export default function BroadcastSettingsPage() {
@@ -80,6 +89,7 @@ export default function BroadcastSettingsPage() {
   const [emailFromName, setEmailFromName] = useState("");
   const [emailKey, setEmailKey] = useState("");
   const [emailShowKey, setEmailShowKey] = useState(false);
+  const [emailExtra, setEmailExtra] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     if (!orgId) return;
@@ -162,6 +172,7 @@ export default function BroadcastSettingsPage() {
         emailProvider: emailProvider || "",
         emailFromAddress,
         emailFromName,
+        emailExtra,
         ...(emailKey.trim() ? { emailApiKey: emailKey.trim() } : {}),
       }),
     });
@@ -181,7 +192,7 @@ export default function BroadcastSettingsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ organizationId: orgId, emailProvider: "", emailApiKey: "" }),
     });
-    setEmailProvider(""); setEmailFromAddress(""); setEmailFromName(""); setEmailKey("");
+    setEmailProvider(""); setEmailFromAddress(""); setEmailFromName(""); setEmailKey(""); setEmailExtra({});
     setSaving(null);
     await load();
   }
@@ -209,9 +220,8 @@ export default function BroadcastSettingsPage() {
           <Info size={15} className="text-blue-600 mt-0.5 shrink-0" />
           <p className="text-xs text-blue-800">
             The in-app inbox and WhatsApp/CSV broadcast tools on the Announcements page work today with
-            no setup. SMS and email need your own provider account below — saving your key here stores
-            it securely, but actual sending goes live once that provider is wired up on our end using
-            these credentials.
+            no setup. SMS and email need your own provider account below — once saved, the Broadcast
+            button on an announcement can send through it immediately.
           </p>
         </CardContent>
       </Card>
@@ -316,6 +326,15 @@ export default function BroadcastSettingsPage() {
                 <Input label="From address" type="email" value={emailFromAddress} onChange={(e) => setEmailFromAddress(e.target.value)} placeholder="school@yourschool.com" />
                 <Input label="From name" value={emailFromName} onChange={(e) => setEmailFromName(e.target.value)} placeholder="Your School Name" />
               </div>
+              {selectedEmail.extraFields?.map((f) => (
+                <Input
+                  key={f.key}
+                  label={f.label}
+                  placeholder={f.placeholder}
+                  value={emailExtra[f.key] ?? ""}
+                  onChange={(e) => setEmailExtra((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                />
+              ))}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">{selectedEmail.keyLabel}</label>
                 <div className="relative">
