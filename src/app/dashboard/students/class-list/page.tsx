@@ -49,6 +49,7 @@ function Inner() {
       let q = supabase.from("students")
         .select("id, full_name, student_code, grade, gender, date_of_birth, guardian_name, guardian_phone")
         .eq("status", "active");
+      if (orgId) q = q.eq("organization_id", orgId);
       if (gradeFilter) q = q.eq("grade", gradeFilter);
       const { data } = await q.order("full_name");
       setRows((data as Student[]) ?? []);

@@ -66,14 +66,17 @@ export default function AutomationsPage() {
   });
 
   const load = useCallback(async () => {
-    const [rRes, lRes] = await Promise.all([
-      supabase.from("automation_rules").select("*").order("priority", { ascending: false }).order("created_at", { ascending: false }),
-      supabase.from("automation_logs").select("*").order("created_at", { ascending: false }).limit(50),
-    ]);
+    let rQ = supabase.from("automation_rules").select("*").order("priority", { ascending: false }).order("created_at", { ascending: false });
+    let lQ = supabase.from("automation_logs").select("*").order("created_at", { ascending: false }).limit(50);
+    if (orgId) {
+      rQ = rQ.eq("organization_id", orgId);
+      lQ = lQ.eq("organization_id", orgId);
+    }
+    const [rRes, lRes] = await Promise.all([rQ, lQ]);
     setRules(rRes.data as RuleRow[] ?? []);
     setLogs(lRes.data as LogRow[] ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

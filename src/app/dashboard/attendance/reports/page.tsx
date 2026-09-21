@@ -52,7 +52,7 @@ function defaultDateRange() {
 }
 
 export default function AttendanceReportsPage() {
-  const { user } = useAuth();
+  const { user, orgId } = useAuth();
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [classId, setClassId] = useState("");
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
@@ -80,12 +80,12 @@ export default function AttendanceReportsPage() {
     setCsvExportEnabled(cfgRow?.attendance_csv_export_enabled ?? true);
 
     let q = supabase.from("classes").select("id, name").order("name");
+    if (orgId) q = q.eq("organization_id", orgId);
 
     if (role === "teacher") {
-      const { data: asgn } = await supabase
-        .from("teacher_assignments")
-        .select("class_id")
-        .eq("user_id", user.id);
+      let asgnQ = supabase.from("teacher_assignments").select("class_id").eq("user_id", user.id);
+      if (orgId) asgnQ = asgnQ.eq("organization_id", orgId);
+      const { data: asgn } = await asgnQ;
       const ids = (asgn ?? []).map((a: { class_id: string }) => a.class_id);
       if (ids.length === 0) { setClasses([]); return; }
       q = q.in("id", ids);
@@ -95,7 +95,7 @@ export default function AttendanceReportsPage() {
     const rows = (data ?? []) as ClassRow[];
     setClasses(rows);
     if (rows.length > 0 && !classId) setClassId(rows[0].id);
-  }, [user, classId]);
+  }, [user, classId, orgId]);
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
 

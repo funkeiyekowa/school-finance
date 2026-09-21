@@ -27,10 +27,13 @@ export default function VendorsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [venRes, expRes] = await Promise.all([
-      supabase.from("vendors").select("*").order("name"),
-      supabase.from("expense_entries").select("vendor_id, amount"),
-    ]);
+    let venQ = supabase.from("vendors").select("*").order("name");
+    let expQ = supabase.from("expense_entries").select("vendor_id, amount");
+    if (orgId) {
+      venQ = venQ.eq("organization_id", orgId);
+      expQ = expQ.eq("organization_id", orgId);
+    }
+    const [venRes, expRes] = await Promise.all([venQ, expQ]);
     setVendors(venRes.data ?? []);
     const totals: Record<string, number> = {};
     (expRes.data ?? []).forEach(e => {
@@ -38,7 +41,7 @@ export default function VendorsPage() {
     });
     setVendorTotals(totals);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

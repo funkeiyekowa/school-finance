@@ -110,14 +110,16 @@ export default function AdmissionsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    let q = supabase
       .from("admission_applications")
       .select("*")
       .order("created_at", { ascending: false });
+    if (orgId) q = q.eq("organization_id", orgId);
+    const { data, error } = await q;
     if (error) notify(`Could not load applications: ${error.message}`, "error");
     setRows((data ?? []) as Application[]);
     setLoading(false);
-  }, [supabase, notify]);
+  }, [supabase, notify, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

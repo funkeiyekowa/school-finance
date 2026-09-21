@@ -10,6 +10,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { useBranding } from "@/lib/hooks/useBranding";
 import { fmtDate } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
@@ -26,6 +27,7 @@ interface Staff { id: string; full_name: string; }
 export default function HostelRosterPage() {
   const params = useParams<{ houseId: string }>();
   const supabase = useMemo(() => createClient(), []);
+  const { orgId } = useAuth();
   const branding = useBranding();
   const [house, setHouse] = useState<House | null>(null);
   const [rows, setRows] = useState<{ room: Room; bed: Bed; alloc: Alloc | null; student: Student | null }[]>([]);
@@ -34,24 +36,30 @@ export default function HostelRosterPage() {
 
   useEffect(() => {
     (async () => {
-      const { data: h } = await supabase.from("hostel_houses").select("*").eq("id", params.houseId).maybeSingle();
+      let houseQ = supabase.from("hostel_houses").select("*").eq("id", params.houseId);
+      if (orgId) houseQ = houseQ.eq("organization_id", orgId);
+      const { data: h } = await houseQ.maybeSingle();
       const hs = h as House | null;
       setHouse(hs);
       if (!hs) { setLoading(false); return; }
-      const [{ data: rooms }, { data: allBeds }, { data: allocs }] = await Promise.all([
-        supabase.from("hostel_rooms").select("*").eq("house_id", hs.id).order("room_number"),
-        supabase.from("hostel_beds").select("*"),
-        supabase.from("hostel_allocations").select("*").eq("status", "active"),
-      ]);
+      let roomQ = supabase.from("hostel_rooms").select("*").eq("house_id", hs.id).order("room_number");
+      let bedQ = supabase.from("hostel_beds").select("*");
+      let allocQ = supabase.from("hostel_allocations").select("*").eq("status", "active");
+      if (orgId) {
+        roomQ = roomQ.eq("organization_id", orgId);
+        bedQ = bedQ.eq("organization_id", orgId);
+        allocQ = allocQ.eq("organization_id", orgId);
+      }
+      const [{ data: rooms }, { data: allBeds }, { data: allocs }] = await Promise.all([roomQ, bedQ, allocQ]);
       const roomList = (rooms as Room[]) ?? [];
       const roomIds = new Set(roomList.map(r => r.id));
       const beds = ((allBeds as Bed[]) ?? []).filter(b => roomIds.has(b.room_id));
       const bedIds = new Set(beds.map(b => b.id));
       const houseAllocs = ((allocs as Alloc[]) ?? []).filter(a => bedIds.has(a.bed_id));
       const studentIds = houseAllocs.map(a => a.student_id);
-      const { data: st } = studentIds.length
-        ? await supabase.from("students").select("id, full_name, student_code, grade, guardian_phone").in("id", studentIds)
-        : { data: [] };
+      let stQ = studentIds.length ? supabase.from("students").select("id, full_name, student_code, grade, guardian_phone").in("id", studentIds) : null;
+      if (stQ && orgId) stQ = stQ.eq("organization_id", orgId);
+      const { data: st } = stQ ? await stQ : { data: [] };
       const stMap = new Map(((st as Student[]) ?? []).map(s => [s.id, s]));
       const allocByBed = new Map(houseAllocs.map(a => [a.bed_id, a]));
       const roomById = new Map(roomList.map(r => [r.id, r]));
@@ -65,12 +73,14 @@ export default function HostelRosterPage() {
         });
       setRows(rows);
       if (hs.house_parent_staff_id) {
-        const { data: p } = await supabase.from("staff_members").select("id, full_name").eq("id", hs.house_parent_staff_id).maybeSingle();
+        let pQ = supabase.from("staff_members").select("id, full_name").eq("id", hs.house_parent_staff_id);
+        if (orgId) pQ = pQ.eq("organization_id", orgId);
+        const { data: p } = await pQ.maybeSingle();
         setParent(p as Staff ?? null);
       }
       setLoading(false);
     })();
-  }, [supabase, params.houseId]);
+  }, [supabase, params.houseId, orgId]);
 
   if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (!house) return <div className="p-8 text-center text-gray-500">House not found.</div>;

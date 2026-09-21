@@ -59,10 +59,12 @@ export default function MyGrievancesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    let gq = supabase
       .from("grievances")
       .select("*")
       .order("created_at", { ascending: false });
+    if (orgId) gq = gq.eq("organization_id", orgId);
+    const { data, error } = await gq;
     if (error) notify(`Could not load your grievances: ${error.message}`, "error");
     setRows((data ?? []) as Grievance[]);
 
@@ -80,7 +82,7 @@ export default function MyGrievancesPage() {
       );
     }
     setLoading(false);
-  }, [supabase, notify]);
+  }, [supabase, notify, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

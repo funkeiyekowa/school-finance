@@ -197,18 +197,23 @@ export default function CbtPage() {
   const [copiedLink, setCopiedLink] = useState(false);
 
   const load = useCallback(async () => {
-    const [subRes, clsRes, qRes, exRes] = await Promise.all([
-      supabase.from("subjects").select("id, name, short_code").eq("active", true).order("name"),
-      supabase.from("classes").select("id, name").eq("active", true).order("sequence"),
-      supabase.from("questions").select("*").eq("active", true).order("created_at", { ascending: false }),
-      supabase.from("exams").select("*").order("created_at", { ascending: false }),
-    ]);
+    let subQ = supabase.from("subjects").select("id, name, short_code").eq("active", true).order("name");
+    let clsQ = supabase.from("classes").select("id, name").eq("active", true).order("sequence");
+    let qQ = supabase.from("questions").select("*").eq("active", true).order("created_at", { ascending: false });
+    let exQ = supabase.from("exams").select("*").order("created_at", { ascending: false });
+    if (orgId) {
+      subQ = subQ.eq("organization_id", orgId);
+      clsQ = clsQ.eq("organization_id", orgId);
+      qQ = qQ.eq("organization_id", orgId);
+      exQ = exQ.eq("organization_id", orgId);
+    }
+    const [subRes, clsRes, qRes, exRes] = await Promise.all([subQ, clsQ, qQ, exQ]);
     setSubjects(subRes.data as SubjectRow[] ?? []);
     setClasses(clsRes.data as ClassRow[] ?? []);
     setQuestions(qRes.data as QuestionRow[] ?? []);
     setExams(exRes.data as ExamRow[] ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

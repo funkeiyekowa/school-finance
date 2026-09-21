@@ -34,7 +34,7 @@ const MONTHS = ["January","February","March","April","May","June","July","August
 export default function WelcomePackPage() {
   const params = useParams<{ id: string }>();
   const supabase = useMemo(() => createClient(), []);
-  const { profile } = useAuth();
+  const { profile, orgId } = useAuth();
   const branding = useBranding();
 
   const [student, setStudent] = useState<Student | null>(null);
@@ -44,19 +44,24 @@ export default function WelcomePackPage() {
 
   useEffect(() => {
     (async () => {
-      const { data: s } = await supabase.from("students").select("*").eq("id", params.id).maybeSingle();
+      let sq = supabase.from("students").select("*").eq("id", params.id);
+      if (orgId) sq = sq.eq("organization_id", orgId);
+      const { data: s } = await sq.maybeSingle();
       const stu = s as Student | null;
       setStudent(stu);
       if (!stu) { setLoading(false); return; }
-      const [f, e] = await Promise.all([
-        supabase.from("fee_schedules").select("id, name, amount, category, grade, term").eq("active", true),
-        supabase.from("website_events").select("id, title, starts_at, location, category, all_day").neq("status", "cancelled").gte("starts_at", new Date().toISOString().slice(0, 10)).order("starts_at").limit(25),
-      ]);
+      let fq = supabase.from("fee_schedules").select("id, name, amount, category, grade, term").eq("active", true);
+      let eq_ = supabase.from("website_events").select("id, title, starts_at, location, category, all_day").neq("status", "cancelled").gte("starts_at", new Date().toISOString().slice(0, 10)).order("starts_at").limit(25);
+      if (orgId) {
+        fq = fq.eq("organization_id", orgId);
+        eq_ = eq_.eq("organization_id", orgId);
+      }
+      const [f, e] = await Promise.all([fq, eq_]);
       setFees(((f.data as Fee[]) ?? []).filter(fee => !fee.grade || fee.grade === stu.grade));
       setEvents((e.data as Event[]) ?? []);
       setLoading(false);
     })();
-  }, [supabase, params.id]);
+  }, [supabase, params.id, orgId]);
 
   if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (!student) return <div className="p-8 text-center text-gray-500">Student not found.</div>;

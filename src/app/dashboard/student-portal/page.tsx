@@ -18,7 +18,7 @@ interface Attempt { id: string; exam_id: string; total_score: number | null; sta
 interface ReportCard { id: string; term: string; average_score: number; grade_overall: string | null; published: boolean; }
 
 export default function StudentPortalPage() {
-  const { user, profile, org } = useAuth();
+  const { user, profile, org, orgId } = useAuth();
   const router = useRouter();
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
@@ -45,17 +45,20 @@ export default function StudentPortalPage() {
       student = ctx[0] as Student;
     }
     if (!student) {
-      const { data: stu } = await supabase
+      let stuQ = supabase
         .from("students")
         .select("*")
-        .eq("profile_id", user.id)
-        .maybeSingle();
+        .eq("profile_id", user.id);
+      if (orgId) stuQ = stuQ.eq("organization_id", orgId);
+      const { data: stu } = await stuQ.maybeSingle();
       student = stu as Student | null;
     }
     if (!student) {
       // fallback by guardian_email (legacy rows)
-      const { data } = await supabase.from("students").select("*")
-        .eq("guardian_email", user.email).eq("status", "active").maybeSingle();
+      let q = supabase.from("students").select("*")
+        .eq("guardian_email", user.email).eq("status", "active");
+      if (orgId) q = q.eq("organization_id", orgId);
+      const { data } = await q.maybeSingle();
       student = data as Student | null;
     }
 
@@ -65,13 +68,16 @@ export default function StudentPortalPage() {
     if (student.must_change_password) setShowChangePassword(true);
 
     // Load exams assigned (via class or direct assignment)
-    const [assign, published, att, rc] = await Promise.all([
-      supabase.from("cbt_exam_assignments").select("*").eq("student_id", student.id),
-      supabase.from("exams").select("*").eq("status", "published"),
-      supabase.from("exam_attempts").select("id, exam_id, total_score, status").eq("student_id", student.id),
-      supabase.from("report_cards").select("id, term, average_score, grade_overall, published")
-        .eq("student_id", student.id).eq("published", true),
-    ]);
+    let assignQ = supabase.from("cbt_exam_assignments").select("*").eq("student_id", student.id);
+    if (orgId) assignQ = assignQ.eq("organization_id", orgId);
+    let publishedQ = supabase.from("exams").select("*").eq("status", "published");
+    if (orgId) publishedQ = publishedQ.eq("organization_id", orgId);
+    let attQ = supabase.from("exam_attempts").select("id, exam_id, total_score, status").eq("student_id", student.id);
+    if (orgId) attQ = attQ.eq("organization_id", orgId);
+    let rcQ = supabase.from("report_cards").select("id, term, average_score, grade_overall, published")
+      .eq("student_id", student.id).eq("published", true);
+    if (orgId) rcQ = rcQ.eq("organization_id", orgId);
+    const [assign, published, att, rc] = await Promise.all([assignQ, publishedQ, attQ, rcQ]);
 
     const assignments = (assign.data ?? []) as ExamAssignment[];
     const publishedExams = (published.data ?? []) as Exam[];
@@ -84,7 +90,7 @@ export default function StudentPortalPage() {
     setAttempts((att.data ?? []) as Attempt[]);
     setReportCards((rc.data ?? []) as ReportCard[]);
     setLoading(false);
-  }, [user, supabase]);
+  }, [user, supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

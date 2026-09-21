@@ -115,25 +115,27 @@ export default function StaffPage() {
 
   // Load departments
   const loadDepartments = useCallback(async () => {
-    const { data, error } = await supabase
+    let query = supabase
       .from("departments")
       .select("id, name")
-      .eq("active", true)
-      .order("name");
+      .eq("active", true);
+    if (orgId) query = query.eq("organization_id", orgId);
+    const { data, error } = await query.order("name");
     if (error) { setLoadError(error.message); return; }
     setDepartments((data as DeptRow[]) ?? []);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   // Load classes (for the Class Teacher dropdown)
   const loadClasses = useCallback(async () => {
-    const { data, error } = await supabase
+    let query = supabase
       .from("classes")
       .select("id, name")
-      .eq("active", true)
-      .order("sequence");
+      .eq("active", true);
+    if (orgId) query = query.eq("organization_id", orgId);
+    const { data, error } = await query.order("sequence");
     if (error) { setLoadError(error.message); return; }
     setClasses((data as ClassRow[]) ?? []);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   // Load current class_id -> staff_id class-teacher assignments
   const loadClassTeachers = useCallback(async () => {

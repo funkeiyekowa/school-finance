@@ -12,6 +12,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { useBranding } from "@/lib/hooks/useBranding";
 import { fmtMoney, fmtDateTime } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
@@ -42,6 +43,7 @@ export default function BulkPayslipsPrintPage() {
   const singleSlipId = searchParams.get("slip");
   const autoPrint = searchParams.get("auto") === "1";
   const supabase = useMemo(() => createClient(), []);
+  const { orgId } = useAuth();
   const branding = useBranding();
   const [hasAutoPrinted, setHasAutoPrinted] = useState(false);
 
@@ -51,16 +53,19 @@ export default function BulkPayslipsPrintPage() {
 
   useEffect(() => {
     (async () => {
-      const [runRes, psRes] = await Promise.all([
-        supabase.from("payroll_runs").select("*").eq("id", runId).maybeSingle(),
-        supabase.from("payroll_payslips").select("*").eq("run_id", runId).order("staff_name"),
-      ]);
+      let runQ = supabase.from("payroll_runs").select("*").eq("id", runId);
+      let psQ = supabase.from("payroll_payslips").select("*").eq("run_id", runId).order("staff_name");
+      if (orgId) {
+        runQ = runQ.eq("organization_id", orgId);
+        psQ = psQ.eq("organization_id", orgId);
+      }
+      const [runRes, psRes] = await Promise.all([runQ.maybeSingle(), psQ]);
       setRun((runRes.data as RunRow) ?? null);
       const allSlips = (psRes.data as PayslipRow[]) ?? [];
       setPayslips(singleSlipId ? allSlips.filter((s) => s.id === singleSlipId) : allSlips);
       setLoading(false);
     })();
-  }, [supabase, runId, singleSlipId]);
+  }, [supabase, runId, singleSlipId, orgId]);
 
   useEffect(() => {
     if (!autoPrint || hasAutoPrinted || loading || !branding || payslips.length === 0) return;

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { fmtMoney, fmtDate, fmtDateTime, exportCSV } from "@/lib/utils";
 import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -29,6 +30,7 @@ type ReportId = (typeof REPORTS)[number]["id"];
 
 export default function ReportsPage() {
   const supabase = createClient();
+  const { orgId } = useAuth();
   const [activeReport, setActiveReport] = useState<ReportId>("income_summary");
   const [income, setIncome] = useState<IncomeEntry[]>([]);
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
@@ -40,18 +42,23 @@ export default function ReportsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [incRes, expRes, studRes, feeRes] = await Promise.all([
-      supabase.from("income_entries").select("*").order("date"),
-      supabase.from("expense_entries").select("*").order("date"),
-      supabase.from("students").select("*").eq("status", "active"),
-      supabase.from("fee_schedules").select("*").eq("active", true),
-    ]);
+    let incQ = supabase.from("income_entries").select("*").order("date");
+    let expQ = supabase.from("expense_entries").select("*").order("date");
+    let studQ = supabase.from("students").select("*").eq("status", "active");
+    let feeQ = supabase.from("fee_schedules").select("*").eq("active", true);
+    if (orgId) {
+      incQ = incQ.eq("organization_id", orgId);
+      expQ = expQ.eq("organization_id", orgId);
+      studQ = studQ.eq("organization_id", orgId);
+      feeQ = feeQ.eq("organization_id", orgId);
+    }
+    const [incRes, expRes, studRes, feeRes] = await Promise.all([incQ, expQ, studQ, feeQ]);
     setIncome(incRes.data ?? []);
     setExpenses(expRes.data ?? []);
     setStudents(studRes.data ?? []);
     setFees(feeRes.data ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

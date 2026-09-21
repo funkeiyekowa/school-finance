@@ -37,7 +37,7 @@ interface StudentFinance extends Student {
 }
 
 export default function StudentFinancePage() {
-  const { isAdmin, canEdit } = useAuth();
+  const { isAdmin, canEdit, orgId } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const [students, setStudents] = useState<StudentFinance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,11 +47,15 @@ export default function StudentFinancePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [studRes, incRes, feeRes] = await Promise.all([
-      supabase.from("students").select("*").eq("status", "active").order("full_name"),
-      supabase.from("income_entries").select("student_id, amount, date"),
-      supabase.from("fee_schedules").select("*").eq("active", true),
-    ]);
+    let studQ = supabase.from("students").select("*").eq("status", "active").order("full_name");
+    let incQ = supabase.from("income_entries").select("student_id, amount, date");
+    let feeQ = supabase.from("fee_schedules").select("*").eq("active", true);
+    if (orgId) {
+      studQ = studQ.eq("organization_id", orgId);
+      incQ = incQ.eq("organization_id", orgId);
+      feeQ = feeQ.eq("organization_id", orgId);
+    }
+    const [studRes, incRes, feeRes] = await Promise.all([studQ, incQ, feeQ]);
     const allStudents: Student[] = studRes.data ?? [];
     const income = incRes.data ?? [];
     const fees: FeeSchedule[] = feeRes.data ?? [];
@@ -83,7 +87,7 @@ export default function StudentFinancePage() {
 
     setStudents(withFinance);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

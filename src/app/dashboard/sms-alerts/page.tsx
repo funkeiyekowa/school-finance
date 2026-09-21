@@ -59,16 +59,20 @@ export default function SmsAlertsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [alertRes, studRes, feeRes] = await Promise.all([
-      supabase.from("sms_inbox").select("*").order("received_at", { ascending: false }).order("created_at", { ascending: false }),
-      supabase.from("students").select("*").eq("status", "active").order("full_name"),
-      supabase.from("fee_schedules").select("*").eq("active", true),
-    ]);
+    let alertQuery = supabase.from("sms_inbox").select("*").order("received_at", { ascending: false }).order("created_at", { ascending: false });
+    let studQuery = supabase.from("students").select("*").eq("status", "active").order("full_name");
+    let feeQuery = supabase.from("fee_schedules").select("*").eq("active", true);
+    if (orgId) {
+      alertQuery = alertQuery.eq("organization_id", orgId);
+      studQuery = studQuery.eq("organization_id", orgId);
+      feeQuery = feeQuery.eq("organization_id", orgId);
+    }
+    const [alertRes, studRes, feeRes] = await Promise.all([alertQuery, studQuery, feeQuery]);
     setAlerts(alertRes.data ?? []);
     setStudents(studRes.data ?? []);
     setFees(feeRes.data ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

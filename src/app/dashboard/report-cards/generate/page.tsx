@@ -76,18 +76,22 @@ export default function GenerateReportCardsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [st, yr, cl] = await Promise.all([
-      supabase.from("students").select("id, student_code, full_name, grade").eq("status", "active").order("full_name"),
-      supabase.from("academic_years").select("*").order("name", { ascending: false }),
-      supabase.from("classes").select("id, name").eq("active", true).order("sequence"),
-    ]);
+    let stQ = supabase.from("students").select("id, student_code, full_name, grade").eq("status", "active").order("full_name");
+    let yrQ = supabase.from("academic_years").select("*").order("name", { ascending: false });
+    let clQ = supabase.from("classes").select("id, name").eq("active", true).order("sequence");
+    if (orgId) {
+      stQ = stQ.eq("organization_id", orgId);
+      yrQ = yrQ.eq("organization_id", orgId);
+      clQ = clQ.eq("organization_id", orgId);
+    }
+    const [st, yr, cl] = await Promise.all([stQ, yrQ, clQ]);
     setStudents((st.data ?? []) as Student[]);
     setYears((yr.data ?? []) as AcademicYear[]);
     setClasses((cl.data ?? []) as ClassRow[]);
     const cur = (yr.data ?? []).find((y) => (y as { status: string }).status === "current");
     if (cur) setYearId((cur as { id: string }).id);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -165,21 +169,27 @@ export default function GenerateReportCardsPage() {
     // 1. Load shared reference data once (not per-student).
     // -----------------------------------------------------------------
     const selectedIdArr = Array.from(selectedIds);
-    const [atRes, gsRes, subRes, scoresRes, attRes] = await Promise.all([
-      supabase.from("assessment_types").select("id, name, short_code, max_score, sort_order").eq("active", true).order("sort_order"),
-      supabase.from("grading_scales").select("grade, label, min_score, max_score, sort_order").order("sort_order"),
-      supabase.from("subjects").select("id, name").eq("active", true),
-      supabase
-        .from("student_scores")
-        .select("student_id, subject_id, assessment_type_id, score")
-        .in("student_id", selectedIdArr)
-        .eq("academic_year_id", yearId)
-        .eq("term", term),
-      supabase
-        .from("attendance_records")
-        .select("student_id, status_code, date")
-        .in("student_id", selectedIdArr),
-    ]);
+    let atQ = supabase.from("assessment_types").select("id, name, short_code, max_score, sort_order").eq("active", true).order("sort_order");
+    let gsQ = supabase.from("grading_scales").select("grade, label, min_score, max_score, sort_order").order("sort_order");
+    let subQ = supabase.from("subjects").select("id, name").eq("active", true);
+    let scoresQ = supabase
+      .from("student_scores")
+      .select("student_id, subject_id, assessment_type_id, score")
+      .in("student_id", selectedIdArr)
+      .eq("academic_year_id", yearId)
+      .eq("term", term);
+    let attQ = supabase
+      .from("attendance_records")
+      .select("student_id, status_code, date")
+      .in("student_id", selectedIdArr);
+    if (orgId) {
+      atQ = atQ.eq("organization_id", orgId);
+      gsQ = gsQ.eq("organization_id", orgId);
+      subQ = subQ.eq("organization_id", orgId);
+      scoresQ = scoresQ.eq("organization_id", orgId);
+      attQ = attQ.eq("organization_id", orgId);
+    }
+    const [atRes, gsRes, subRes, scoresRes, attRes] = await Promise.all([atQ, gsQ, subQ, scoresQ, attQ]);
 
     const types = (atRes.data ?? []) as AssessmentType[];
     const scales = (gsRes.data ?? []) as GradingScale[];

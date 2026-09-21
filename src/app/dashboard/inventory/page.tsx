@@ -38,7 +38,9 @@ export default function InventoryPage() {
   const [showBulk, setShowBulk] = useState(false);
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.from("inventory_items").select("*").eq("active", true).order("name");
+    let q = supabase.from("inventory_items").select("*").eq("active", true).order("name");
+    if (orgId) q = q.eq("organization_id", orgId);
+    const { data, error } = await q;
     if (error) {
       setLoadError(error.message);
       setItems([]);
@@ -48,7 +50,7 @@ export default function InventoryPage() {
     setLoadError(null);
     setItems(data as ItemRow[] ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

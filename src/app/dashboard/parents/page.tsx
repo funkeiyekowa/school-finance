@@ -87,16 +87,20 @@ export default function ParentsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [pRes, sRes, lRes] = await Promise.all([
-      supabase.from("parent_profiles").select("*").order("full_name"),
-      supabase.from("students").select("id, full_name, student_code, grade").order("full_name"),
-      supabase.from("parent_student_links").select("id, parent_id, student_id"),
-    ]);
+    let pQ = supabase.from("parent_profiles").select("*").order("full_name");
+    let sQ = supabase.from("students").select("id, full_name, student_code, grade").order("full_name");
+    let lQ = supabase.from("parent_student_links").select("id, parent_id, student_id");
+    if (orgId) {
+      pQ = pQ.eq("organization_id", orgId);
+      sQ = sQ.eq("organization_id", orgId);
+      lQ = lQ.eq("organization_id", orgId);
+    }
+    const [pRes, sRes, lRes] = await Promise.all([pQ, sQ, lQ]);
     setParents((pRes.data ?? []) as ParentRow[]);
     setStudents((sRes.data ?? []) as StudentLite[]);
     setLinks((lRes.data ?? []) as LinkRow[]);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

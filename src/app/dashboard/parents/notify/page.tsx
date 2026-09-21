@@ -66,9 +66,9 @@ function Inner() {
     if (!orgId) return;
     (async () => {
       const [sRes, pRes, fRes] = await Promise.all([
-        supabase.from("students").select("id, student_code, full_name, grade, guardian_name, guardian_phone, guardian_email").eq("status", "active"),
-        supabase.from("income_entries").select("student_id, amount"),
-        supabase.from("fee_schedules").select("amount, grade").eq("active", true),
+        supabase.from("students").select("id, student_code, full_name, grade, guardian_name, guardian_phone, guardian_email").eq("status", "active").eq("organization_id", orgId),
+        supabase.from("income_entries").select("student_id, amount").eq("organization_id", orgId),
+        supabase.from("fee_schedules").select("amount, grade").eq("active", true).eq("organization_id", orgId),
       ]);
       setStudents((sRes.data as Student[]) ?? []);
       setPayments((pRes.data as Charge[]) ?? []);

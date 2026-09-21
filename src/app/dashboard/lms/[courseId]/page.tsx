@@ -82,13 +82,19 @@ export default function CourseDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [cRes, lRes, qRes, enRes, stuRes] = await Promise.all([
-      supabase.from("lms_courses").select("*").eq("id", courseId).maybeSingle(),
-      supabase.from("lms_lessons").select("*").eq("course_id", courseId).order("sort_order"),
-      supabase.from("lms_quizzes").select("*"),
-      supabase.from("lms_enrollments").select("*").eq("course_id", courseId).order("enrolled_at", { ascending: false }),
-      supabase.from("students").select("id, full_name, student_code, grade").eq("status", "active").order("full_name"),
-    ]);
+    let cQ = supabase.from("lms_courses").select("*").eq("id", courseId);
+    let lQ = supabase.from("lms_lessons").select("*").eq("course_id", courseId).order("sort_order");
+    let qQ = supabase.from("lms_quizzes").select("*");
+    let enQ = supabase.from("lms_enrollments").select("*").eq("course_id", courseId).order("enrolled_at", { ascending: false });
+    let stuQ = supabase.from("students").select("id, full_name, student_code, grade").eq("status", "active").order("full_name");
+    if (orgId) {
+      cQ = cQ.eq("organization_id", orgId);
+      lQ = lQ.eq("organization_id", orgId);
+      qQ = qQ.eq("organization_id", orgId);
+      enQ = enQ.eq("organization_id", orgId);
+      stuQ = stuQ.eq("organization_id", orgId);
+    }
+    const [cRes, lRes, qRes, enRes, stuRes] = await Promise.all([cQ.maybeSingle(), lQ, qQ, enQ, stuQ]);
     const c = cRes.data as CourseRow | null;
     setCourse(c);
     const lessonRows = (lRes.data as LessonRow[]) ?? [];
@@ -139,7 +145,7 @@ export default function CourseDetailPage() {
     }
 
     setLoading(false);
-  }, [supabase, courseId]);
+  }, [supabase, courseId, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

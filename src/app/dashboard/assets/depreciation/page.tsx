@@ -52,6 +52,7 @@ export default function AssetDepreciationPage() {
     (async () => {
       const { data } = await supabase.from("assets")
         .select("id, asset_code, name, category, purchase_date, purchase_cost, salvage_value, useful_life_years, depreciation_method, status")
+        .eq("organization_id", orgId)
         .neq("status", "disposed")
         .order("category").order("asset_code");
       setAssets((data as Asset[]) ?? []);

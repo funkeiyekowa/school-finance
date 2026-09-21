@@ -80,15 +80,26 @@ export default function HostelPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    let hQ = supabase.from("hostel_houses").select("*").order("name");
+    let rQ = supabase.from("hostel_rooms").select("*").order("room_number");
+    let bQ = supabase.from("hostel_beds").select("*").order("bed_label");
+    let aQ = supabase.from("hostel_allocations").select("*").order("checked_in_at", { ascending: false });
+    let vQ = supabase.from("hostel_visitor_log").select("*").order("signed_in_at", { ascending: false }).limit(200);
+    let iQ = supabase.from("hostel_incidents").select("*").order("created_at", { ascending: false });
+    let sQ = supabase.from("students").select("id, full_name, student_code, gender").eq("status", "active").order("full_name");
+    let stfQ = supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name");
+    if (orgId) {
+      hQ = hQ.eq("organization_id", orgId);
+      rQ = rQ.eq("organization_id", orgId);
+      bQ = bQ.eq("organization_id", orgId);
+      aQ = aQ.eq("organization_id", orgId);
+      vQ = vQ.eq("organization_id", orgId);
+      iQ = iQ.eq("organization_id", orgId);
+      sQ = sQ.eq("organization_id", orgId);
+      stfQ = stfQ.eq("organization_id", orgId);
+    }
     const [hRes, rRes, bRes, aRes, vRes, iRes, sRes, stfRes, statsRes] = await Promise.all([
-      supabase.from("hostel_houses").select("*").order("name"),
-      supabase.from("hostel_rooms").select("*").order("room_number"),
-      supabase.from("hostel_beds").select("*").order("bed_label"),
-      supabase.from("hostel_allocations").select("*").order("checked_in_at", { ascending: false }),
-      supabase.from("hostel_visitor_log").select("*").order("signed_in_at", { ascending: false }).limit(200),
-      supabase.from("hostel_incidents").select("*").order("created_at", { ascending: false }),
-      supabase.from("students").select("id, full_name, student_code, gender").eq("status", "active").order("full_name"),
-      supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name"),
+      hQ, rQ, bQ, aQ, vQ, iQ, sQ, stfQ,
       supabase.rpc("phase1_hostel_stats"),
     ]);
     setHouses((hRes.data as HouseRow[]) ?? []);
@@ -111,7 +122,7 @@ export default function HostelPage() {
       });
     }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

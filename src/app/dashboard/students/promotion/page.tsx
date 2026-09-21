@@ -49,18 +49,26 @@ export default function PromotionPage() {
   const [demotionReason, setDemotionReason] = useState("");
 
   const load = useCallback(async () => {
+    let classesQuery = supabase.from("classes").select("*").eq("active", true).order("sequence");
+    if (orgId) classesQuery = classesQuery.eq("organization_id", orgId);
+    let yearsQuery = supabase.from("academic_years").select("*").order("name", { ascending: false });
+    if (orgId) yearsQuery = yearsQuery.eq("organization_id", orgId);
+    let studentsQuery = supabase.from("students").select("*").eq("status", "active").order("full_name");
+    if (orgId) studentsQuery = studentsQuery.eq("organization_id", orgId);
+    let enrollmentsQuery = supabase.from("student_enrollments").select("*");
+    if (orgId) enrollmentsQuery = enrollmentsQuery.eq("organization_id", orgId);
     const [clsRes, yrRes, stuRes, enrRes] = await Promise.all([
-      supabase.from("classes").select("*").eq("active", true).order("sequence"),
-      supabase.from("academic_years").select("*").order("name", { ascending: false }),
-      supabase.from("students").select("*").eq("status", "active").order("full_name"),
-      supabase.from("student_enrollments").select("*"),
+      classesQuery,
+      yearsQuery,
+      studentsQuery,
+      enrollmentsQuery,
     ]);
     setClasses(clsRes.data as ClassRow[] ?? []);
     setYears(yrRes.data as YearRow[] ?? []);
     setStudents(stuRes.data as StudentRow[] ?? []);
     setEnrollments(enrRes.data as EnrollmentRow[] ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

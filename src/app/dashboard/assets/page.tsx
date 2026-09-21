@@ -91,14 +91,24 @@ export default function AssetsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    let aQ = supabase.from("assets").select("*").order("asset_code");
+    let asgQ = supabase.from("asset_assignments").select("*").order("assigned_at", { ascending: false });
+    let mQ = supabase.from("asset_maintenance").select("*").order("created_at", { ascending: false });
+    let dQ = supabase.from("asset_disposals").select("*").order("disposal_date", { ascending: false });
+    let sQ = supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name");
+    let vQ = supabase.from("vendors").select("id, name").order("name");
+    if (orgId) {
+      aQ = aQ.eq("organization_id", orgId);
+      asgQ = asgQ.eq("organization_id", orgId);
+      mQ = mQ.eq("organization_id", orgId);
+      dQ = dQ.eq("organization_id", orgId);
+      sQ = sQ.eq("organization_id", orgId);
+      vQ = vQ.eq("organization_id", orgId);
+    }
     const [aRes, bvRes, asgRes, mRes, dRes, sRes, vRes, statsRes] = await Promise.all([
-      supabase.from("assets").select("*").order("asset_code"),
+      aQ,
       supabase.rpc("phase1_assets_with_book_value"),
-      supabase.from("asset_assignments").select("*").order("assigned_at", { ascending: false }),
-      supabase.from("asset_maintenance").select("*").order("created_at", { ascending: false }),
-      supabase.from("asset_disposals").select("*").order("disposal_date", { ascending: false }),
-      supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name"),
-      supabase.from("vendors").select("id, name").order("name"),
+      asgQ, mQ, dQ, sQ, vQ,
       supabase.rpc("phase1_assets_stats"),
     ]);
     setAssets((aRes.data as AssetRow[]) ?? []);
@@ -121,7 +131,7 @@ export default function AssetsPage() {
       });
     }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

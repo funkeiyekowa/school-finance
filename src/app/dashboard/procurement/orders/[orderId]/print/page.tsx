@@ -33,7 +33,7 @@ interface Vendor {
 export default function PurchaseOrderPrintPage() {
   const params = useParams<{ orderId: string }>();
   const supabase = useMemo(() => createClient(), []);
-  const { profile } = useAuth();
+  const { profile, orgId } = useAuth();
   const branding = useBranding();
 
   const [order, setOrder] = useState<OrderRow | null>(null);
@@ -43,20 +43,22 @@ export default function PurchaseOrderPrintPage() {
 
   useEffect(() => {
     (async () => {
-      const [oRes, iRes] = await Promise.all([
-        supabase.from("procurement_orders").select("*").eq("id", params.orderId).maybeSingle(),
-        supabase.from("procurement_order_items").select("id, item_name, quantity_ordered, quantity_received, unit_cost").eq("order_id", params.orderId),
-      ]);
+      let oQ = supabase.from("procurement_orders").select("*").eq("id", params.orderId);
+      const iQ = supabase.from("procurement_order_items").select("id, item_name, quantity_ordered, quantity_received, unit_cost").eq("order_id", params.orderId);
+      if (orgId) oQ = oQ.eq("organization_id", orgId);
+      const [oRes, iRes] = await Promise.all([oQ.maybeSingle(), iQ]);
       const o = oRes.data as OrderRow | null;
       setOrder(o);
       setItems((iRes.data as OrderItemRow[]) ?? []);
       if (o?.vendor_id) {
-        const { data: v } = await supabase.from("vendors").select("*").eq("id", o.vendor_id).maybeSingle();
+        let vQ = supabase.from("vendors").select("*").eq("id", o.vendor_id);
+        if (orgId) vQ = vQ.eq("organization_id", orgId);
+        const { data: v } = await vQ.maybeSingle();
         setVendor(v as Vendor ?? null);
       }
       setLoading(false);
     })();
-  }, [supabase, params.orderId]);
+  }, [supabase, params.orderId, orgId]);
 
   if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (!order) return <div className="p-8 text-center text-gray-500">Purchase order not found.</div>;

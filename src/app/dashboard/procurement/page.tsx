@@ -77,14 +77,24 @@ export default function ProcurementPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    let rQ = supabase.from("procurement_requests").select("*").order("created_at", { ascending: false });
+    const riQ = supabase.from("procurement_request_items").select("*");
+    let oQ = supabase.from("procurement_orders").select("*").order("created_at", { ascending: false });
+    let sQ = supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name");
+    let dQ = supabase.from("departments").select("id, name").order("name");
+    let vQ = supabase.from("vendors").select("id, name, vendor_code").order("name");
+    let invQ = supabase.from("inventory_items").select("id, name").eq("active", true).order("name");
+    if (orgId) {
+      rQ = rQ.eq("organization_id", orgId);
+      oQ = oQ.eq("organization_id", orgId);
+      sQ = sQ.eq("organization_id", orgId);
+      dQ = dQ.eq("organization_id", orgId);
+      vQ = vQ.eq("organization_id", orgId);
+      invQ = invQ.eq("organization_id", orgId);
+      // procurement_request_items derives tenancy via request_id — safe transitively.
+    }
     const [rRes, riRes, oRes, sRes, dRes, vRes, invRes, statsRes] = await Promise.all([
-      supabase.from("procurement_requests").select("*").order("created_at", { ascending: false }),
-      supabase.from("procurement_request_items").select("*"),
-      supabase.from("procurement_orders").select("*").order("created_at", { ascending: false }),
-      supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name"),
-      supabase.from("departments").select("id, name").order("name"),
-      supabase.from("vendors").select("id, name, vendor_code").order("name"),
-      supabase.from("inventory_items").select("id, name").eq("active", true).order("name"),
+      rQ, riQ, oQ, sQ, dQ, vQ, invQ,
       supabase.rpc("phase1_procurement_stats"),
     ]);
     setRequests((rRes.data as RequestRow[]) ?? []);
@@ -104,7 +114,7 @@ export default function ProcurementPage() {
       });
     }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

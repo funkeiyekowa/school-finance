@@ -40,7 +40,7 @@ const TABS: { key: string; label: string; match: (g: Grievance) => boolean }[] =
 ];
 
 export default function GrievancesPage() {
-  const { profile, canEdit } = useAuth();
+  const { profile, canEdit, orgId } = useAuth();
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
 
@@ -55,24 +55,25 @@ export default function GrievancesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    let gq = supabase
       .from("grievances")
       .select("*")
       .neq("status", "draft")
       .order("created_at", { ascending: false });
+    if (orgId) gq = gq.eq("organization_id", orgId);
+    const { data, error } = await gq;
     if (error) notify(`Could not load grievances: ${error.message}`, "error");
     const list = (data ?? []) as Grievance[];
     setRows(list);
 
-    // Resolve the students a grievance is about, for display only.
     const ids = Array.from(new Set(list.map((g) => g.student_id).filter(Boolean))) as string[];
     if (ids.length) {
-      // full_name is NOT NULL on students; first_name/last_name were added
-      // later and can be null, so compose from them only as a fallback.
-      const { data: studs, error: studErr } = await supabase
+      let sq = supabase
         .from("students")
         .select("id, full_name, first_name, last_name")
         .in("id", ids);
+      if (orgId) sq = sq.eq("organization_id", orgId);
+      const { data: studs, error: studErr } = await sq;
       if (studErr) notify(`Could not load student names: ${studErr.message}`, "error");
       const map: Record<string, string> = {};
       for (const s of (studs ?? []) as {
@@ -87,7 +88,7 @@ export default function GrievancesPage() {
       setNames(map);
     }
     setLoading(false);
-  }, [supabase, notify]);
+  }, [supabase, notify, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

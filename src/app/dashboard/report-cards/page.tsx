@@ -48,18 +48,23 @@ export default function ReportCardsHubPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [rc, st, yr, cl] = await Promise.all([
-      supabase.from("report_cards").select("*").order("created_at", { ascending: false }),
-      supabase.from("students").select("id, student_code, full_name, grade").eq("status", "active"),
-      supabase.from("academic_years").select("*").order("name", { ascending: false }),
-      supabase.from("classes").select("id, name").eq("active", true).order("sequence"),
-    ]);
+    let rcQ = supabase.from("report_cards").select("*").order("created_at", { ascending: false });
+    let stQ = supabase.from("students").select("id, student_code, full_name, grade").eq("status", "active");
+    let yrQ = supabase.from("academic_years").select("*").order("name", { ascending: false });
+    let clQ = supabase.from("classes").select("id, name").eq("active", true).order("sequence");
+    if (orgId) {
+      rcQ = rcQ.eq("organization_id", orgId);
+      stQ = stQ.eq("organization_id", orgId);
+      yrQ = yrQ.eq("organization_id", orgId);
+      clQ = clQ.eq("organization_id", orgId);
+    }
+    const [rc, st, yr, cl] = await Promise.all([rcQ, stQ, yrQ, clQ]);
     setReportCards((rc.data ?? []) as ReportCard[]);
     setStudents((st.data ?? []) as Student[]);
     setYears((yr.data ?? []) as AcademicYear[]);
     setClasses((cl.data ?? []) as ClassRow[]);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

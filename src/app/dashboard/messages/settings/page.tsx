@@ -33,7 +33,7 @@ const TOGGLES: Array<{ key: BooleanPolicyKey; label: string; help: string; group
 export default function MessagingSettingsPage() {
   const supabase = createClient();
   const router = useRouter();
-  const { isOrgAdmin, hasModule } = useAuth();
+  const { isOrgAdmin, hasModule, orgId } = useAuth();
   const { notify, ToastHost } = useToast();
   const [policy, setPolicy] = useState<MessagingPolicy | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,12 +41,14 @@ export default function MessagingSettingsPage() {
   const [maxMb, setMaxMb] = useState(15);
 
   useEffect(() => {
-    supabase.from("messaging_policy").select("*").maybeSingle().then(({ data }) => {
+    let q = supabase.from("messaging_policy").select("*");
+    if (orgId) q = q.eq("organization_id", orgId);
+    q.maybeSingle().then(({ data }) => {
       setPolicy(data as MessagingPolicy);
       if (data) setMaxMb((data as MessagingPolicy).max_attachment_mb);
       setLoading(false);
     });
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   if (!hasModule("communication")) {
     return <div className="p-6 text-gray-500">Communication is not enabled for your school.</div>;

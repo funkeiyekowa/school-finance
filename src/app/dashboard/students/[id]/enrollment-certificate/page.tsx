@@ -28,18 +28,20 @@ interface Student {
 export default function EnrollmentCertificatePage() {
   const params = useParams<{ id: string }>();
   const supabase = useMemo(() => createClient(), []);
-  const { profile } = useAuth();
+  const { profile, orgId } = useAuth();
   const branding = useBranding();
   const [student, setStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("students").select("*").eq("id", params.id).maybeSingle();
+      let q = supabase.from("students").select("*").eq("id", params.id);
+      if (orgId) q = q.eq("organization_id", orgId);
+      const { data } = await q.maybeSingle();
       setStudent((data as Student) ?? null);
       setLoading(false);
     })();
-  }, [supabase, params.id]);
+  }, [supabase, params.id, orgId]);
 
   if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (!student) return <div className="p-8 text-center text-gray-500">Student not found.</div>;

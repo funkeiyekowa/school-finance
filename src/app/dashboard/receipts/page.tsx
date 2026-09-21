@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { fmtMoney, fmtDate } from "@/lib/utils";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -13,6 +14,7 @@ import type { IncomeEntry, SchoolSettings } from "@/lib/types";
 
 export default function ReceiptsPage() {
   const supabase = createClient();
+  const { orgId } = useAuth();
   const [entries, setEntries] = useState<IncomeEntry[]>([]);
   const [settings, setSettings] = useState<SchoolSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,14 +23,17 @@ export default function ReceiptsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [entRes, setRes] = await Promise.all([
-      supabase.from("income_entries").select("*").order("date", { ascending: false }),
-      supabase.from("school_settings").select("*").limit(1).single(),
-    ]);
+    let entQ = supabase.from("income_entries").select("*").order("date", { ascending: false });
+    let setQ = supabase.from("school_settings").select("*").limit(1);
+    if (orgId) {
+      entQ = entQ.eq("organization_id", orgId);
+      setQ = setQ.eq("organization_id", orgId);
+    }
+    const [entRes, setRes] = await Promise.all([entQ, setQ.single()]);
     setEntries(entRes.data ?? []);
     setSettings(setRes.data);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

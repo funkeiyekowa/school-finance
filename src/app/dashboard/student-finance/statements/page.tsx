@@ -55,9 +55,9 @@ function Inner() {
     if (!orgId || ids.length === 0) { setLoading(false); return; }
     (async () => {
       const [sRes, fRes, pRes] = await Promise.all([
-        supabase.from("students").select("id, student_code, full_name, grade, guardian_name, guardian_phone").in("id", ids),
-        supabase.from("fee_schedules").select("*").eq("active", true),
-        supabase.from("income_entries").select("id, student_id, amount, date, fee_type, receipt_no, note").in("student_id", ids).order("date"),
+        supabase.from("students").select("id, student_code, full_name, grade, guardian_name, guardian_phone").in("id", ids).eq("organization_id", orgId),
+        supabase.from("fee_schedules").select("*").eq("active", true).eq("organization_id", orgId),
+        supabase.from("income_entries").select("id, student_id, amount, date, fee_type, receipt_no, note").in("student_id", ids).eq("organization_id", orgId).order("date"),
       ]);
       setStudents((sRes.data as Student[]) ?? []);
       setFees((fRes.data as FeeSchedule[]) ?? []);

@@ -37,13 +37,19 @@ export default function MasterSheetPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [rc, sub, st, yr, cl] = await Promise.all([
-      supabase.from("report_cards").select("*"),
-      supabase.from("report_card_subjects").select("id, report_card_id, subject_name, total_score, grade"),
-      supabase.from("students").select("id, student_code, full_name"),
-      supabase.from("academic_years").select("*").order("name", { ascending: false }),
-      supabase.from("classes").select("id, name").eq("active", true).order("sequence"),
-    ]);
+    let rcQ = supabase.from("report_cards").select("*");
+    const subQ = supabase.from("report_card_subjects").select("id, report_card_id, subject_name, total_score, grade");
+    let stQ = supabase.from("students").select("id, student_code, full_name");
+    let yrQ = supabase.from("academic_years").select("*").order("name", { ascending: false });
+    let clQ = supabase.from("classes").select("id, name").eq("active", true).order("sequence");
+    if (orgId) {
+      rcQ = rcQ.eq("organization_id", orgId);
+      stQ = stQ.eq("organization_id", orgId);
+      yrQ = yrQ.eq("organization_id", orgId);
+      clQ = clQ.eq("organization_id", orgId);
+      // report_card_subjects derives tenancy via report_card_id — safe transitively.
+    }
+    const [rc, sub, st, yr, cl] = await Promise.all([rcQ, subQ, stQ, yrQ, clQ]);
     setReportCards((rc.data ?? []) as ReportCard[]);
     setSubjects((sub.data ?? []) as Subject[]);
     setStudents((st.data ?? []) as Student[]);
@@ -52,7 +58,7 @@ export default function MasterSheetPage() {
     const cur = (yr.data ?? []).find((y) => (y as { status: string }).status === "current");
     if (cur) setYearId((cur as { id: string }).id);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

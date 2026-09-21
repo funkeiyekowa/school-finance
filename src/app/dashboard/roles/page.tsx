@@ -37,11 +37,13 @@ export default function RolesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from("roles").select("*").order("name");
+    let q = supabase.from("roles").select("*").order("name");
+    if (orgId) q = q.eq("organization_id", orgId);
+    const { data, error } = await q;
     if (error) console.warn("roles load error:", error.message);
     setRoles(data ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

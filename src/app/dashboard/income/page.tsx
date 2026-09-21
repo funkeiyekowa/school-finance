@@ -37,16 +37,22 @@ function IncomePageInner() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    let entQuery = supabase.from("income_entries").select("*");
+    if (orgId) entQuery = entQuery.eq("organization_id", orgId);
+    let studQuery = supabase.from("students").select("*").eq("status", "active");
+    if (orgId) studQuery = studQuery.eq("organization_id", orgId);
+    let feeQuery = supabase.from("fee_schedules").select("*").eq("active", true);
+    if (orgId) feeQuery = feeQuery.eq("organization_id", orgId);
     const [entRes, studRes, feeRes] = await Promise.all([
-      supabase.from("income_entries").select("*").order("date", { ascending: false }).order("created_at", { ascending: false }),
-      supabase.from("students").select("*").eq("status", "active").order("full_name"),
-      supabase.from("fee_schedules").select("*").eq("active", true),
+      entQuery.order("date", { ascending: false }).order("created_at", { ascending: false }),
+      studQuery.order("full_name"),
+      feeQuery,
     ]);
     setEntries(entRes.data ?? []);
     setStudents(studRes.data ?? []);
     setFees(feeRes.data ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

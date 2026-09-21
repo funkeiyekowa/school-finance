@@ -16,7 +16,7 @@ interface Exam { id: string; student_id: string; exam_id: string; total_score: n
 interface ReportCard { id: string; student_id: string; term: string; average_score: number; grade_overall: string | null; published: boolean; }
 
 export default function ParentPortalPage() {
-  const { user, org } = useAuth();
+  const { user, org, orgId } = useAuth();
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
   const [children, setChildren] = useState<Student[]>([]);
@@ -42,11 +42,15 @@ export default function ParentPortalPage() {
 
     let childRows: Student[] = [];
     if (childIds.length > 0) {
-      const { data } = await supabase.from("students").select("*").in("id", childIds);
+      let q = supabase.from("students").select("*").in("id", childIds);
+      if (orgId) q = q.eq("organization_id", orgId);
+      const { data } = await q;
       childRows = (data ?? []) as Student[];
     } else {
-      const { data } = await supabase.from("students").select("*")
+      let q = supabase.from("students").select("*")
         .eq("guardian_email", user.email).eq("status", "active");
+      if (orgId) q = q.eq("organization_id", orgId);
+      const { data } = await q;
       childRows = (data ?? []) as Student[];
     }
 
@@ -55,11 +59,13 @@ export default function ParentPortalPage() {
 
     const allIds = childRows.map(c => c.id);
     if (allIds.length > 0) {
-      const [pay, att, rc] = await Promise.all([
-        supabase.from("income_entries").select("*").in("student_id", allIds).order("date", { ascending: false }).limit(200),
-        supabase.from("attendance_records").select("id, student_id, date, status_code").in("student_id", allIds).order("date", { ascending: false }).limit(500),
-        supabase.from("report_cards").select("id, student_id, term, average_score, grade_overall, published").in("student_id", allIds),
-      ]);
+      let payQ = supabase.from("income_entries").select("*").in("student_id", allIds).order("date", { ascending: false }).limit(200);
+      if (orgId) payQ = payQ.eq("organization_id", orgId);
+      let attQ = supabase.from("attendance_records").select("id, student_id, date, status_code").in("student_id", allIds).order("date", { ascending: false }).limit(500);
+      if (orgId) attQ = attQ.eq("organization_id", orgId);
+      let rcQ = supabase.from("report_cards").select("id, student_id, term, average_score, grade_overall, published").in("student_id", allIds);
+      if (orgId) rcQ = rcQ.eq("organization_id", orgId);
+      const [pay, att, rc] = await Promise.all([payQ, attQ, rcQ]);
 
       const paymentsBy: Record<string, Payment[]> = {};
       const attendanceBy: Record<string, Attendance[]> = {};
@@ -85,7 +91,7 @@ export default function ParentPortalPage() {
     }
 
     setLoading(false);
-  }, [user, supabase]);
+  }, [user, supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

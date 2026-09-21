@@ -25,14 +25,15 @@ export default function FinanceDashboardPage() {
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     const dateStr = sixMonthsAgo.toISOString().split("T")[0];
-    const [inc, exp] = await Promise.all([
-      supabase.from("income_entries").select("id, date, amount, category").gte("date", dateStr),
-      supabase.from("expense_entries").select("id, date, amount, category").gte("date", dateStr),
-    ]);
+    let incQuery = supabase.from("income_entries").select("id, date, amount, category").gte("date", dateStr);
+    if (orgId) incQuery = incQuery.eq("organization_id", orgId);
+    let expQuery = supabase.from("expense_entries").select("id, date, amount, category").gte("date", dateStr);
+    if (orgId) expQuery = expQuery.eq("organization_id", orgId);
+    const [inc, exp] = await Promise.all([incQuery, expQuery]);
     setIncomes((inc.data ?? []) as Income[]);
     setExpenses((exp.data ?? []) as Expense[]);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

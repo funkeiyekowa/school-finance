@@ -17,7 +17,7 @@ interface ExamRow { id: string; title: string; total_marks: number; }
 interface AttendanceRow { status_code: string; }
 
 export default function MyResultsPage() {
-  const { user } = useAuth();
+  const { user, orgId } = useAuth();
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
 
@@ -45,37 +45,38 @@ export default function MyResultsPage() {
     }
 
     if (!sId) {
-      const { data: byProfile } = await supabase
-        .from("students")
-        .select("id")
-        .eq("profile_id", user.id)
-        .limit(1)
-        .maybeSingle();
+      let bp = supabase.from("students").select("id").eq("profile_id", user.id);
+      if (orgId) bp = bp.eq("organization_id", orgId);
+      const { data: byProfile } = await bp.limit(1).maybeSingle();
       sId = (byProfile as { id?: string } | null)?.id;
     }
 
     if (!sId) {
-      const { data: byEmail } = await supabase
-        .from("students")
-        .select("id")
-        .eq("guardian_email", user.email)
-        .limit(1)
-        .maybeSingle();
+      let be = supabase.from("students").select("id").eq("guardian_email", user.email);
+      if (orgId) be = be.eq("organization_id", orgId);
+      const { data: byEmail } = await be.limit(1).maybeSingle();
       sId = (byEmail as { id?: string } | null)?.id;
     }
 
     if (!sId) { setLoading(false); return; }
     setStudentId(sId);
 
-    const [scRes, subRes, typRes, grdRes, attRes, exRes, atdRes] = await Promise.all([
-      supabase.from("student_scores").select("id, subject_id, assessment_type_id, score, term").eq("student_id", sId),
-      supabase.from("subjects").select("id, name, short_code").eq("active", true).order("name"),
-      supabase.from("assessment_types").select("id, name, short_code, max_score, sort_order").eq("active", true).order("sort_order"),
-      supabase.from("grading_scales").select("grade, label, min_score, max_score").order("sort_order"),
-      supabase.from("exam_attempts").select("id, exam_id, total_score, percentage, passed, status, submitted_at").eq("student_id", sId).eq("status", "submitted").order("submitted_at", { ascending: false }),
-      supabase.from("exams").select("id, title, total_marks"),
-      supabase.from("attendance_records").select("status_code").eq("student_id", sId).order("date", { ascending: false }).limit(200),
-    ]);
+    let scQ = supabase.from("student_scores").select("id, subject_id, assessment_type_id, score, term").eq("student_id", sId);
+    let subQ = supabase.from("subjects").select("id, name, short_code").eq("active", true).order("name");
+    let typQ = supabase.from("assessment_types").select("id, name, short_code, max_score, sort_order").eq("active", true).order("sort_order");
+    let grdQ = supabase.from("grading_scales").select("grade, label, min_score, max_score").order("sort_order");
+    const attQ = supabase.from("exam_attempts").select("id, exam_id, total_score, percentage, passed, status, submitted_at").eq("student_id", sId).eq("status", "submitted").order("submitted_at", { ascending: false });
+    let exQ = supabase.from("exams").select("id, title, total_marks");
+    const atdQ = supabase.from("attendance_records").select("status_code").eq("student_id", sId).order("date", { ascending: false }).limit(200);
+    if (orgId) {
+      scQ = scQ.eq("organization_id", orgId);
+      subQ = subQ.eq("organization_id", orgId);
+      typQ = typQ.eq("organization_id", orgId);
+      grdQ = grdQ.eq("organization_id", orgId);
+      exQ = exQ.eq("organization_id", orgId);
+      // exam_attempts + attendance_records derive tenancy via student_id — safe transitively.
+    }
+    const [scRes, subRes, typRes, grdRes, attRes, exRes, atdRes] = await Promise.all([scQ, subQ, typQ, grdQ, attQ, exQ, atdQ]);
 
     setScores(scRes.data as ScoreRow[] ?? []);
     setSubjects(subRes.data as SubjectRow[] ?? []);
@@ -85,7 +86,7 @@ export default function MyResultsPage() {
     setExams(exRes.data as ExamRow[] ?? []);
     setAttendance(atdRes.data as AttendanceRow[] ?? []);
     setLoading(false);
-  }, [user, supabase]);
+  }, [user, supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

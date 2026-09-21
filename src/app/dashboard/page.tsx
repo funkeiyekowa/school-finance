@@ -93,7 +93,7 @@ export default function DashboardPage() {
 }
 
 function FinanceDashboard() {
-  const { profile, org, isAdmin } = useAuth();
+  const { profile, org, isAdmin, orgId } = useAuth();
   const supabase = createClient();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,12 +101,22 @@ function FinanceDashboard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      let incomeQuery = supabase.from("income_entries").select("*").order("date", { ascending: false }).limit(500);
+      if (orgId) incomeQuery = incomeQuery.eq("organization_id", orgId);
+      let expenseQuery = supabase.from("expense_entries").select("*").order("date", { ascending: false }).limit(500);
+      if (orgId) expenseQuery = expenseQuery.eq("organization_id", orgId);
+      let studentsQuery = supabase.from("students").select("*").eq("status", "active");
+      if (orgId) studentsQuery = studentsQuery.eq("organization_id", orgId);
+      let feesQuery = supabase.from("fee_schedules").select("*").eq("active", true);
+      if (orgId) feesQuery = feesQuery.eq("organization_id", orgId);
+      let smsQuery = supabase.from("sms_inbox").select("id", { count: "exact", head: true }).eq("match_status", "needs_review");
+      if (orgId) smsQuery = smsQuery.eq("organization_id", orgId);
       const [incomeRes, expenseRes, studentsRes, feesRes, smsRes] = await Promise.all([
-        supabase.from("income_entries").select("*").order("date", { ascending: false }).limit(500),
-        supabase.from("expense_entries").select("*").order("date", { ascending: false }).limit(500),
-        supabase.from("students").select("*").eq("status", "active"),
-        supabase.from("fee_schedules").select("*").eq("active", true),
-        supabase.from("sms_inbox").select("id", { count: "exact", head: true }).eq("match_status", "needs_review"),
+        incomeQuery,
+        expenseQuery,
+        studentsQuery,
+        feesQuery,
+        smsQuery,
       ]);
 
       const income: IncomeEntry[] = incomeRes.data ?? [];
@@ -181,7 +191,7 @@ function FinanceDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

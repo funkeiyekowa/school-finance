@@ -55,13 +55,14 @@ function Inner() {
   useEffect(() => {
     if (!orgId || !classId) { setLoading(false); return; }
     (async () => {
-      const cRes = await supabase.from("classes").select("id, name, short_code").eq("id", classId).maybeSingle();
+      const cRes = await supabase.from("classes").select("id, name, short_code").eq("id", classId).eq("organization_id", orgId).maybeSingle();
       const cls = cRes.data as ClassRow | null;
       setCls(cls);
       if (!cls) { setLoading(false); return; }
       const { data: st } = await supabase.from("students")
         .select("id, student_code, full_name")
         .eq("status", "active")
+        .eq("organization_id", orgId)
         .or(`grade.eq.${cls.name},grade.eq.${cls.short_code ?? "__none__"}`)
         .order("full_name");
       setStudents((st as StudentRow[]) ?? []);
@@ -69,6 +70,7 @@ function Inner() {
         const { data: rec } = await supabase.from("attendance_records")
           .select("student_id, status")
           .eq("class_id", classId)
+          .eq("organization_id", orgId)
           .eq("date", dateStr);
         setRecords((rec as RecordRow[]) ?? []);
       }

@@ -12,6 +12,7 @@
 import { Suspense, useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { useBranding } from "@/lib/hooks/useBranding";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
 import { PrintableLetterhead, PrintableFooter } from "@/components/print/PrintableLetterhead";
@@ -45,6 +46,7 @@ export default function ReportCardBatchPrint() {
 function Inner() {
   const params = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
+  const { orgId } = useAuth();
   const branding = useBranding();
   const ids = (params.get("ids") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
@@ -56,23 +58,23 @@ function Inner() {
   useEffect(() => {
     if (ids.length === 0) { setLoading(false); return; }
     (async () => {
-      const [cRes, sRes] = await Promise.all([
-        supabase.from("report_cards").select("*").in("id", ids),
-        supabase.from("report_card_subjects").select("*").in("report_card_id", ids),
-      ]);
+      let cQ = supabase.from("report_cards").select("*").in("id", ids);
+      const sQ = supabase.from("report_card_subjects").select("*").in("report_card_id", ids);
+      if (orgId) cQ = cQ.eq("organization_id", orgId);
+      const [cRes, sRes] = await Promise.all([cQ, sQ]);
       const cardRows = (cRes.data as Card[]) ?? [];
       const subjRows = (sRes.data as SubjectRow[]) ?? [];
       const studentIds = Array.from(new Set(cardRows.map((c) => c.student_id)));
-      const { data: stRes } = studentIds.length
-        ? await supabase.from("students").select("id, student_code, full_name").in("id", studentIds)
-        : { data: [] };
+      let stQ = studentIds.length ? supabase.from("students").select("id, student_code, full_name").in("id", studentIds) : null;
+      if (stQ && orgId) stQ = stQ.eq("organization_id", orgId);
+      const { data: stRes } = stQ ? await stQ : { data: [] };
       setCards(cardRows);
       setSubjects(subjRows);
       setStudents((stRes as Student[]) ?? []);
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, params.get("ids")]);
+  }, [supabase, params.get("ids"), orgId]);
 
   const studentById = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
   const subjectsByCard = useMemo(() => {

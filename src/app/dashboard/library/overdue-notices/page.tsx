@@ -43,9 +43,9 @@ export default function OverdueNoticesPage() {
     if (!orgId) return;
     (async () => {
       const [loanRes, copyRes, bookRes] = await Promise.all([
-        supabase.from("library_loans").select("*").eq("status", "active"),
-        supabase.from("library_book_copies").select("id, book_id, copy_code"),
-        supabase.from("library_books").select("id, title, author, isbn"),
+        supabase.from("library_loans").select("*").eq("status", "active").eq("organization_id", orgId),
+        supabase.from("library_book_copies").select("id, book_id, copy_code").eq("organization_id", orgId),
+        supabase.from("library_books").select("id, title, author, isbn").eq("organization_id", orgId),
       ]);
       setLoans((loanRes.data as LoanRow[]) ?? []);
       setCopies((copyRes.data as CopyRow[]) ?? []);
