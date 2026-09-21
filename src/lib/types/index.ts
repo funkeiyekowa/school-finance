@@ -131,6 +131,7 @@ export const APP_FEATURES = [
   { key: "my_results", label: "My Results", group: "Portals" },
   { key: "my_children", label: "My Children", group: "Portals" },
   { key: "my_grievances", label: "My Grievances", group: "Portals" },
+  { key: "child_courses", label: "Child Courses (enrol)", group: "Portals" },
   // ---- People / HR ----
   { key: "staff", label: "Staff Directory", group: "People" },
   { key: "team", label: "Team / Users", group: "People" },
@@ -172,6 +173,7 @@ export const ROLE_PRESETS: Record<string, Partial<Record<FeatureKey, boolean>>> 
   parent: {
     parent_portal: true,
     my_grievances: true,
+    child_courses: true,
     my_children: true,
     report_cards: true,
     attendance: true,
