@@ -130,6 +130,7 @@ export const APP_FEATURES = [
   { key: "my_exams", label: "My Exams", group: "Portals" },
   { key: "my_results", label: "My Results", group: "Portals" },
   { key: "my_children", label: "My Children", group: "Portals" },
+  { key: "my_grievances", label: "My Grievances", group: "Portals" },
   { key: "child_courses", label: "Child Courses (enrol)", group: "Portals" },
   // ---- People / HR ----
   { key: "staff", label: "Staff Directory", group: "People" },
@@ -138,6 +139,7 @@ export const APP_FEATURES = [
   // ---- Communication ----
   { key: "announcements", label: "Announcements", group: "Communication" },
   { key: "leads", label: "Enquiries (Leads)", group: "Communication" },
+  { key: "grievances", label: "Grievances", group: "Communication" },
   { key: "website", label: "Website Studio", group: "Communication" },
   // ---- Operations ----
   { key: "inventory", label: "Inventory", group: "Operations" },
@@ -160,6 +162,7 @@ export type FeatureKey = (typeof APP_FEATURES)[number]["key"];
 export const ROLE_PRESETS: Record<string, Partial<Record<FeatureKey, boolean>>> = {
   student: {
     student_portal: true,
+    my_grievances: true,
     my_exams: true,
     my_results: true,
     cbt: true,          // needed to sit an exam
@@ -169,6 +172,7 @@ export const ROLE_PRESETS: Record<string, Partial<Record<FeatureKey, boolean>>> 
   },
   parent: {
     parent_portal: true,
+    my_grievances: true,
     child_courses: true,
     my_children: true,
     report_cards: true,
@@ -177,6 +181,7 @@ export const ROLE_PRESETS: Record<string, Partial<Record<FeatureKey, boolean>>> 
   },
   teacher: {
     teacher_portal: true,
+    grievances: true,
     attendance: true,
     assessments: true,
     cbt: true,

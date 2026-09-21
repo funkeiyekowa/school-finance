@@ -173,16 +173,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     student_id: string; date: string; session: string; status_code: string;
   }[];
 
-  // 7. Fetch students enrolled in this class
-  const { data: enrollments } = await supabase
-    .from("class_enrollments")
-    .select("student_id, students(id, student_code, first_name, last_name)")
+  // 7. Fetch students enrolled in this class.
+  //    The enrolment table is `student_enrollments` (promotion_system_migration)
+  //    and it tracks state in `status`, not a boolean `active` column — see
+  //    20260907140000_class_enrollment.sql, which states it "uses the existing
+  //    student_enrollments table ... no new tables".
+  const { data: enrollments, error: enrollErr } = await supabase
+    .from("student_enrollments")
+    .select("student_id, students(id, student_code, full_name, first_name, last_name)")
     .eq("class_id", class_id)
-    .eq("active", true);
+    .eq("status", "active");
+
+  if (enrollErr) {
+    return NextResponse.json({ error: enrollErr.message }, { status: 500 });
+  }
 
   type EnrollmentRow = {
     student_id: string;
-    students: { id: string; student_code: string; first_name: string; last_name: string } | null;
+    students: {
+      id: string; student_code: string; full_name: string | null;
+      first_name: string | null; last_name: string | null;
+    } | null;
   };
 
   const students = ((enrollments ?? []) as unknown as EnrollmentRow[])
@@ -190,7 +201,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     .map(e => ({
       student_id: e.student_id,
       student_code: e.students!.student_code,
-      full_name: `${e.students!.first_name} ${e.students!.last_name}`,
+      // full_name is NOT NULL; first_name/last_name were added later by
+      // student_name_fields_migration and are nullable, so they are only a
+      // fallback — concatenating them blindly yielded "null null".
+      full_name:
+        e.students!.full_name?.trim() ||
+        [e.students!.first_name, e.students!.last_name].filter(Boolean).join(" ").trim() ||
+        e.students!.student_code,
     }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
