@@ -27,16 +27,18 @@ export default function StudentsOverviewPage() {
     const thirtyDaysAgo = new Date(today);
     thirtyDaysAgo.setDate(today.getDate() - 30);
 
-    const [st, at, yr] = await Promise.all([
-      supabase.from("students").select("id, full_name, grade, status, gender"),
-      supabase.from("attendance_records").select("student_id, date, status_code").gte("date", thirtyDaysAgo.toISOString().split("T")[0]),
-      supabase.from("academic_years").select("*").eq("status", "current"),
-    ]);
+    let studentsQuery = supabase.from("students").select("id, full_name, grade, status, gender");
+    if (orgId) studentsQuery = studentsQuery.eq("organization_id", orgId);
+    let attendanceQuery = supabase.from("attendance_records").select("student_id, date, status_code").gte("date", thirtyDaysAgo.toISOString().split("T")[0]);
+    if (orgId) attendanceQuery = attendanceQuery.eq("organization_id", orgId);
+    let yearsQuery = supabase.from("academic_years").select("*").eq("status", "current");
+    if (orgId) yearsQuery = yearsQuery.eq("organization_id", orgId);
+    const [st, at, yr] = await Promise.all([studentsQuery, attendanceQuery, yearsQuery]);
     setStudents((st.data ?? []) as Student[]);
     setAttendance((at.data ?? []) as Attendance[]);
     setYears((yr.data ?? []) as AcademicYear[]);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

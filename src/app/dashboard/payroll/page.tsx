@@ -75,11 +75,19 @@ export default function PayrollPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    let runsQ = supabase.from("payroll_runs").select("*").order("period_year", { ascending: false }).order("period_month", { ascending: false });
+    if (orgId) runsQ = runsQ.eq("organization_id", orgId);
+    let compQ = supabase.from("payroll_components").select("*").order("type").order("name");
+    if (orgId) compQ = compQ.eq("organization_id", orgId);
+    let assignQ = supabase.from("payroll_staff_components").select("*");
+    if (orgId) assignQ = assignQ.eq("organization_id", orgId);
+    let staffQ = supabase.from("staff_members").select("id, full_name, staff_code, salary, status").eq("status", "active").order("full_name");
+    if (orgId) staffQ = staffQ.eq("organization_id", orgId);
     const [rRes, cRes, aRes, sRes, statsRes] = await Promise.all([
-      supabase.from("payroll_runs").select("*").order("period_year", { ascending: false }).order("period_month", { ascending: false }),
-      supabase.from("payroll_components").select("*").order("type").order("name"),
-      supabase.from("payroll_staff_components").select("*"),
-      supabase.from("staff_members").select("id, full_name, staff_code, salary, status").eq("status", "active").order("full_name"),
+      runsQ,
+      compQ,
+      assignQ,
+      staffQ,
       supabase.rpc("phase1_payroll_stats"),
     ]);
     setRuns((rRes.data as RunRow[]) ?? []);
@@ -97,7 +105,7 @@ export default function PayrollPage() {
       });
     }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

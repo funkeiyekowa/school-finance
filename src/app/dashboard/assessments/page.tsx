@@ -41,11 +41,21 @@ export default function AssessmentsPage() {
   const [showBulk, setShowBulk] = useState(false);
 
   const loadBase = useCallback(async () => {
+    let clsQ = supabase.from("classes").select("id, name").eq("active", true);
+    let subQ = supabase.from("subjects").select("id, name, short_code").eq("active", true);
+    let typQ = supabase.from("assessment_types").select("*").eq("active", true);
+    let grdQ = supabase.from("grading_scales").select("grade, label, min_score, max_score");
+    if (orgId) {
+      clsQ = clsQ.eq("organization_id", orgId);
+      subQ = subQ.eq("organization_id", orgId);
+      typQ = typQ.eq("organization_id", orgId);
+      grdQ = grdQ.eq("organization_id", orgId);
+    }
     const [clsRes, subRes, typRes, grdRes] = await Promise.all([
-      supabase.from("classes").select("id, name").eq("active", true).order("sequence"),
-      supabase.from("subjects").select("id, name, short_code").eq("active", true).order("name"),
-      supabase.from("assessment_types").select("*").eq("active", true).order("sort_order"),
-      supabase.from("grading_scales").select("grade, label, min_score, max_score").order("sort_order"),
+      clsQ.order("sequence"),
+      subQ.order("name"),
+      typQ.order("sort_order"),
+      grdQ.order("sort_order"),
     ]);
 
     let cls = (clsRes.data as ClassRow[]) ?? [];
@@ -53,11 +63,13 @@ export default function AssessmentsPage() {
 
     // Teacher scoping: filter classes AND subjects by teacher_assignments.
     if (membership?.role === "teacher" && user) {
-      const { data: ta } = await supabase
+      let taQ = supabase
         .from("teacher_assignments")
         .select("class_id, subject_id")
         .eq("user_id", user.id)
         .eq("active", true);
+      if (orgId) taQ = taQ.eq("organization_id", orgId);
+      const { data: ta } = await taQ;
       const rows = (ta ?? []) as { class_id: string; subject_id: string | null }[];
       const myClassIds = new Set(rows.map(r => r.class_id));
       const mySubIds = new Set(rows.map(r => r.subject_id).filter(Boolean) as string[]);
@@ -70,7 +82,7 @@ export default function AssessmentsPage() {
     setTypes((typRes.data as AssessmentTypeRow[]) ?? []);
     setGrades((grdRes.data as GradeRow[]) ?? []);
     setLoading(false);
-  }, [supabase, user, membership]);
+  }, [supabase, user, membership, orgId]);
 
   useEffect(() => { loadBase(); }, [loadBase]);
 

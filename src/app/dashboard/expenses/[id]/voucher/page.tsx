@@ -11,6 +11,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { useBranding } from "@/lib/hooks/useBranding";
 import { fmtDate, fmtMoney } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
@@ -56,17 +57,20 @@ function numToWords(n: number): string {
 export default function ExpenseVoucherPage() {
   const params = useParams<{ id: string }>();
   const supabase = useMemo(() => createClient(), []);
+  const { orgId } = useAuth();
   const branding = useBranding();
   const [expense, setExpense] = useState<Expense | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("expense_entries").select("*").eq("id", params.id).maybeSingle();
+      let query = supabase.from("expense_entries").select("*").eq("id", params.id);
+      if (orgId) query = query.eq("organization_id", orgId);
+      const { data } = await query.maybeSingle();
       setExpense((data as Expense) ?? null);
       setLoading(false);
     })();
-  }, [supabase, params.id]);
+  }, [supabase, params.id, orgId]);
 
   if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (!expense) return <div className="p-8 text-center text-gray-500">Voucher not found.</div>;

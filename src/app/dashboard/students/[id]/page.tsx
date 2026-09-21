@@ -74,13 +74,25 @@ export default function StudentDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    let studQuery = supabase.from("students").select("*").eq("id", id);
+    if (orgId) studQuery = studQuery.eq("organization_id", orgId);
+    let histQuery = supabase.from("income_entries").select("*").eq("student_id", id).order("date", { ascending: false });
+    if (orgId) histQuery = histQuery.eq("organization_id", orgId);
+    let feeQuery = supabase.from("fee_schedules").select("*").eq("active", true);
+    if (orgId) feeQuery = feeQuery.eq("organization_id", orgId);
+    let enrQuery = supabase.from("student_enrollments").select("*").eq("student_id", id).order("enrolled_at", { ascending: false });
+    if (orgId) enrQuery = enrQuery.eq("organization_id", orgId);
+    let clsQuery = supabase.from("classes").select("id, name");
+    if (orgId) clsQuery = clsQuery.eq("organization_id", orgId);
+    let yrQuery = supabase.from("academic_years").select("id, name");
+    if (orgId) yrQuery = yrQuery.eq("organization_id", orgId);
     const [studRes, histRes, feeRes, enrRes, clsRes, yrRes] = await Promise.all([
-      supabase.from("students").select("*").eq("id", id).single(),
-      supabase.from("income_entries").select("*").eq("student_id", id).order("date", { ascending: false }),
-      supabase.from("fee_schedules").select("*").eq("active", true),
-      supabase.from("student_enrollments").select("*").eq("student_id", id).order("enrolled_at", { ascending: false }),
-      supabase.from("classes").select("id, name"),
-      supabase.from("academic_years").select("id, name"),
+      studQuery.single(),
+      histQuery,
+      feeQuery,
+      enrQuery,
+      clsQuery,
+      yrQuery,
     ]);
     setStudent(studRes.data);
     setHistory(histRes.data ?? []);
@@ -98,7 +110,7 @@ export default function StudentDetailPage() {
     })));
 
     setLoading(false);
-  }, [id, supabase]);
+  }, [id, supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

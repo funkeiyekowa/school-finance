@@ -32,14 +32,18 @@ export default function ExpensesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    let entQuery = supabase.from("expense_entries").select("*");
+    if (orgId) entQuery = entQuery.eq("organization_id", orgId);
+    let venQuery = supabase.from("vendors").select("*");
+    if (orgId) venQuery = venQuery.eq("organization_id", orgId);
     const [entRes, venRes] = await Promise.all([
-      supabase.from("expense_entries").select("*").order("date", { ascending: false }).order("created_at", { ascending: false }),
-      supabase.from("vendors").select("*").order("name"),
+      entQuery.order("date", { ascending: false }).order("created_at", { ascending: false }),
+      venQuery.order("name"),
     ]);
     setEntries(entRes.data ?? []);
     setVendors(venRes.data ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

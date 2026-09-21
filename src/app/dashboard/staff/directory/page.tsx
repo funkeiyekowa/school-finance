@@ -35,11 +35,15 @@ export default function StaffDirectoryPage() {
   useEffect(() => {
     if (!orgId) return;
     (async () => {
+      let staffQuery = supabase.from("staff_members")
+        .select("id, staff_code, full_name, job_title, email, phone, staff_type, department_id, date_joined")
+        .eq("status", "active");
+      if (orgId) staffQuery = staffQuery.eq("organization_id", orgId);
+      let deptQuery = supabase.from("departments").select("id, name");
+      if (orgId) deptQuery = deptQuery.eq("organization_id", orgId);
       const [s, d] = await Promise.all([
-        supabase.from("staff_members")
-          .select("id, staff_code, full_name, job_title, email, phone, staff_type, department_id, date_joined")
-          .eq("status", "active").order("full_name"),
-        supabase.from("departments").select("id, name"),
+        staffQuery.order("full_name"),
+        deptQuery,
       ]);
       setStaff((s.data as Staff[]) ?? []);
       setDepts((d.data as Dept[]) ?? []);

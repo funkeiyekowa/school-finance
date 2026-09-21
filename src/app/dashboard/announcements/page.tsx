@@ -28,14 +28,17 @@ export default function AnnouncementsPage() {
   const [broadcasting, setBroadcasting] = useState<AnnRow | null>(null);
 
   const load = useCallback(async () => {
-    const [annRes, clsRes] = await Promise.all([
-      supabase.from("announcements").select("*").order("created_at", { ascending: false }),
-      supabase.from("classes").select("id, name").eq("active", true).order("sequence"),
-    ]);
+    let annQuery = supabase.from("announcements").select("*").order("created_at", { ascending: false });
+    let clsQuery = supabase.from("classes").select("id, name").eq("active", true).order("sequence");
+    if (orgId) {
+      annQuery = annQuery.eq("organization_id", orgId);
+      clsQuery = clsQuery.eq("organization_id", orgId);
+    }
+    const [annRes, clsRes] = await Promise.all([annQuery, clsQuery]);
     setAnnouncements(annRes.data as AnnRow[] ?? []);
     setClasses(clsRes.data as ClassRow[] ?? []);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -84,11 +87,15 @@ export default function AnnouncementsPage() {
           <Button variant="secondary" onClick={async () => {
             try {
               setDraftingNewsletter(true);
-              const [studRes, incRes, expRes] = await Promise.all([
-                supabase.from("students").select("id, grade, status").eq("status", "active"),
-                supabase.from("income_entries").select("amount, date"),
-                supabase.from("expense_entries").select("amount, date"),
-              ]);
+              let studQuery = supabase.from("students").select("id, grade, status").eq("status", "active");
+              let incQuery = supabase.from("income_entries").select("amount, date");
+              let expQuery = supabase.from("expense_entries").select("amount, date");
+              if (orgId) {
+                studQuery = studQuery.eq("organization_id", orgId);
+                incQuery = incQuery.eq("organization_id", orgId);
+                expQuery = expQuery.eq("organization_id", orgId);
+              }
+              const [studRes, incRes, expRes] = await Promise.all([studQuery, incQuery, expQuery]);
               const studs = (studRes.data ?? []) as { grade: string | null }[];
               const byGrade: Record<string, number> = {};
               studs.forEach(s => { byGrade[s.grade ?? "—"] = (byGrade[s.grade ?? "—"] ?? 0) + 1; });

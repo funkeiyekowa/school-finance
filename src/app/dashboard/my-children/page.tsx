@@ -33,8 +33,14 @@ export default function MyChildrenPage() {
   const loadChildData = useCallback(async (stuList: StudentRow[]) => {
     const ids = stuList.map((s) => s.id);
     // 4 queries in parallel — the old for-of loop did 2 * children serially.
+    let feesQ = supabase.from("fee_schedules").select("id, name, amount, grade").eq("active", true);
+    if (orgId) feesQ = feesQ.eq("organization_id", orgId);
+    let attQ = ids.length
+      ? supabase.from("attendance_records").select("status_code, student_id").in("student_id", ids)
+      : null;
+    if (attQ && orgId) attQ = attQ.eq("organization_id", orgId);
     const [feesRes, paysRes, attRes, pendingRes] = await Promise.all([
-      supabase.from("fee_schedules").select("id, name, amount, grade").eq("active", true),
+      feesQ,
       ids.length
         ? supabase
             .from("income_entries")
@@ -42,9 +48,7 @@ export default function MyChildrenPage() {
             .in("student_id", ids)
             .order("date", { ascending: false })
         : Promise.resolve({ data: [] }),
-      ids.length
-        ? supabase.from("attendance_records").select("status_code, student_id").in("student_id", ids)
-        : Promise.resolve({ data: [] }),
+      attQ ?? Promise.resolve({ data: [] }),
       ids.length
         ? supabase.from("student_photo_submissions").select("student_id").in("student_id", ids).eq("status", "pending")
         : Promise.resolve({ data: [] }),
@@ -72,7 +76,7 @@ export default function MyChildrenPage() {
     }
     setPayments(payMap);
     setAttendance(attMap);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   async function handlePhotoUpload(studentId: string, file: File) {
     if (!orgId) return;

@@ -47,10 +47,13 @@ function Inner() {
     (async () => {
       let q = supabase.from("staff_members").select("id, staff_code, full_name, job_title, email, phone, department_id, date_joined")
         .eq("status", "active");
+      if (orgId) q = q.eq("organization_id", orgId);
       if (ids.length > 0) q = q.in("id", ids);
+      let deptQuery = supabase.from("departments").select("id, name");
+      if (orgId) deptQuery = deptQuery.eq("organization_id", orgId);
       const [{ data: s }, { data: d }] = await Promise.all([
         q.order("full_name"),
-        supabase.from("departments").select("id, name"),
+        deptQuery,
       ]);
       setStaff((s as Staff[]) ?? []);
       setDepts((d as Dept[]) ?? []);
