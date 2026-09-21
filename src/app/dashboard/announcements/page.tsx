@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { AiAssistButton } from "@/components/ai/AiAssistButton";
-import { Plus, Save, Send, Bell, Printer, Sparkles, Inbox, MessageCircle, MessageSquareText, Mail, Settings, CheckCircle2 } from "lucide-react";
+import { Plus, Save, Send, Bell, Printer, Sparkles, Inbox, MessageCircle, MessageSquareText, Mail, Settings, CheckCircle2, Loader2 } from "lucide-react";
 
 interface ClassRow { id: string; name: string; }
 interface AnnRow { id: string; title: string; body: string; target: string; target_class_id: string | null; priority: string; published: boolean; published_at: string | null; created_by: string | null; created_at: string; }
@@ -267,11 +267,66 @@ export default function AnnouncementsPage() {
   );
 }
 
+interface ChannelState {
+  smsConfigured: boolean;
+  emailConfigured: boolean;
+}
+interface ChannelSendState {
+  sending: boolean;
+  result: { sent: number; failed: number } | null;
+  error: string | null;
+}
+const EMPTY_SEND_STATE: ChannelSendState = { sending: false, result: null, error: null };
+
 function BroadcastModal({ announcement, onClose }: { announcement: AnnRow; onClose: () => void }) {
   const supabase = createClient();
+  const { orgId } = useAuth();
   const [sendingInbox, setSendingInbox] = useState(false);
   const [inboxResult, setInboxResult] = useState<{ recipients: number } | null>(null);
   const [inboxError, setInboxError] = useState<string | null>(null);
+
+  const [channels, setChannels] = useState<ChannelState | null>(null);
+  const [smsState, setSmsState] = useState<ChannelSendState>(EMPTY_SEND_STATE);
+  const [emailState, setEmailState] = useState<ChannelSendState>(EMPTY_SEND_STATE);
+
+  useEffect(() => {
+    supabase.rpc("get_notification_provider_settings").maybeSingle().then(({ data }) => {
+      const row = data as { sms_configured?: boolean; email_configured?: boolean } | null;
+      setChannels({
+        smsConfigured: Boolean(row?.sms_configured),
+        emailConfigured: Boolean(row?.email_configured),
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function sendBroadcast(channel: "sms" | "email") {
+    if (!orgId) return;
+    const setState = channel === "sms" ? setSmsState : setEmailState;
+    setState({ sending: true, result: null, error: null });
+    const resp = await fetch("/api/notifications/broadcast", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        organizationId: orgId,
+        title: announcement.title,
+        body: announcement.body,
+        scope: announcement.target,
+        classId: announcement.target === "class" ? announcement.target_class_id : null,
+        channel,
+      }),
+    });
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      setState({ sending: false, result: null, error: payload.error || "Could not send." });
+      return;
+    }
+    setState({
+      sending: false,
+      result: { sent: payload.sent ?? 0, failed: payload.failed ?? 0 },
+      error: payload.failed > 0 ? payload.error ?? null : null,
+    });
+  }
 
   async function sendToInbox() {
     setSendingInbox(true);
@@ -339,37 +394,65 @@ function BroadcastModal({ announcement, onClose }: { announcement: AnnRow; onClo
           </div>
         </div>
 
-        {/* SMS -- needs provider */}
+        {/* SMS */}
         <div className="p-3 rounded-lg border border-gray-200 flex items-start gap-3">
           <div className="mt-0.5 text-[#0F2A47]"><MessageSquareText size={18} /></div>
           <div className="flex-1">
             <div className="text-sm font-semibold text-[#0F2A47]">SMS</div>
             <div className="text-xs text-gray-500 mb-2">
-              Sends a text message directly to parents&apos; phones. Needs your school&apos;s own SMS provider account (Termii, Africa&apos;s Talking, Twilio, or a webhook).
+              Sends a text message directly to parents&apos; phones via your school&apos;s own SMS provider account.
             </div>
-            <a
-              href="/dashboard/announcements/broadcast-settings"
-              className="inline-flex items-center gap-1 text-xs text-[#0F2A47] hover:text-[#C9A227] border border-gray-200 hover:border-[#C9A227] px-2 py-1 rounded"
-            >
-              <Settings size={12} /> Set up SMS provider
-            </a>
+            {channels === null ? null : channels.smsConfigured ? (
+              smsState.result ? (
+                <div className="text-xs flex items-center gap-1 font-medium" style={{ color: smsState.result.failed > 0 ? "#B45309" : "#15803D" }}>
+                  <CheckCircle2 size={13} /> Sent to {smsState.result.sent} recipient{smsState.result.sent === 1 ? "" : "s"}
+                  {smsState.result.failed > 0 ? ` (${smsState.result.failed} failed)` : ""}.
+                </div>
+              ) : (
+                <Button size="sm" onClick={() => sendBroadcast("sms")} disabled={smsState.sending}>
+                  {smsState.sending ? <><Loader2 size={12} className="animate-spin" /> Sending...</> : "Send via SMS"}
+                </Button>
+              )
+            ) : (
+              <a
+                href="/dashboard/announcements/broadcast-settings"
+                className="inline-flex items-center gap-1 text-xs text-[#0F2A47] hover:text-[#C9A227] border border-gray-200 hover:border-[#C9A227] px-2 py-1 rounded"
+              >
+                <Settings size={12} /> Set up SMS provider
+              </a>
+            )}
+            {smsState.error && <div className="text-xs text-red-600 mt-1">{smsState.error}</div>}
           </div>
         </div>
 
-        {/* Email -- needs provider */}
+        {/* Email */}
         <div className="p-3 rounded-lg border border-gray-200 flex items-start gap-3">
           <div className="mt-0.5 text-[#0F2A47]"><Mail size={18} /></div>
           <div className="flex-1">
             <div className="text-sm font-semibold text-[#0F2A47]">Email</div>
             <div className="text-xs text-gray-500 mb-2">
-              Sends the announcement by email. Needs your school&apos;s own email provider account (Resend, SendGrid, or SMTP).
+              Sends the announcement by email via your school&apos;s own email provider account.
             </div>
-            <a
-              href="/dashboard/announcements/broadcast-settings"
-              className="inline-flex items-center gap-1 text-xs text-[#0F2A47] hover:text-[#C9A227] border border-gray-200 hover:border-[#C9A227] px-2 py-1 rounded"
-            >
-              <Settings size={12} /> Set up email provider
-            </a>
+            {channels === null ? null : channels.emailConfigured ? (
+              emailState.result ? (
+                <div className="text-xs flex items-center gap-1 font-medium" style={{ color: emailState.result.failed > 0 ? "#B45309" : "#15803D" }}>
+                  <CheckCircle2 size={13} /> Sent to {emailState.result.sent} recipient{emailState.result.sent === 1 ? "" : "s"}
+                  {emailState.result.failed > 0 ? ` (${emailState.result.failed} failed)` : ""}.
+                </div>
+              ) : (
+                <Button size="sm" onClick={() => sendBroadcast("email")} disabled={emailState.sending}>
+                  {emailState.sending ? <><Loader2 size={12} className="animate-spin" /> Sending...</> : "Send via Email"}
+                </Button>
+              )
+            ) : (
+              <a
+                href="/dashboard/announcements/broadcast-settings"
+                className="inline-flex items-center gap-1 text-xs text-[#0F2A47] hover:text-[#C9A227] border border-gray-200 hover:border-[#C9A227] px-2 py-1 rounded"
+              >
+                <Settings size={12} /> Set up email provider
+              </a>
+            )}
+            {emailState.error && <div className="text-xs text-red-600 mt-1">{emailState.error}</div>}
           </div>
         </div>
 
