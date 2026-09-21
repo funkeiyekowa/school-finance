@@ -67,14 +67,21 @@ function StudentsPageInner() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
+    let query = supabase
       .from("students")
-      .select("*")
+      .select("*");
+    if (orgId) query = query.eq("organization_id", orgId);
+    const { data, error } = await query
       .order("last_name")
       .order("first_name");
-    setStudents((data ?? []) as Student[]);
+    if (error) {
+      notify(`Failed to load students: ${error.message}`, "error");
+      setStudents([]);
+    } else {
+      setStudents((data ?? []) as Student[]);
+    }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId, notify]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
