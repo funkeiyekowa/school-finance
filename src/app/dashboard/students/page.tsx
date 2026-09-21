@@ -193,16 +193,6 @@ function StudentsPageInner() {
   }
   async function bulkDeleteAll() {
     if (!orgId) { notify("Purge failed: no organization context", "error"); return; }
-    // TEMPORARY DIAGNOSTIC -- investigating "organization boundary violation"
-    // on purge. Does not log the access token. Remove after diagnosis.
-    const { data: { session } } = await supabase.auth.getSession();
-    console.log({
-      sessionUserId: session?.user?.id,
-      sessionEmail: session?.user?.email,
-    });
-    console.log({
-      purgeOrgId: orgId,
-    });
     const { error } = await supabase.from("students").delete().eq("organization_id", orgId);
     if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({
