@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
-import { PurgeButton } from "@/components/ui/PurgeButton";
+import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { useToast } from "@/lib/hooks/useToast";
 import { fmtMoney, cn } from "@/lib/utils";
 import { BulkImportModal } from "@/components/import/BulkImportModal";
@@ -20,6 +21,7 @@ interface ItemRow { id: string; name: string; item_code: string | null; category
 export default function InventoryPage() {
   const { canEdit, profile, orgId } = useAuth();
   const perms = useDeletePermissions();
+  const canDelete = perms.canDelete("inventory");
   const canPurge = perms.canPurge();
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
@@ -122,6 +124,24 @@ export default function InventoryPage() {
 
   const lowStock = items.filter(i => i.quantity_on_hand <= i.reorder_level && i.reorder_level > 0);
 
+  const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(filtered.map(i => i.id));
+
+  async function bulkDeleteSelected(ids: string[]) {
+    if (ids.length === 0) return;
+    const { error } = await supabase.from("inventory_items").delete().in("id", ids);
+    if (error) { notify(`Bulk delete failed: ${error.message}`, "error"); return; }
+    notify(`Deleted ${ids.length} items`);
+    load();
+  }
+
+  async function bulkDeleteAll() {
+    if (!orgId) { notify("Purge failed: no organization context", "error"); return; }
+    const { error } = await supabase.from("inventory_items").delete().eq("organization_id", orgId);
+    if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
+    notify("All inventory items deleted");
+    load();
+  }
+
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
 
   return (
@@ -136,16 +156,6 @@ export default function InventoryPage() {
         </Button>
         {canEdit && <Button variant="secondary" onClick={() => setShowBulk(true)}><UploadCloud size={14} /> Bulk import</Button>}
         {canEdit && <Button variant="gold" onClick={() => openItemForm()}><Plus size={14} /> Add Item</Button>}
-        <PurgeButton
-          itemLabel="inventory items"
-          canPurge={canPurge}
-          onPurge={async () => {
-            if (!orgId) return;
-            const { error } = await supabase.from("inventory_items").delete().eq("organization_id", orgId);
-            if (error) { alert(`Purge failed: ${error.message}`); return; }
-            load();
-          }}
-        />
       </PageHeader>
 
       {loadError && (
@@ -183,10 +193,15 @@ export default function InventoryPage() {
       </div>
 
       {/* Table */}
+      <BulkDeleteBar selectedIds={selectedIds} totalCount={filtered.length} itemLabel="inventory items"
+        onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
+        onSelectAll={selectAll} onClearSelection={clearSelection}
+        canDelete={canDelete} canPurge={canPurge} />
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-[#0F2A47] text-white">
+              {canDelete && <th className="w-8 px-2 py-3" />}
               <th className="text-left px-4 py-3 text-xs font-semibold">Item</th>
               <th className="text-left px-4 py-3 text-xs font-semibold">Code</th>
               <th className="text-left px-4 py-3 text-xs font-semibold">Category</th>
@@ -198,11 +213,12 @@ export default function InventoryPage() {
             </tr></thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={8}><EmptyState message="No items found." icon={<Package size={32} />} /></td></tr>
+                <tr><td colSpan={canDelete ? 9 : 8}><EmptyState message="No items found." icon={<Package size={32} />} /></td></tr>
               ) : filtered.map(item => {
                 const isLow = item.quantity_on_hand <= item.reorder_level && item.reorder_level > 0;
                 return (
                   <tr key={item.id} className={cn("border-b hover:bg-gray-50", isLow && "bg-red-50")}>
+                    <RowCheckbox id={item.id} selectedIds={selectedIds} onToggle={toggleSelect} canDelete={canDelete} />
                     <td className="px-4 py-2.5 font-medium">{item.name}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{item.item_code || "—"}</td>
                     <td className="px-4 py-2.5 text-gray-600">{item.category || "—"}</td>

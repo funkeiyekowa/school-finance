@@ -26,7 +26,8 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
-import { PurgeButton } from "@/components/ui/PurgeButton";
+import { BulkDeleteBar } from "@/components/ui/BulkDeleteBar";
+import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtDate, fmtMoney, cn, generateCode } from "@/lib/utils";
@@ -66,6 +67,7 @@ const FINE_PER_DAY = 50; // school's overdue fine rate, in local currency units 
 export default function LibraryPage() {
   const { canEdit, orgId } = useAuth();
   const perms = useDeletePermissions();
+  const canDelete = perms.canDelete("library");
   const canPurge = perms.canPurge();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
@@ -383,6 +385,24 @@ export default function LibraryPage() {
       (b.isbn || "").toLowerCase().includes(search.toLowerCase())
     )
   );
+
+  const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(filteredBooks.map(b => b.id));
+
+  async function bulkDeleteSelected(ids: string[]) {
+    if (ids.length === 0) return;
+    const { error } = await supabase.from("library_books").delete().in("id", ids);
+    if (error) { notify(`Bulk delete failed: ${error.message}`, "error"); return; }
+    notify(`Deleted ${ids.length} books`);
+    load();
+  }
+
+  async function bulkDeleteAll() {
+    if (!orgId) { notify("Purge failed: no organization context", "error"); return; }
+    const { error } = await supabase.from("library_books").delete().eq("organization_id", orgId);
+    if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
+    notify("All library books deleted");
+    load();
+  }
   const activeLoans = loans.filter((l) => l.status === "active");
   const overdueLoans = activeLoans.filter((l) => l.due_date < new Date().toISOString().slice(0, 10));
   const pendingReservations = reservations.filter((r) => r.status === "pending");
@@ -417,16 +437,6 @@ export default function LibraryPage() {
             <Button variant="gold" onClick={() => openBookForm()}><Plus size={16} /> Add Book</Button>
           </>
         )}
-        <PurgeButton
-          itemLabel="library books"
-          canPurge={canPurge}
-          onPurge={async () => {
-            if (!orgId) return;
-            const { error } = await supabase.from("library_books").delete().eq("organization_id", orgId);
-            if (error) { alert(`Purge failed: ${error.message}`); return; }
-            load();
-          }}
-        />
       </PageHeader>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -469,6 +479,10 @@ export default function LibraryPage() {
                 />
               ) : (
                 <div className="space-y-3">
+                  <BulkDeleteBar selectedIds={selectedIds} totalCount={filteredBooks.length} itemLabel="library books"
+                    onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
+                    onSelectAll={selectAll} onClearSelection={clearSelection}
+                    canDelete={canDelete} canPurge={canPurge} />
                   {filteredBooks.map((b) => {
                     const bookCopies = copiesByBook[b.id] || [];
                     const availableCount = bookCopies.filter((c) => c.status === "available").length;
@@ -477,6 +491,13 @@ export default function LibraryPage() {
                       <Card key={b.id}>
                         <div className="flex items-start justify-between gap-3 cursor-pointer" onClick={() => setExpandedBook(expanded ? null : b.id)}>
                           <div className="flex items-start gap-3">
+                            {canDelete && (
+                              <input type="checkbox"
+                                checked={selectedIds.has(b.id)}
+                                onChange={() => toggleSelect(b.id)}
+                                onClick={e => e.stopPropagation()}
+                                className="accent-[#0F2A47] w-4 h-4 mt-2" />
+                            )}
                             <div className="w-9 h-12 rounded shrink-0" style={{ backgroundColor: b.cover_color }} />
                             <div>
                               <h3 className="font-semibold text-[#0F2A47] text-sm">{b.title}</h3>

@@ -4,7 +4,9 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
-import { PurgeButton } from "@/components/ui/PurgeButton";
+import { BulkDeleteBar, RowCheckbox } from "@/components/ui/BulkDeleteBar";
+import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
+import { useToast } from "@/lib/hooks/useToast";
 import { cn } from "@/lib/utils";
 import { BulkImportModal } from "@/components/import/BulkImportModal";
 import { PageHeader, LoadingSpinner, EmptyState } from "@/components/ui/PageHeader";
@@ -60,7 +62,9 @@ interface StaffStats {
 export default function StaffPage() {
   const { canEdit, profile, orgId } = useAuth();
   const perms = useDeletePermissions();
+  const canDelete = perms.canDelete("staff");
   const canPurge = perms.canPurge();
+  const { notify, ToastHost } = useToast();
   const [showBulkImport, setShowBulkImport] = useState(false);
   const supabase = useMemo(() => createClient(), []);
   const [departments, setDepartments] = useState<DeptRow[]>([]);
@@ -182,6 +186,24 @@ export default function StaffPage() {
   useEffect(() => {
     resetPagination();
   }, [search, resetPagination]);
+
+  const { selectedIds, toggle: toggleSelect, selectAll, clearSelection } = useBulkSelect(staff.map(s => s.id));
+
+  async function bulkDeleteSelected(ids: string[]) {
+    if (ids.length === 0) return;
+    const { error } = await supabase.from("staff_members").delete().in("id", ids);
+    if (error) { notify(`Bulk delete failed: ${error.message}`, "error"); return; }
+    notify(`Deleted ${ids.length} staff members`);
+    refetch();
+  }
+
+  async function bulkDeleteAll() {
+    if (!orgId) { notify("Purge failed: no organization context", "error"); return; }
+    const { error } = await supabase.from("staff_members").delete().eq("organization_id", orgId);
+    if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
+    notify("All staff members deleted");
+    refetch();
+  }
 
   async function loadAssignments(staffId: string) {
     setLoadingAssignments(true);
@@ -390,17 +412,8 @@ export default function StaffPage() {
           </Button>
         )}
         {canEdit && <Button variant="gold" onClick={() => openForm()}><Plus size={14} /> Add Staff</Button>}
-        <PurgeButton
-          itemLabel="staff members"
-          canPurge={canPurge}
-          onPurge={async () => {
-            if (!orgId) return;
-            const { error } = await supabase.from("staff_members").delete().eq("organization_id", orgId);
-            if (error) { alert(`Purge failed: ${error.message}`); return; }
-            refetch();
-          }}
-        />
       </PageHeader>
+      <ToastHost />
 
       {staffError && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
@@ -467,10 +480,15 @@ export default function StaffPage() {
       </div>
 
       {/* Table */}
+      <BulkDeleteBar selectedIds={selectedIds} totalCount={staff.length} itemLabel="staff members"
+        onDeleteSelected={bulkDeleteSelected} onDeleteAll={bulkDeleteAll}
+        onSelectAll={selectAll} onClearSelection={clearSelection}
+        canDelete={canDelete} canPurge={canPurge} />
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-[#0F2A47] text-white">
+              {canDelete && <th className="w-8 px-2 py-3" />}
               <th className="px-4 py-3 text-xs font-semibold w-12" />
               <th className="text-left px-4 py-3 text-xs font-semibold">Code</th>
               <th className="text-left px-4 py-3 text-xs font-semibold">Name</th>
@@ -483,9 +501,10 @@ export default function StaffPage() {
             </tr></thead>
             <tbody>
               {staff.length === 0 ? (
-                <tr><td colSpan={9}><EmptyState message="No staff found." icon={<Users size={32} />} /></td></tr>
+                <tr><td colSpan={canDelete ? 10 : 9}><EmptyState message="No staff found." icon={<Users size={32} />} /></td></tr>
               ) : staff.map(s => (
                 <tr key={s.id} className="border-b hover:bg-gray-50">
+                  <RowCheckbox id={s.id} selectedIds={selectedIds} onToggle={toggleSelect} canDelete={canDelete} />
                   <td className="px-4 py-2.5">
                     <div className="w-8 h-8 rounded-full bg-[#0F2A47] text-[#C9A227] flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
                       {s.photo_url ? (

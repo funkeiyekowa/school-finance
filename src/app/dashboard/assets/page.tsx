@@ -19,7 +19,8 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useDeletePermissions } from "@/lib/hooks/useDeletePermissions";
-import { PurgeButton } from "@/components/ui/PurgeButton";
+import { BulkDeleteBar } from "@/components/ui/BulkDeleteBar";
+import { useBulkSelect } from "@/lib/hooks/useBulkSelect";
 import { useToast } from "@/lib/hooks/useToast";
 import { extractErrorMessage } from "@/lib/errors/extractErrorMessage";
 import { fmtMoney, fmtDate, cn, generateCode, today } from "@/lib/utils";
@@ -74,6 +75,7 @@ const emptyAssetForm = {
 export default function AssetsPage() {
   const { canEdit, orgId } = useAuth();
   const perms = useDeletePermissions();
+  const canDelete = perms.canDelete("assets");
   const canPurge = perms.canPurge();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
@@ -166,6 +168,24 @@ export default function AssetsPage() {
     }
     return true;
   });
+
+  const { selectedIds: assetSelectedIds, toggle: toggleAssetSelect, selectAll: selectAllAssets, clearSelection: clearAssetSelection } = useBulkSelect(filteredAssets.map(a => a.id));
+
+  async function bulkDeleteSelectedAssets(ids: string[]) {
+    if (ids.length === 0) return;
+    const { error } = await supabase.from("assets").delete().in("id", ids);
+    if (error) { notify(`Bulk delete failed: ${error.message}`, "error"); return; }
+    notify(`Deleted ${ids.length} assets`);
+    load();
+  }
+
+  async function bulkDeleteAllAssets() {
+    if (!orgId) { notify("Purge failed: no organization context", "error"); return; }
+    const { error } = await supabase.from("assets").delete().eq("organization_id", orgId);
+    if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
+    notify("All assets deleted");
+    load();
+  }
 
   /* ---------------- New / Edit asset ---------------- */
   const [showAssetForm, setShowAssetForm] = useState(false);
@@ -502,16 +522,6 @@ export default function AssetsPage() {
         {canEdit && tab === "maintenance" && (
           <Button variant="gold" onClick={() => openMaintenanceForm()}><Plus size={16} /> Log Maintenance</Button>
         )}
-        <PurgeButton
-          itemLabel="assets"
-          canPurge={canPurge}
-          onPurge={async () => {
-            if (!orgId) return;
-            const { error } = await supabase.from("assets").delete().eq("organization_id", orgId);
-            if (error) { alert(`Purge failed: ${error.message}`); return; }
-            load();
-          }}
-        />
       </PageHeader>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -566,11 +576,22 @@ export default function AssetsPage() {
                 />
               ) : (
                 <div className="space-y-2">
+                  <BulkDeleteBar selectedIds={assetSelectedIds} totalCount={filteredAssets.length} itemLabel="assets"
+                    onDeleteSelected={bulkDeleteSelectedAssets} onDeleteAll={bulkDeleteAllAssets}
+                    onSelectAll={selectAllAssets} onClearSelection={clearAssetSelection}
+                    canDelete={canDelete} canPurge={canPurge} />
                   {filteredAssets.map((a) => {
                     const bv = bookValueById.get(a.id);
                     return (
                       <Card key={a.id} className="hover:shadow-md transition-shadow cursor-pointer !p-4" onClick={() => setDetailAsset(a)}>
                         <div className="flex items-center justify-between gap-3">
+                          {canDelete && (
+                            <input type="checkbox"
+                              checked={assetSelectedIds.has(a.id)}
+                              onChange={() => toggleAssetSelect(a.id)}
+                              onClick={e => e.stopPropagation()}
+                              className="accent-[#0F2A47] w-4 h-4" />
+                          )}
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-semibold text-[#0F2A47]">{a.asset_code}</span>
