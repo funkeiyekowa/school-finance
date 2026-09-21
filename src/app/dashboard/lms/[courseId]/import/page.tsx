@@ -143,11 +143,13 @@ export default function LmsMassImportPage() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("lms_courses").select("*").eq("id", courseId).maybeSingle();
+      let q = supabase.from("lms_courses").select("*").eq("id", courseId);
+      if (orgId) q = q.eq("organization_id", orgId);
+      const { data } = await q.maybeSingle();
       setCourse((data as CourseRow) ?? null);
       setLoading(false);
     })();
-  }, [supabase, courseId]);
+  }, [supabase, courseId, orgId]);
 
   async function onFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];

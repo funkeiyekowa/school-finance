@@ -143,15 +143,26 @@ export default function ClinicPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    let stQ = supabase.from("students").select("id, full_name, student_code").order("full_name");
+    let sfQ = supabase.from("staff_members").select("id, full_name, staff_code").eq("status", "active").order("full_name");
+    let pQ = supabase.from("clinic_patient_records").select("*").order("created_at", { ascending: false });
+    let vQ = supabase.from("clinic_visits").select("*").order("visit_date", { ascending: false });
+    let dQ = supabase.from("clinic_medications_dispensed").select("*");
+    let mQ = supabase.from("clinic_medications_inventory").select("*").order("name");
+    let vacQ = supabase.from("clinic_vaccinations").select("*").order("administered_date", { ascending: false });
+    let incQ = supabase.from("clinic_health_incidents").select("*").order("incident_date", { ascending: false });
+    if (orgId) {
+      stQ = stQ.eq("organization_id", orgId);
+      sfQ = sfQ.eq("organization_id", orgId);
+      pQ = pQ.eq("organization_id", orgId);
+      vQ = vQ.eq("organization_id", orgId);
+      dQ = dQ.eq("organization_id", orgId);
+      mQ = mQ.eq("organization_id", orgId);
+      vacQ = vacQ.eq("organization_id", orgId);
+      incQ = incQ.eq("organization_id", orgId);
+    }
     const [stRes, sfRes, pRes, vRes, dRes, mRes, vacRes, incRes, statsRes] = await Promise.all([
-      supabase.from("students").select("id, full_name, student_code").order("full_name"),
-      supabase.from("staff_members").select("id, full_name, staff_code").eq("status", "active").order("full_name"),
-      supabase.from("clinic_patient_records").select("*").order("created_at", { ascending: false }),
-      supabase.from("clinic_visits").select("*").order("visit_date", { ascending: false }),
-      supabase.from("clinic_medications_dispensed").select("*"),
-      supabase.from("clinic_medications_inventory").select("*").order("name"),
-      supabase.from("clinic_vaccinations").select("*").order("administered_date", { ascending: false }),
-      supabase.from("clinic_health_incidents").select("*").order("incident_date", { ascending: false }),
+      stQ, sfQ, pQ, vQ, dQ, mQ, vacQ, incQ,
       supabase.rpc("phase1_clinic_stats"),
     ]);
     setStudents((stRes.data as StudentOption[]) ?? []);
@@ -175,7 +186,7 @@ export default function ClinicPage() {
       });
     }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

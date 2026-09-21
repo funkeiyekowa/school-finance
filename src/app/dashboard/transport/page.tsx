@@ -83,12 +83,20 @@ export default function TransportPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    let vQ = supabase.from("transport_vehicles").select("*").order("vehicle_code");
+    let rQ = supabase.from("transport_routes").select("*").order("route_code");
+    let aQ = supabase.from("transport_student_assignments").select("*").order("created_at", { ascending: false });
+    let sQ = supabase.from("students").select("id, full_name, student_code").eq("status", "active").order("full_name");
+    let stQ = supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name");
+    if (orgId) {
+      vQ = vQ.eq("organization_id", orgId);
+      rQ = rQ.eq("organization_id", orgId);
+      aQ = aQ.eq("organization_id", orgId);
+      sQ = sQ.eq("organization_id", orgId);
+      stQ = stQ.eq("organization_id", orgId);
+    }
     const [vRes, rRes, aRes, sRes, stRes, statsRes] = await Promise.all([
-      supabase.from("transport_vehicles").select("*").order("vehicle_code"),
-      supabase.from("transport_routes").select("*").order("route_code"),
-      supabase.from("transport_student_assignments").select("*").order("created_at", { ascending: false }),
-      supabase.from("students").select("id, full_name, student_code").eq("status", "active").order("full_name"),
-      supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name"),
+      vQ, rQ, aQ, sQ, stQ,
       supabase.rpc("phase1_transport_stats"),
     ]);
     setVehicles((vRes.data as VehicleRow[]) ?? []);
@@ -106,7 +114,7 @@ export default function TransportPage() {
       });
     }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

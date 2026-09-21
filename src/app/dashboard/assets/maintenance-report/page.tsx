@@ -34,8 +34,8 @@ export default function AssetMaintenanceReportPage() {
     if (!orgId) return;
     (async () => {
       const [a, m] = await Promise.all([
-        supabase.from("assets").select("id, asset_code, name, category").neq("status", "disposed"),
-        supabase.from("asset_maintenance").select("*").order("maintenance_date", { ascending: false }),
+        supabase.from("assets").select("id, asset_code, name, category").eq("organization_id", orgId).neq("status", "disposed"),
+        supabase.from("asset_maintenance").select("*").eq("organization_id", orgId).order("maintenance_date", { ascending: false }),
       ]);
       setAssets((a.data as Asset[]) ?? []);
       setMaint((m.data as Maintenance[]) ?? []);

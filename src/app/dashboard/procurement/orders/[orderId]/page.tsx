@@ -44,7 +44,7 @@ interface StaffOption { id: string; full_name: string; }
 export default function PurchaseOrderPage() {
   const params = useParams<{ orderId: string }>();
   const orderId = params.orderId;
-  const { canEdit } = useAuth();
+  const { canEdit, orgId } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
 
@@ -57,18 +57,23 @@ export default function PurchaseOrderPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [oRes, iRes, sRes] = await Promise.all([
-      supabase.from("procurement_orders").select("*").eq("id", orderId).maybeSingle(),
-      supabase.from("procurement_order_items").select("*").eq("order_id", orderId),
-      supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name"),
-    ]);
+    let oQ = supabase.from("procurement_orders").select("*").eq("id", orderId);
+    const iQ = supabase.from("procurement_order_items").select("*").eq("order_id", orderId);
+    let sQ = supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name");
+    if (orgId) {
+      oQ = oQ.eq("organization_id", orgId);
+      sQ = sQ.eq("organization_id", orgId);
+    }
+    const [oRes, iRes, sRes] = await Promise.all([oQ.maybeSingle(), iQ, sQ]);
     const o = oRes.data as OrderRow | null;
     setOrder(o);
     setItems((iRes.data as OrderItemRow[]) ?? []);
     setStaff((sRes.data as StaffOption[]) ?? []);
 
     if (o?.vendor_id) {
-      const { data: vData } = await supabase.from("vendors").select("id, name, vendor_code, contact_person, phone, email").eq("id", o.vendor_id).maybeSingle();
+      let vQ = supabase.from("vendors").select("id, name, vendor_code, contact_person, phone, email").eq("id", o.vendor_id);
+      if (orgId) vQ = vQ.eq("organization_id", orgId);
+      const { data: vData } = await vQ.maybeSingle();
       setVendor(vData as VendorOption | null);
     } else {
       setVendor(null);
@@ -83,7 +88,7 @@ export default function PurchaseOrderPage() {
     }
 
     setLoading(false);
-  }, [supabase, orderId]);
+  }, [supabase, orderId, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

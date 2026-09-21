@@ -50,7 +50,7 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 export default function PayrollRunPage() {
   const params = useParams<{ runId: string }>();
   const runId = params.runId;
-  const { canEdit } = useAuth();
+  const { canEdit, orgId } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
   const branding = useBranding();
@@ -62,14 +62,17 @@ export default function PayrollRunPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [rRes, pRes] = await Promise.all([
-      supabase.from("payroll_runs").select("*").eq("id", runId).maybeSingle(),
-      supabase.from("payroll_payslips").select("*").eq("run_id", runId).order("staff_name"),
-    ]);
+    let rQ = supabase.from("payroll_runs").select("*").eq("id", runId);
+    let pQ = supabase.from("payroll_payslips").select("*").eq("run_id", runId).order("staff_name");
+    if (orgId) {
+      rQ = rQ.eq("organization_id", orgId);
+      pQ = pQ.eq("organization_id", orgId);
+    }
+    const [rRes, pRes] = await Promise.all([rQ.maybeSingle(), pQ]);
     setRun(rRes.data as RunRow | null);
     setPayslips((pRes.data as PayslipRow[]) ?? []);
     setLoading(false);
-  }, [supabase, runId]);
+  }, [supabase, runId, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

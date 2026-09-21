@@ -80,13 +80,22 @@ export default function LibraryPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    let bQ = supabase.from("library_books").select("*").order("title");
+    let cQ = supabase.from("library_book_copies").select("*").order("copy_code");
+    let lQ = supabase.from("library_loans").select("*").order("borrowed_at", { ascending: false });
+    let rQ = supabase.from("library_reservations").select("*").order("reserved_at", { ascending: false });
+    let sQ = supabase.from("students").select("id, full_name, student_code").eq("status", "active").order("full_name");
+    let stfQ = supabase.from("staff_members").select("id, full_name, staff_code").eq("status", "active").order("full_name");
+    if (orgId) {
+      bQ = bQ.eq("organization_id", orgId);
+      cQ = cQ.eq("organization_id", orgId);
+      lQ = lQ.eq("organization_id", orgId);
+      rQ = rQ.eq("organization_id", orgId);
+      sQ = sQ.eq("organization_id", orgId);
+      stfQ = stfQ.eq("organization_id", orgId);
+    }
     const [bRes, cRes, lRes, rRes, sRes, stfRes, statsRes] = await Promise.all([
-      supabase.from("library_books").select("*").order("title"),
-      supabase.from("library_book_copies").select("*").order("copy_code"),
-      supabase.from("library_loans").select("*").order("borrowed_at", { ascending: false }),
-      supabase.from("library_reservations").select("*").order("reserved_at", { ascending: false }),
-      supabase.from("students").select("id, full_name, student_code").eq("status", "active").order("full_name"),
-      supabase.from("staff_members").select("id, full_name, staff_code").eq("status", "active").order("full_name"),
+      bQ, cQ, lQ, rQ, sQ, stfQ,
       supabase.rpc("phase1_library_stats"),
     ]);
     setBooks((bRes.data as BookRow[]) ?? []);
@@ -106,7 +115,7 @@ export default function LibraryPage() {
       });
     }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

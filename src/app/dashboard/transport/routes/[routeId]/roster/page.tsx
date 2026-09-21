@@ -11,6 +11,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { useBranding } from "@/lib/hooks/useBranding";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
 import { PrintableLetterhead, PrintableFooter } from "@/components/print/PrintableLetterhead";
@@ -28,6 +29,7 @@ interface Student { id: string; full_name: string; student_code: string; grade: 
 export default function TransportRosterPrintPage() {
   const params = useParams<{ routeId: string }>();
   const supabase = useMemo(() => createClient(), []);
+  const { orgId } = useAuth();
   const branding = useBranding();
 
   const [route, setRoute] = useState<Route | null>(null);
@@ -37,25 +39,31 @@ export default function TransportRosterPrintPage() {
 
   useEffect(() => {
     (async () => {
-      const { data: r } = await supabase.from("transport_routes").select("*").eq("id", params.routeId).maybeSingle();
+      let rQ = supabase.from("transport_routes").select("*").eq("id", params.routeId);
+      if (orgId) rQ = rQ.eq("organization_id", orgId);
+      const { data: r } = await rQ.maybeSingle();
       const route = r as Route | null;
       setRoute(route);
       if (!route) { setLoading(false); return; }
       if (route.vehicle_id) {
-        const { data: v } = await supabase.from("transport_vehicles").select("*").eq("id", route.vehicle_id).maybeSingle();
+        let vQ = supabase.from("transport_vehicles").select("*").eq("id", route.vehicle_id);
+        if (orgId) vQ = vQ.eq("organization_id", orgId);
+        const { data: v } = await vQ.maybeSingle();
         setVehicle(v as Vehicle ?? null);
       }
-      const { data: asg } = await supabase.from("transport_student_assignments").select("*").eq("route_id", route.id).eq("status", "active");
+      let asgQ = supabase.from("transport_student_assignments").select("*").eq("route_id", route.id).eq("status", "active");
+      if (orgId) asgQ = asgQ.eq("organization_id", orgId);
+      const { data: asg } = await asgQ;
       const asgList = (asg as Assignment[]) ?? [];
       const studentIds = asgList.map(a => a.student_id);
-      const { data: st } = studentIds.length
-        ? await supabase.from("students").select("id, full_name, student_code, grade, guardian_phone").in("id", studentIds)
-        : { data: [] };
+      let stQ = studentIds.length ? supabase.from("students").select("id, full_name, student_code, grade, guardian_phone").in("id", studentIds) : null;
+      if (stQ && orgId) stQ = stQ.eq("organization_id", orgId);
+      const { data: st } = stQ ? await stQ : { data: [] };
       const stMap = new Map((st as Student[] ?? []).map(s => [s.id, s]));
       setRows(asgList.filter(a => stMap.has(a.student_id)).map(a => ({ assignment: a, student: stMap.get(a.student_id)! })));
       setLoading(false);
     })();
-  }, [supabase, params.routeId]);
+  }, [supabase, params.routeId, orgId]);
 
   if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (!route) return <div className="p-8 text-center text-gray-500">Route not found.</div>;

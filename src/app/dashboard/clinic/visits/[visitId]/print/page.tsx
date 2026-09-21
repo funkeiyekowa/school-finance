@@ -13,6 +13,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/context/AuthContext";
 import { useBranding } from "@/lib/hooks/useBranding";
 import { fmtDate } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/PageHeader";
@@ -51,6 +52,7 @@ export default function ClinicVisitPrintPage() {
   const params = useParams<{ visitId: string }>();
   const visitId = params.visitId;
   const supabase = useMemo(() => createClient(), []);
+  const { orgId } = useAuth();
   const branding = useBranding();
 
   const [loading, setLoading] = useState(true);
@@ -62,36 +64,48 @@ export default function ClinicVisitPrintPage() {
 
   useEffect(() => {
     (async () => {
-      const { data: vd } = await supabase.from("clinic_visits").select("*").eq("id", visitId).maybeSingle();
+      let vQ = supabase.from("clinic_visits").select("*").eq("id", visitId);
+      if (orgId) vQ = vQ.eq("organization_id", orgId);
+      const { data: vd } = await vQ.maybeSingle();
       const v = vd as VisitRow | null;
       setVisit(v);
       if (!v) { setLoading(false); return; }
 
-      const { data: dd } = await supabase.from("clinic_medications_dispensed").select("*").eq("visit_id", visitId);
+      let dQ = supabase.from("clinic_medications_dispensed").select("*").eq("visit_id", visitId);
+      if (orgId) dQ = dQ.eq("organization_id", orgId);
+      const { data: dd } = await dQ;
       setDispensed((dd as DispensedRow[]) ?? []);
 
-      // Subject: student or staff
       if (v.student_id) {
-        const { data } = await supabase.from("students").select("id, full_name, first_name, last_name, student_code, date_of_birth, grade").eq("id", v.student_id).maybeSingle();
+        let sQ = supabase.from("students").select("id, full_name, first_name, last_name, student_code, date_of_birth, grade").eq("id", v.student_id);
+        if (orgId) sQ = sQ.eq("organization_id", orgId);
+        const { data } = await sQ.maybeSingle();
         setSubject(data as StudentRow ?? null);
-        // patient record via student_id
-        const { data: p } = await supabase.from("clinic_patient_records").select("*").eq("student_id", v.student_id).maybeSingle();
+        let pQ = supabase.from("clinic_patient_records").select("*").eq("student_id", v.student_id);
+        if (orgId) pQ = pQ.eq("organization_id", orgId);
+        const { data: p } = await pQ.maybeSingle();
         setPatient(p as PatientRow ?? null);
       } else if (v.staff_id) {
-        const { data } = await supabase.from("staff_members").select("id, full_name, staff_code").eq("id", v.staff_id).maybeSingle();
+        let sQ = supabase.from("staff_members").select("id, full_name, staff_code").eq("id", v.staff_id);
+        if (orgId) sQ = sQ.eq("organization_id", orgId);
+        const { data } = await sQ.maybeSingle();
         setSubject(data as StaffRow ?? null);
-        const { data: p } = await supabase.from("clinic_patient_records").select("*").eq("staff_id", v.staff_id).maybeSingle();
+        let pQ = supabase.from("clinic_patient_records").select("*").eq("staff_id", v.staff_id);
+        if (orgId) pQ = pQ.eq("organization_id", orgId);
+        const { data: p } = await pQ.maybeSingle();
         setPatient(p as PatientRow ?? null);
       }
 
       if (v.attended_by_staff_id) {
-        const { data } = await supabase.from("staff_members").select("id, full_name, staff_code").eq("id", v.attended_by_staff_id).maybeSingle();
+        let sQ = supabase.from("staff_members").select("id, full_name, staff_code").eq("id", v.attended_by_staff_id);
+        if (orgId) sQ = sQ.eq("organization_id", orgId);
+        const { data } = await sQ.maybeSingle();
         setAttendedBy(data as StaffRow ?? null);
       }
 
       setLoading(false);
     })();
-  }, [supabase, visitId]);
+  }, [supabase, visitId, orgId]);
 
   if (loading || !branding) return <div className="p-8"><LoadingSpinner /></div>;
   if (!visit) return <div className="p-8 text-center text-gray-500">Visit not found.</div>;

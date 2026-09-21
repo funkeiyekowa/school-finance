@@ -63,14 +63,24 @@ export default function LmsHomePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    let cQ = supabase.from("lms_courses").select("*").order("created_at", { ascending: false });
+    let subQ = supabase.from("subjects").select("id, name").order("name");
+    let clsQ = supabase.from("classes").select("id, name").order("name");
+    let stfQ = supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name");
+    let lessonQ = supabase.from("lms_lessons").select("course_id");
+    let enrollQ = supabase.from("lms_enrollments").select("course_id").eq("status", "active");
+    if (orgId) {
+      cQ = cQ.eq("organization_id", orgId);
+      subQ = subQ.eq("organization_id", orgId);
+      clsQ = clsQ.eq("organization_id", orgId);
+      stfQ = stfQ.eq("organization_id", orgId);
+      lessonQ = lessonQ.eq("organization_id", orgId);
+      enrollQ = enrollQ.eq("organization_id", orgId);
+    }
     const [cRes, subRes, clsRes, stfRes, statsRes, lessonRes, enrollRes] = await Promise.all([
-      supabase.from("lms_courses").select("*").order("created_at", { ascending: false }),
-      supabase.from("subjects").select("id, name").order("name"),
-      supabase.from("classes").select("id, name").order("name"),
-      supabase.from("staff_members").select("id, full_name").eq("status", "active").order("full_name"),
+      cQ, subQ, clsQ, stfQ,
       supabase.rpc("phase1_lms_course_stats"),
-      supabase.from("lms_lessons").select("course_id"),
-      supabase.from("lms_enrollments").select("course_id").eq("status", "active"),
+      lessonQ, enrollQ,
     ]);
     setCourses((cRes.data as CourseRow[]) ?? []);
     setSubjects((subRes.data as Option[]) ?? []);
@@ -92,7 +102,7 @@ export default function LmsHomePage() {
     for (const row of (enrollRes.data as { course_id: string }[]) ?? []) ec[row.course_id] = (ec[row.course_id] || 0) + 1;
     setEnrollCounts(ec);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 
