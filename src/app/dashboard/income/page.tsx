@@ -22,7 +22,7 @@ import { INCOME_CATEGORIES, PAYMENT_METHODS } from "@/lib/types";
 
 function IncomePageInner() {
   const searchParams = useSearchParams();
-  const { canEdit, profile, isDeveloper } = useAuth();
+  const { canEdit, profile, isDeveloper, orgId } = useAuth();
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
   const [entries, setEntries] = useState<IncomeEntry[]>([]);
@@ -75,7 +75,8 @@ function IncomePageInner() {
   }
 
   async function bulkDeleteAll() {
-    const { error } = await supabase.from("income_entries").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (!orgId) { notify("Purge failed: no organization context", "error"); return; }
+    const { error } = await supabase.from("income_entries").delete().eq("organization_id", orgId);
     if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Purge All Income", details: `All income entries deleted` });
     notify("All income entries deleted");

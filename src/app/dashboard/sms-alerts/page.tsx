@@ -46,7 +46,7 @@ function getAlertKind(alert: {
 }
 
 export default function SmsAlertsPage() {
-  const { profile, canEdit, isDeveloper } = useAuth();
+  const { profile, canEdit, isDeveloper, orgId } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const { notify, ToastHost } = useToast();
   const [alerts, setAlerts] = useState<SmsInbox[]>([]);
@@ -119,7 +119,8 @@ export default function SmsAlertsPage() {
     load();
   }
   async function bulkDeleteAll() {
-    const { error } = await supabase.from("sms_inbox").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (!orgId) { notify("Purge failed: no organization context", "error"); return; }
+    const { error } = await supabase.from("sms_inbox").delete().eq("organization_id", orgId);
     if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Purge All Payment Alerts", details: "All alerts deleted" });
     notify("All alerts deleted");

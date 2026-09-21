@@ -19,7 +19,7 @@ import type { ExpenseEntry, Vendor } from "@/lib/types";
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "@/lib/types";
 
 export default function ExpensesPage() {
-  const { canEdit, profile, isDeveloper } = useAuth();
+  const { canEdit, profile, isDeveloper, orgId } = useAuth();
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
   const [entries, setEntries] = useState<ExpenseEntry[]>([]);
@@ -65,7 +65,8 @@ export default function ExpensesPage() {
     load();
   }
   async function bulkDeleteAll() {
-    const { error } = await supabase.from("expense_entries").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (!orgId) { notify("Purge failed: no organization context", "error"); return; }
+    const { error } = await supabase.from("expense_entries").delete().eq("organization_id", orgId);
     if (error) { notify(`Purge failed: ${error.message}`, "error"); return; }
     await supabase.from("activity_log").insert({ user_email: profile?.email, user_name: profile?.full_name, action: "Purge All Expenses", details: "All expense entries deleted" });
     notify("All expense entries deleted");
