@@ -165,12 +165,12 @@ function Inner() {
       }
 
       const [cRes, subRes, perRes, entRes, settingsRes, schoolRes] = await Promise.all([
-        supabase.from("classes").select("id, name").eq("id", effectiveClassId).maybeSingle(),
-        supabase.from("subjects").select("id, name, short_code").eq("active", true),
-        supabase.from("periods").select("*").eq("active", true).order("sort_order"),
-        supabase.from("timetable_entries").select("*").eq("class_id", effectiveClassId),
+        supabase.from("classes").select("id, name").eq("id", effectiveClassId).eq("organization_id", orgId).maybeSingle(),
+        supabase.from("subjects").select("id, name, short_code").eq("active", true).eq("organization_id", orgId),
+        supabase.from("periods").select("*").eq("active", true).eq("organization_id", orgId).order("sort_order"),
+        supabase.from("timetable_entries").select("*").eq("class_id", effectiveClassId).eq("organization_id", orgId),
         supabase.rpc("get_my_timetable_settings"),
-        supabase.from("school_settings").select("current_term, current_year").maybeSingle(),
+        supabase.from("school_settings").select("current_term, current_year").eq("organization_id", orgId).maybeSingle(),
       ]);
       if (cancelled) return;
       setCls((cRes.data as ClassRow) ?? null);

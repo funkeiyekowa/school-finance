@@ -64,16 +64,22 @@ export default function TimetablePage() {
   const [scopeError, setScopeError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [clsRes, subRes, perRes, entRes, teachRes] = await Promise.all([
-      supabase.from("classes").select("id, name").eq("active", true).order("sequence"),
-      supabase.from("subjects").select("id, name, short_code").eq("active", true).order("name"),
-      supabase.from("periods").select("*").eq("active", true).order("sort_order"),
-      // RLS (fix_timetable_role_scoped_access.sql) already restricts which
-      // rows come back for a student/teacher -- this unfiltered select is
-      // safe by construction, not by convention.
-      supabase.from("timetable_entries").select("*"),
-      supabase.from("staff_members").select("id, full_name").eq("staff_type", "teaching").eq("status", "active").order("full_name"),
-    ]);
+    let clsQ = supabase.from("classes").select("id, name").eq("active", true).order("sequence");
+    let subQ = supabase.from("subjects").select("id, name, short_code").eq("active", true).order("name");
+    let perQ = supabase.from("periods").select("*").eq("active", true).order("sort_order");
+    // RLS (fix_timetable_role_scoped_access.sql) restricts what students/
+    // teachers can see; the explicit org filter is UI defense-in-depth
+    // against a platform-admin session leaking cross-tenant rows.
+    let entQ = supabase.from("timetable_entries").select("*");
+    let teachQ = supabase.from("staff_members").select("id, full_name").eq("staff_type", "teaching").eq("status", "active").order("full_name");
+    if (orgId) {
+      clsQ = clsQ.eq("organization_id", orgId);
+      subQ = subQ.eq("organization_id", orgId);
+      perQ = perQ.eq("organization_id", orgId);
+      entQ = entQ.eq("organization_id", orgId);
+      teachQ = teachQ.eq("organization_id", orgId);
+    }
+    const [clsRes, subRes, perRes, entRes, teachRes] = await Promise.all([clsQ, subQ, perQ, entQ, teachQ]);
     const firstError = [clsRes.error, subRes.error, perRes.error, entRes.error, teachRes.error].find(Boolean);
     if (firstError) {
       setLoadError(firstError.message);
@@ -129,7 +135,7 @@ export default function TimetablePage() {
     setEntries(entRes.data as EntryRow[] ?? []);
     setTeachers(teachRes.data as TeacherRow[] ?? []);
     setLoading(false);
-  }, [supabase, isTeacherRole, isStudentLike, profile?.id]);
+  }, [supabase, isTeacherRole, isStudentLike, profile?.id, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

@@ -32,7 +32,7 @@ interface Student { id: string; student_code: string; full_name: string; grade: 
 export default function ReportCardDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { isAdmin, profile } = useAuth();
+  const { isAdmin, profile, orgId } = useAuth();
   const supabase = createClient();
   const { notify, ToastHost } = useToast();
 
@@ -48,17 +48,27 @@ export default function ReportCardDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: cardData } = await supabase.from("report_cards").select("*").eq("id", id).single();
+    let cardQ = supabase.from("report_cards").select("*").eq("id", id);
+    if (orgId) cardQ = cardQ.eq("organization_id", orgId);
+    const { data: cardData } = await cardQ.single();
     if (cardData) {
       const card = cardData as unknown as ReportCardFull;
       setRc(card);
       setTeacherComment(card.teacher_comment || "");
       setPrincipalComment(card.principal_comment || "");
+      let stuQ = supabase.from("students").select("*").eq("id", card.student_id);
+      let yrQ = card.academic_year_id ? supabase.from("academic_years").select("name").eq("id", card.academic_year_id) : null;
+      let clQ = card.class_id ? supabase.from("classes").select("name").eq("id", card.class_id) : null;
+      if (orgId) {
+        stuQ = stuQ.eq("organization_id", orgId);
+        if (yrQ) yrQ = yrQ.eq("organization_id", orgId);
+        if (clQ) clQ = clQ.eq("organization_id", orgId);
+      }
       const [sub, stu, yr, cl] = await Promise.all([
         supabase.from("report_card_subjects").select("*").eq("report_card_id", id),
-        supabase.from("students").select("*").eq("id", card.student_id).single(),
-        card.academic_year_id ? supabase.from("academic_years").select("name").eq("id", card.academic_year_id).single() : Promise.resolve({ data: null }),
-        card.class_id ? supabase.from("classes").select("name").eq("id", card.class_id).single() : Promise.resolve({ data: null }),
+        stuQ.single(),
+        yrQ ? yrQ.single() : Promise.resolve({ data: null }),
+        clQ ? clQ.single() : Promise.resolve({ data: null }),
       ]);
       setSubjects((sub.data ?? []) as SubjectRow[]);
       setStudent(stu.data as Student);
@@ -66,7 +76,7 @@ export default function ReportCardDetailPage() {
       setClassName((cl.data as { name: string } | null)?.name || "");
     }
     setLoading(false);
-  }, [id, supabase]);
+  }, [id, supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

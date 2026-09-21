@@ -50,9 +50,9 @@ function Inner() {
     if (!orgId) return;
     (async () => {
       const [c, r, s] = await Promise.all([
-        supabase.from("classes").select("id, name").eq("active", true).order("name"),
-        supabase.from("attendance_records").select("class_id, student_id, status_code, date").gte("date", from).lte("date", to),
-        supabase.from("students").select("id, grade").eq("status", "active"),
+        supabase.from("classes").select("id, name").eq("active", true).eq("organization_id", orgId).order("name"),
+        supabase.from("attendance_records").select("class_id, student_id, status_code, date").eq("organization_id", orgId).gte("date", from).lte("date", to),
+        supabase.from("students").select("id, grade").eq("status", "active").eq("organization_id", orgId),
       ]);
       setClasses((c.data as ClassRow[]) ?? []);
       setRecords((r.data as Rec[]) ?? []);

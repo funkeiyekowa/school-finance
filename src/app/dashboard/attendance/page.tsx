@@ -66,9 +66,15 @@ export default function AttendancePage() {
   });
 
   const loadBase = useCallback(async () => {
+    let clsQ = supabase.from("classes").select("id, name, short_code, sequence, organization_id").eq("active", true).order("sequence");
+    let statusQ = supabase.from("attendance_statuses").select("*").eq("active", true).order("sort_order");
+    if (orgId) {
+      clsQ = clsQ.eq("organization_id", orgId);
+      statusQ = statusQ.eq("organization_id", orgId);
+    }
     const [clsRes, statusRes, cfgRes] = await Promise.all([
-      supabase.from("classes").select("id, name, short_code, sequence, organization_id").eq("active", true).order("sequence"),
-      supabase.from("attendance_statuses").select("*").eq("active", true).order("sort_order"),
+      clsQ,
+      statusQ,
       supabase.rpc("get_my_attendance_capture_settings"),
     ]);
     if (cfgRes.data) {
@@ -110,7 +116,7 @@ export default function AttendancePage() {
     setClasses(allClasses);
     setStatuses((statusRes.data as StatusRow[]) ?? []);
     setLoading(false);
-  }, [supabase, user, membership]);
+  }, [supabase, user, membership, orgId]);
 
   useEffect(() => { loadBase(); }, [loadBase]);
 

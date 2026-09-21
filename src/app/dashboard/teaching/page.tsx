@@ -25,7 +25,7 @@ const DAYS = [
 ];
 
 export default function TeachingPage() {
-  const { user, profile } = useAuth();
+  const { user, profile, orgId } = useAuth();
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
 
@@ -39,13 +39,19 @@ export default function TeachingPage() {
   const load = useCallback(async () => {
     if (!user) { setLoading(false); return; }
 
-    const [assRes, clsRes, subRes, ttRes, perRes] = await Promise.all([
-      supabase.from("teacher_assignments").select("*").eq("user_id", user.id).eq("active", true),
-      supabase.from("classes").select("id, name, short_code").eq("active", true).order("sequence"),
-      supabase.from("subjects").select("id, name, short_code").eq("active", true).order("name"),
-      supabase.from("timetable_entries").select("*"),
-      supabase.from("periods").select("*").eq("active", true).order("sort_order"),
-    ]);
+    let assQ = supabase.from("teacher_assignments").select("*").eq("user_id", user.id).eq("active", true);
+    let clsQ = supabase.from("classes").select("id, name, short_code").eq("active", true).order("sequence");
+    let subQ = supabase.from("subjects").select("id, name, short_code").eq("active", true).order("name");
+    let ttQ = supabase.from("timetable_entries").select("*");
+    let perQ = supabase.from("periods").select("*").eq("active", true).order("sort_order");
+    if (orgId) {
+      assQ = assQ.eq("organization_id", orgId);
+      clsQ = clsQ.eq("organization_id", orgId);
+      subQ = subQ.eq("organization_id", orgId);
+      ttQ = ttQ.eq("organization_id", orgId);
+      perQ = perQ.eq("organization_id", orgId);
+    }
+    const [assRes, clsRes, subRes, ttRes, perRes] = await Promise.all([assQ, clsQ, subQ, ttQ, perQ]);
 
     const myAssignments = assRes.data as AssignmentRow[] ?? [];
     setAssignments(myAssignments);
@@ -70,7 +76,7 @@ export default function TeachingPage() {
     }
     setStudentCounts(counts);
     setLoading(false);
-  }, [user, supabase]);
+  }, [user, supabase, orgId]);
 
   useEffect(() => { load(); }, [load]);
 

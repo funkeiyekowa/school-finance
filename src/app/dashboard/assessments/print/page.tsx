@@ -51,9 +51,9 @@ function Inner() {
     if (!orgId || !classId || !subjectId) { setLoading(false); return; }
     (async () => {
       const [cRes, sRes, tRes] = await Promise.all([
-        supabase.from("classes").select("id, name, short_code").eq("id", classId).maybeSingle(),
-        supabase.from("subjects").select("id, name, short_code").eq("id", subjectId).maybeSingle(),
-        supabase.from("assessment_types").select("*").eq("active", true).order("sort_order"),
+        supabase.from("classes").select("id, name, short_code").eq("id", classId).eq("organization_id", orgId).maybeSingle(),
+        supabase.from("subjects").select("id, name, short_code").eq("id", subjectId).eq("organization_id", orgId).maybeSingle(),
+        supabase.from("assessment_types").select("*").eq("active", true).eq("organization_id", orgId).order("sort_order"),
       ]);
       const cls = cRes.data as ClassRow | null;
       setCls(cls);
@@ -63,6 +63,7 @@ function Inner() {
         const { data: st } = await supabase.from("students")
           .select("id, full_name, student_code")
           .eq("status", "active")
+          .eq("organization_id", orgId)
           .or(`grade.eq.${cls.name},grade.eq.${cls.short_code ?? "__none__"}`)
           .order("full_name");
         setStudents((st as Student[]) ?? []);
