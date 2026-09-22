@@ -33,8 +33,7 @@ assert.match(generateRoute, /output/);
 assert.doesNotMatch(generateRoute, /sendMessage|publishAnnouncement|saveGrade|finalizeGrade/);
 assert.doesNotMatch(askRoute, /sendMessage|publishAnnouncement|saveGrade|finalizeGrade/);
 
-// Red-team contracts: user text stays in the user turn, while safety and
-// answer-key protections remain fixed in server-controlled system prompts.
+// Red-team contracts for student safety and answer-key protection.
 assert.match(prompts, /learning_assistant[\s\S]*Never produce disallowed, unsafe, adult, violent or hateful content/);
 assert.match(prompts, /lms_quiz_generate[\s\S]*Base every question strictly on the given lesson content/);
 assert.match(prompts, /lms_quiz_generate[\s\S]*Exactly one option per question must have is_correct true/);
@@ -44,7 +43,14 @@ assert.match(prompts, /attendance_insights[\s\S]*Do not make disciplinary recomm
 assert.match(generateRoute, /preset\.system/);
 assert.doesNotMatch(generateRoute, /systemOverride/);
 
+// Executive intelligence must be grounded in pre-computed KPI facts, never invented data.
+assert.match(prompts, /analytics_digest[\s\S]*KPI snapshot/);
+assert.match(prompts, /analytics_digest[\s\S]*grounded strictly in the numbers given/);
+assert.match(prompts, /analytics_digest[\s\S]*Do NOT invent data/);
+assert.match(prompts, /school_newsletter[\s\S]*Never invent statistics/);
+assert.match(prompts, /school_newsletter[\s\S]*Facts snapshot/);
+
 assert.match(aiConfig, /set_org_assistant_config/);
 assert.match(aiConfig, /_is_org_admin_for/);
 
-console.log("AI governance scope, exam-lock, audit, draft-only, prompt-injection, and answer-key contracts passed.");
+console.log("AI governance and executive intelligence grounding contracts passed.");
