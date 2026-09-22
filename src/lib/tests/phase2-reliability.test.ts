@@ -14,23 +14,23 @@ async function main() {
   assert.doesNotMatch(safeName, /[\\/]/);
   assert.equal(sanitizePathSegments("../../school-assets\\2026/term 1", 3), "school-assets/2026/term1");
 
-const png = new File([
-  new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-], "photo.png", { type: "image/png" });
-const fakePng = new File(["not an image"], "photo.png", { type: "image/png" });
-const allowedImages = new Set(["image/png"]);
+  const png = new File([
+    new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  ], "photo.png", { type: "image/png" });
+  const fakePng = new File(["not an image"], "photo.png", { type: "image/png" });
+  const allowedImages = new Set(["image/png"]);
   assert.equal(await validateFileSignature(png, allowedImages), null);
   assert.match((await validateFileSignature(fakePng, allowedImages)) ?? "", /contents do not match/i);
 
-const nowSeconds = String(Math.floor(Date.now() / 1000));
+  const nowSeconds = String(Math.floor(Date.now() / 1000));
   assert.equal(validateWebhookTimestamp(new Request("https://example.test", { headers: { "x-webhook-timestamp": nowSeconds } })).ok, true);
   assert.equal(validateWebhookTimestamp(new Request("https://example.test", { headers: { "x-webhook-timestamp": "1" } })).ok, false);
   assert.equal(validateWebhookTimestamp(new Request("https://example.test")).ok, true);
 
-const previousUrl = process.env.UPSTASH_REDIS_REST_URL;
-const previousToken = process.env.UPSTASH_REDIS_REST_TOKEN;
-delete process.env.UPSTASH_REDIS_REST_URL;
-delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  const previousUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const previousToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+  delete process.env.UPSTASH_REDIS_REST_URL;
+  delete process.env.UPSTASH_REDIS_REST_TOKEN;
   const fallback = await rateLimitAsync({ name: "client-error", key: `phase2-test-${Date.now()}`, max: 1, windowMs: 60_000 });
   assert.equal(fallback.allowed, true);
   if (previousUrl === undefined) delete process.env.UPSTASH_REDIS_REST_URL;
@@ -51,7 +51,22 @@ delete process.env.UPSTASH_REDIS_REST_TOKEN;
     assert.match(source, /verify(?:Sms|Email)Secret/);
   }
 
-  console.log("Phase 2 reliability contract checks passed.");
+  const gradingMigration = fs.readFileSync(
+    path.join(root, "supabase", "20260922011500_phase2_lms_grading_integrity.sql"),
+    "utf8",
+  );
+  assert.match(gradingMigration, /phase2_validate_lms_submission_grade/);
+  assert.match(gradingMigration, /phase2_grade_lms_submission/);
+  assert.match(gradingMigration, /FOR UPDATE/);
+  assert.match(gradingMigration, /phase1_teacher_course_scope\(v_course\)/);
+  assert.match(gradingMigration, /p_score < 0 OR p_score > v_max/);
+  assert.match(gradingMigration, /Students cannot set grading fields/);
+  assert.match(gradingMigration, /NEW\.graded_by_staff_id/);
+  assert.match(gradingMigration, /REVOKE ALL ON FUNCTION/);
+  assert.match(gradingMigration, /GRANT EXECUTE ON FUNCTION/);
+  assert.doesNotMatch(gradingMigration, /organization_id\s+uuid[),]/);
+
+  console.log("Phase 2 reliability and LMS grading-integrity contract checks passed.");
 }
 
 void main();
