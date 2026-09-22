@@ -31,6 +31,17 @@ assert.match(scoreLookupFix, /LIMIT 1/);
 assert.match(scoreLookupFix, /Criterion feedback must be 2,000 characters or fewer/);
 assert.doesNotMatch(scoreLookupFix, /MIN\(item\)/);
 
+const rubricRoute = fs.readFileSync(path.join(root, "src", "app", "api", "lms", "rubrics", "route.ts"), "utf8");
+const rubricPage = fs.readFileSync(path.join(root, "src", "app", "dashboard", "teaching", "rubrics", "page.tsx"), "utf8");
+const teachingLayout = fs.readFileSync(path.join(root, "src", "app", "dashboard", "teaching", "layout.tsx"), "utf8");
+assert.match(rubricRoute, /requireStaffSessionWithOrg/);
+assert.match(rubricRoute, /\.eq\("organization_id", organizationId\)/);
+assert.match(rubricRoute, /phase2_save_assignment_rubric/);
+assert.match(rubricRoute, /A rubric requires 1 to 20 criteria/);
+assert.match(rubricPage, /Criterion maximums must total exactly/);
+assert.match(rubricPage, /This rubric is locked because scoring has begun/);
+assert.match(teachingLayout, /\/dashboard\/teaching\/rubrics/);
+
 const submissionMigration = fs.readFileSync(path.join(root, "supabase", "20260922014500_phase2_lms_student_submissions.sql"), "utf8");
 const assignmentRoute = fs.readFileSync(path.join(root, "src", "app", "api", "lms", "student-assignments", "route.ts"), "utf8");
 const assignmentComponent = fs.readFileSync(path.join(root, "src", "app", "dashboard", "my-courses", "[courseId]", "lessons", "[lessonId]", "_components", "StudentAssignments.tsx"), "utf8");
@@ -56,5 +67,5 @@ assert.match(assignmentComponent, /Assignment submitted/);
 assert.match(assignmentComponent, /20,000 characters/);
 assert.match(lessonLayout, /<StudentAssignments lessonId=\{lessonId\}/);
 
-console.log("Phase 2 rubric and student assignment-loop integrity contracts passed.");
+console.log("Phase 2 Rubric Studio and student assignment-loop integrity contracts passed.");
 console.log("Live database tests remain required for RLS personas, submission locking, score boundaries, and concurrency.");
