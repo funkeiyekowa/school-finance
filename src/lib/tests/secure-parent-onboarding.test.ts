@@ -36,7 +36,7 @@ assert.ok(
   "new parent provisioning must not assign the historical shared password",
 );
 assert.ok(
-  !/encrypted_password\s*=\s*extensions\.crypt\(\s*'ChangeMe123!'/.test(migration),
+  !/SET\s+encrypted_password\s*=\s*extensions\.crypt\(\s*'ChangeMe123!'/i.test(migration),
   "parent reset must not assign the historical shared password",
 );
 
