@@ -5,7 +5,7 @@ import path from "node:path";
 const root = path.resolve(__dirname, "..", "..");
 const askRoute = fs.readFileSync(path.join(root, "app", "api", "ai", "ask", "route.ts"), "utf8");
 const aiServer = fs.readFileSync(path.join(root, "ai", "server.ts"), "utf8");
-const aiConfig = fs.readFileSync(path.join(root, "..", "..", "supabase", "ai_assistant_module.sql"), "utf8");
+const aiConfig = fs.readFileSync(path.join(root, "..", "supabase", "ai_assistant_module.sql"), "utf8");
 
 assert.match(askRoute, /requireActiveSession/);
 assert.match(askRoute, /session\.organizationId/);
