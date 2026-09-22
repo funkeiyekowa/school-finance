@@ -50,6 +50,7 @@ BEGIN
  IF NOT EXISTS(SELECT 1 FROM public.lms_courses c WHERE c.id=p_course_id AND c.organization_id=v_org FOR UPDATE) OR NOT(public.is_org_admin(v_org) OR public.phase1_teacher_course_scope(p_course_id))THEN RAISE EXCEPTION'Not authorized for course';END IF;
  IF NOT EXISTS(SELECT 1 FROM public.lms_enrollments e WHERE e.organization_id=v_org AND e.course_id=p_course_id AND e.student_id=p_student_id AND e.status='active')THEN RAISE EXCEPTION'Student is not actively enrolled';END IF;
  IF p_assignment_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.lms_assignments a JOIN public.lms_lessons l ON l.id=a.lesson_id WHERE a.id=p_assignment_id AND a.organization_id=v_org AND l.course_id=p_course_id)THEN RAISE EXCEPTION'Assignment does not belong to course';END IF;
+ IF p_owner_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.org_memberships m WHERE m.organization_id=v_org AND m.user_id=p_owner_id AND m.active=true)THEN RAISE EXCEPTION'Owner must be an active organization member';END IF;
  IF p_category NOT IN('missing_work','low_performance','attendance','engagement','other') OR p_priority NOT IN('low','medium','high','urgent') OR p_status NOT IN('open','in_progress','resolved')THEN RAISE EXCEPTION'Invalid intervention classification';END IF;
  IF char_length(btrim(coalesce(p_reason,''))) NOT BETWEEN 1 AND 1000 THEN RAISE EXCEPTION'Reason must be 1 to 1000 characters';END IF;
  IF p_status='resolved'AND btrim(coalesce(p_resolution,''))=''THEN RAISE EXCEPTION'Resolution summary is required';END IF;
@@ -59,6 +60,7 @@ BEGIN
  ELSE
   SELECT*INTO v_existing FROM public.lms_student_interventions WHERE id=p_intervention_id AND organization_id=v_org AND course_id=p_course_id FOR UPDATE;
   IF v_existing.id IS NULL THEN RAISE EXCEPTION'Intervention not found';END IF;
+  IF v_existing.student_id IS DISTINCT FROM p_student_id THEN RAISE EXCEPTION'Intervention student cannot be changed';END IF;
   IF v_existing.status='resolved'AND p_status<>'resolved'AND NOT public.is_org_admin(v_org)THEN RAISE EXCEPTION'Only an admin can reopen a resolved intervention';END IF;
   UPDATE public.lms_student_interventions SET assignment_id=p_assignment_id,category=p_category,priority=p_priority,reason=btrim(p_reason),action_plan=nullif(btrim(coalesce(p_action_plan,'')),''),status=p_status,owner_id=coalesce(p_owner_id,owner_id),due_date=p_due_date,family_visible=coalesce(p_family_visible,false),resolution=nullif(btrim(coalesce(p_resolution,'')),''),resolved_at=CASE WHEN p_status='resolved'THEN coalesce(resolved_at,now())ELSE NULL END,resolved_by=CASE WHEN p_status='resolved'THEN coalesce(resolved_by,auth.uid())ELSE NULL END,updated_at=now() WHERE id=v_existing.id RETURNING id INTO v_id;
  END IF;RETURN v_id;
