@@ -1,0 +1,69 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertCircle, BookOpenCheck, RefreshCw, TriangleAlert } from "lucide-react";
+import { PageHeader, LoadingSpinner } from "@/components/ui/PageHeader";
+import { Button } from "@/components/ui/Button";
+import { cn } from "@/lib/utils";
+
+interface GradebookRow {
+  course: { id: string; title: string; status: string };
+  student: { id: string; full_name: string; student_code: string; grade: string | null };
+  assignmentCount: number;
+  gradedCount: number;
+  pendingCount: number;
+  missingCount: number;
+  lateCount: number;
+  earnedPoints: number;
+  possiblePoints: number;
+  average: number | null;
+  needsIntervention: boolean;
+}
+interface Payload { courses: Array<{ id: string; title: string; status: string }>; rows: GradebookRow[]; error?: string; }
+
+export default function GradebookPage() {
+  const [payload, setPayload] = useState<Payload | null>(null);
+  const [courseId, setCourseId] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/lms/gradebook", { cache: "no-store" });
+      const result = await response.json() as Payload;
+      if (!response.ok) throw new Error(result.error || "Could not load the gradebook.");
+      setPayload(result);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Could not load the gradebook.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+  const rows = useMemo(() => (payload?.rows ?? []).filter((row) => courseId === "all" || row.course.id === courseId), [courseId, payload]);
+  const interventionCount = rows.filter((row) => row.needsIntervention).length;
+  const classAverage = (() => {
+    const values = rows.flatMap((row) => row.average == null ? [] : [row.average]);
+    return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length * 10) / 10 : null;
+  })();
+
+  if (loading) return <div className="p-6"><LoadingSpinner /></div>;
+  return <div className="space-y-5 p-6">
+    <PageHeader icon={<BookOpenCheck size={24} />} gradient="blue" title="Authoritative Gradebook" subtitle="One view of finalized grades, missing work, late work, and intervention needs" />
+    {error ? <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><span className="flex items-center gap-2"><AlertCircle size={16} />{error}</span><Button size="sm" variant="secondary" onClick={() => void load()}><RefreshCw size={13} />Retry</Button></div> : <>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <label className="text-xs font-semibold text-gray-600">Course<select value={courseId} onChange={(event) => setCourseId(event.target.value)} className="mt-1 block min-w-64 rounded-lg border bg-white px-3 py-2 text-sm"><option value="all">All authorized courses</option>{payload?.courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
+        <Button size="sm" variant="secondary" onClick={() => void load()}><RefreshCw size={13} />Refresh</Button>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Metric label="Students" value={rows.length} /><Metric label="Class average" value={classAverage == null ? "—" : `${classAverage}%`} /><Metric label="Intervention flags" value={interventionCount} warning={interventionCount > 0} /><Metric label="Missing work" value={rows.reduce((sum, row) => sum + row.missingCount, 0)} warning /></div>
+      {!rows.length ? <div className="rounded-xl border border-dashed bg-white py-14 text-center text-sm text-gray-500">No active enrollments are available in this course selection.</div> : <div className="overflow-x-auto rounded-xl border bg-white"><table className="w-full min-w-[900px] text-sm"><thead><tr className="bg-[#0F2A47] text-white"><th className="px-4 py-3 text-left">Student</th><th className="px-4 py-3 text-left">Course</th><th className="px-4 py-3 text-right">Graded</th><th className="px-4 py-3 text-right">Pending</th><th className="px-4 py-3 text-right">Missing</th><th className="px-4 py-3 text-right">Late</th><th className="px-4 py-3 text-right">Points</th><th className="px-4 py-3 text-right">Average</th><th className="px-4 py-3 text-left">Status</th></tr></thead><tbody>{rows.map((row) => <tr key={`${row.course.id}:${row.student.id}`} className={cn("border-b last:border-0", row.needsIntervention && "bg-amber-50/60")}><td className="px-4 py-3"><div className="font-semibold text-[#0F2A47]">{row.student.full_name}</div><div className="font-mono text-[10px] text-gray-400">{row.student.student_code}{row.student.grade ? ` · ${row.student.grade}` : ""}</div></td><td className="px-4 py-3 text-gray-700">{row.course.title}</td><td className="px-4 py-3 text-right">{row.gradedCount}/{row.assignmentCount}</td><td className="px-4 py-3 text-right text-amber-700">{row.pendingCount}</td><td className="px-4 py-3 text-right font-semibold text-red-700">{row.missingCount}</td><td className="px-4 py-3 text-right">{row.lateCount}</td><td className="px-4 py-3 text-right">{row.earnedPoints}/{row.possiblePoints}</td><td className="px-4 py-3 text-right font-bold">{row.average == null ? "—" : `${row.average}%`}</td><td className="px-4 py-3">{row.needsIntervention ? <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800"><TriangleAlert size={11} />Review</span> : <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-700">On track</span>}</td></tr>)}</tbody></table></div>}
+    </>}
+  </div>;
+}
+
+function Metric({ label, value, warning = false }: { label: string; value: string | number; warning?: boolean }) {
+  return <div className="rounded-xl border bg-white p-4"><div className={cn("text-2xl font-bold", warning ? "text-amber-700" : "text-[#0F2A47]")}>{value}</div><div className="text-xs text-gray-500">{label}</div></div>;
+}
