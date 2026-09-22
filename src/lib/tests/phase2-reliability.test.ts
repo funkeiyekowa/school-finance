@@ -14,9 +14,7 @@ async function main() {
   assert.doesNotMatch(safeName, /[\\/]/);
   assert.equal(sanitizePathSegments("../../school-assets\\2026/term 1", 3), "school-assets/2026/term1");
 
-  const png = new File([
-    new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-  ], "photo.png", { type: "image/png" });
+  const png = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], "photo.png", { type: "image/png" });
   const fakePng = new File(["not an image"], "photo.png", { type: "image/png" });
   const allowedImages = new Set(["image/png"]);
   assert.equal(await validateFileSignature(png, allowedImages), null);
@@ -42,19 +40,10 @@ async function main() {
   const photosRoute = fs.readFileSync(path.join(root, "src", "app", "api", "photos", "upload", "route.ts"), "utf8");
   const smsRoute = fs.readFileSync(path.join(root, "src", "app", "api", "sms-webhook", "route.ts"), "utf8");
   const emailRoute = fs.readFileSync(path.join(root, "src", "app", "api", "email-webhook", "route.ts"), "utf8");
-  for (const source of [storageRoute, photosRoute]) {
-    assert.match(source, /validateFileSignature/);
-    assert.match(source, /requestSizeExceeds/);
-  }
-  for (const source of [smsRoute, emailRoute]) {
-    assert.match(source, /validateWebhookTimestamp/);
-    assert.match(source, /verify(?:Sms|Email)Secret/);
-  }
+  for (const source of [storageRoute, photosRoute]) { assert.match(source, /validateFileSignature/); assert.match(source, /requestSizeExceeds/); }
+  for (const source of [smsRoute, emailRoute]) { assert.match(source, /validateWebhookTimestamp/); assert.match(source, /verify(?:Sms|Email)Secret/); }
 
-  const gradingMigration = fs.readFileSync(
-    path.join(root, "supabase", "20260922011500_phase2_lms_grading_integrity.sql"),
-    "utf8",
-  );
+  const gradingMigration = fs.readFileSync(path.join(root, "supabase", "20260922011500_phase2_lms_grading_integrity.sql"), "utf8");
   assert.match(gradingMigration, /phase2_validate_lms_submission_grade/);
   assert.match(gradingMigration, /phase2_grade_lms_submission/);
   assert.match(gradingMigration, /FOR UPDATE/);
@@ -66,7 +55,21 @@ async function main() {
   assert.match(gradingMigration, /GRANT EXECUTE ON FUNCTION/);
   assert.doesNotMatch(gradingMigration, /organization_id\s+uuid[),]/);
 
-  console.log("Phase 2 reliability and LMS grading-integrity contract checks passed.");
+  const gradingRoute = fs.readFileSync(path.join(root, "src", "app", "api", "lms", "grading-queue", "route.ts"), "utf8");
+  const gradingPage = fs.readFileSync(path.join(root, "src", "app", "dashboard", "teaching", "grading", "page.tsx"), "utf8");
+  const teachingLayout = fs.readFileSync(path.join(root, "src", "app", "dashboard", "teaching", "layout.tsx"), "utf8");
+  assert.match(gradingRoute, /requireStaffSessionWithOrg/);
+  assert.match(gradingRoute, /\.eq\("organization_id", organizationId\)/);
+  assert.match(gradingRoute, /phase2_grade_lms_submission/);
+  assert.match(gradingRoute, /Feedback must be 5,000 characters or fewer/);
+  assert.doesNotMatch(gradingRoute, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(gradingPage, /Enter a score between 0 and/);
+  assert.match(gradingPage, /Save authoritative grade/);
+  assert.match(gradingPage, /AI suggestion:.*Review it independently/);
+  assert.match(gradingPage, /No .*submissions in your authorized courses/);
+  assert.match(teachingLayout, /\/dashboard\/teaching\/grading/);
+
+  console.log("Phase 2 reliability, grading-integrity, and grading-queue contract checks passed.");
 }
 
 void main();
