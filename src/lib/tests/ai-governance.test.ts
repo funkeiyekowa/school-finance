@@ -33,7 +33,18 @@ assert.match(generateRoute, /output/);
 assert.doesNotMatch(generateRoute, /sendMessage|publishAnnouncement|saveGrade|finalizeGrade/);
 assert.doesNotMatch(askRoute, /sendMessage|publishAnnouncement|saveGrade|finalizeGrade/);
 
+// Red-team contracts: user text stays in the user turn, while safety and
+// answer-key protections remain fixed in server-controlled system prompts.
+assert.match(prompts, /learning_assistant[\s\S]*Never produce disallowed, unsafe, adult, violent or hateful content/);
+assert.match(prompts, /lms_quiz_generate[\s\S]*Base every question strictly on the given lesson content/);
+assert.match(prompts, /lms_quiz_generate[\s\S]*Exactly one option per question must have is_correct true/);
+assert.match(prompts, /attendance_insights[\s\S]*anonymised attendance statistics/);
+assert.match(prompts, /attendance_insights[\s\S]*Do not reference any student by name/);
+assert.match(prompts, /attendance_insights[\s\S]*Do not make disciplinary recommendations/);
+assert.match(generateRoute, /preset\.system/);
+assert.doesNotMatch(generateRoute, /systemOverride/);
+
 assert.match(aiConfig, /set_org_assistant_config/);
 assert.match(aiConfig, /_is_org_admin_for/);
 
-console.log("AI governance scope, exam-lock, audit, admin-control, and draft-only contracts passed.");
+console.log("AI governance scope, exam-lock, audit, draft-only, prompt-injection, and answer-key contracts passed.");
