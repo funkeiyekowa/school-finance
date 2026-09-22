@@ -26,7 +26,6 @@ assert.match(route, /unavailableSections/);
 assert.match(route, /lookbackDays/);
 assert.match(route, /subjectPerformance/);
 
-// Sensitive domains must never be added to this broad summary contract.
 for (const forbidden of [
   "guardian_email",
   "guardian_phone",
@@ -39,15 +38,14 @@ for (const forbidden of [
   assert.doesNotMatch(route, new RegExp(`select\\([^)]*${forbidden}`), `broad Student 360 query exposes ${forbidden}`);
 }
 
-// The endpoint must not use a service-role client or trust an org supplied by the browser.
 assert.doesNotMatch(route, /SUPABASE_SERVICE_ROLE_KEY/);
 assert.doesNotMatch(route, /searchParams\.get\(["']organization_id/);
 
-// The UI is additive around the existing page, does not wrap printable child routes,
-// and makes loading, retry, partial-data and empty-data states explicit.
 assert.match(layout, /<Student360Header studentId=\{id\}/);
 assert.match(layout, /\{children\}/);
-assert.match(header, /pathname\.replace\(\/\\\/$\/,[^)]*\) === expectedPath/);
+assert.match(header, /const expectedPath = `\/dashboard\/students\/\$\{studentId\}`/);
+assert.match(header, /const shouldRender = pathname\.replace/);
+assert.match(header, /if \(!shouldRender\) return null/);
 assert.match(header, /\/api\/students\/360\?student_id=/);
 assert.match(header, /cache: "no-store"/);
 assert.match(header, /Retry/);
