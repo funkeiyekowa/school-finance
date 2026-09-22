@@ -7,6 +7,10 @@ const migration = fs.readFileSync(
   path.join(root, "supabase", "20260906100000_fix_school_login_after_phase1.sql"),
   "utf8",
 );
+const forgotPassword = fs.readFileSync(
+  path.join(root, "src", "app", "auth", "forgot-password", "page.tsx"),
+  "utf8",
+);
 
 assert.match(migration, /CREATE OR REPLACE FUNCTION public\.resolve_login_context/);
 assert.match(migration, /v_staff_type/);
@@ -15,4 +19,10 @@ assert.match(migration, /parent_profiles pp/);
 assert.doesNotMatch(migration, /INSERT INTO public\.org_memberships/);
 assert.doesNotMatch(migration, /UPDATE public\.org_memberships/);
 
-console.log("School login context regression contract passed.");
+assert.match(forgotPassword, /If an account exists for that email/);
+assert.match(forgotPassword, /resetPasswordForEmail/);
+assert.doesNotMatch(forgotPassword, /auth_email_exists/);
+assert.doesNotMatch(forgotPassword, /Email is not on the system/);
+assert.doesNotMatch(forgotPassword, /setError\(error\.message\)/);
+
+console.log("School login context and password-reset privacy regression contracts passed.");
