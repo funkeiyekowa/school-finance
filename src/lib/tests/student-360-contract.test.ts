@@ -7,6 +7,14 @@ const route = fs.readFileSync(
   path.join(root, "src", "app", "api", "students", "360", "route.ts"),
   "utf8",
 );
+const layout = fs.readFileSync(
+  path.join(root, "src", "app", "dashboard", "students", "[id]", "layout.tsx"),
+  "utf8",
+);
+const header = fs.readFileSync(
+  path.join(root, "src", "app", "dashboard", "students", "[id]", "_components", "Student360Header.tsx"),
+  "utf8",
+);
 
 assert.match(route, /requireStaffSessionWithOrg\(\{ permission: "students" \}\)/);
 assert.match(route, /\.eq\("organization_id", organizationId\)/);
@@ -18,7 +26,6 @@ assert.match(route, /unavailableSections/);
 assert.match(route, /lookbackDays/);
 assert.match(route, /subjectPerformance/);
 
-// Sensitive domains must never be added to this broad summary contract.
 for (const forbidden of [
   "guardian_email",
   "guardian_phone",
@@ -31,9 +38,22 @@ for (const forbidden of [
   assert.doesNotMatch(route, new RegExp(`select\\([^)]*${forbidden}`), `broad Student 360 query exposes ${forbidden}`);
 }
 
-// The endpoint must not use a service-role client or trust an org supplied by the browser.
 assert.doesNotMatch(route, /SUPABASE_SERVICE_ROLE_KEY/);
 assert.doesNotMatch(route, /searchParams\.get\(["']organization_id/);
 
-console.log("Student 360 contract checks passed: tenant scope, field minimization, and partial-data behavior are present.");
+assert.match(layout, /<Student360Header studentId=\{id\}/);
+assert.match(layout, /\{children\}/);
+assert.match(header, /const expectedPath = `\/dashboard\/students\/\$\{studentId\}`/);
+assert.match(header, /const shouldRender = pathname\.replace/);
+assert.match(header, /if \(!shouldRender\) return null/);
+assert.match(header, /\/api\/students\/360\?student_id=/);
+assert.match(header, /cache: "no-store"/);
+assert.match(header, /Retry/);
+assert.match(header, /summary\.partial/);
+assert.match(header, /No attendance sessions recorded/);
+assert.match(header, /No assessment scores recorded/);
+assert.match(header, /Role-aware, field-minimized summary/);
+assert.doesNotMatch(header, /guardian_email|guardian_phone|date_of_birth|medical_records|safeguarding/);
+
+console.log("Student 360 contract checks passed: tenant scope, field minimization, partial-data behavior, and additive UI are present.");
 console.log("Live Supabase persona and cross-tenant tests remain required before production sign-off.");
