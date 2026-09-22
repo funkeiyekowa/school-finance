@@ -299,7 +299,7 @@ export default function ParentsPage() {
   }
 
   async function resetPassword(p: ParentRow) {
-    if (!confirm(`Reset ${p.full_name}'s password to the default? They will have to change it on next sign-in.`)) return;
+    if (!confirm(`Send ${p.full_name} through secure password recovery? No password will be displayed.`)) return;
     const { data, error } = await supabase.rpc("admin_reset_parent_password", { p_parent_profile_id: p.id });
     if (error) { alert(error.message); return; }
     if (data === "ok") setCredNotice({ email: p.email, name: p.full_name, kind: "reset" });
@@ -353,12 +353,11 @@ export default function ParentsPage() {
               {credNotice.name} — {credNotice.kind === "created" ? "login created" : "password reset"}
             </div>
             <div className="text-sm text-emerald-800 mt-1">
-              Share these credentials. They will be prompted to change the password on next sign-in.
+              Account access is ready. Ask the parent to use the secure password-recovery flow to set or regain access; no password is displayed here.
             </div>
-            <div className="mt-2 rounded-md bg-white border border-emerald-200 p-2 text-xs font-mono flex flex-wrap gap-x-6 gap-y-1">
-              <span><span className="text-gray-500">Email:</span> <strong>{credNotice.email}</strong></span>
-              <span><span className="text-gray-500">Password:</span> <strong>ChangeMe123!</strong></span>
-              <button type="button" onClick={() => navigator.clipboard?.writeText(`${credNotice.email} / ChangeMe123!`)} className="ml-auto text-emerald-700 hover:underline">Copy</button>
+            <div className="mt-2 rounded-md bg-white border border-emerald-200 p-2 text-xs text-emerald-800">
+              <span><span className="text-gray-500">Account:</span> <strong>{credNotice.email}</strong></span>
+              <span className="ml-3">Use “Forgot password” on the sign-in page to complete access securely.</span>
             </div>
           </div>
           <button onClick={() => setCredNotice(null)} className="text-emerald-700 hover:text-emerald-900 p-1"><X size={16} /></button>
@@ -442,7 +441,7 @@ export default function ParentsPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-end">
                         <Button size="sm" variant="ghost" onClick={() => openEdit(p)}><User size={12} /> Edit</Button>
-                        <Button size="sm" variant="ghost" onClick={() => resetPassword(p)}><KeyRound size={12} /> Reset PW</Button>
+                        <Button size="sm" variant="ghost" onClick={() => resetPassword(p)}><KeyRound size={12} /> Password recovery</Button>
                         <button
                           onClick={() => deleteParent(p)}
                           className="text-xs text-red-600 hover:text-red-800 hover:underline inline-flex items-center gap-1 px-2 py-1"
