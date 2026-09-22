@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, BookOpenCheck, ClipboardCheck, LibraryBig } from "lucide-react";
+import { BookOpen, BookOpenCheck, ClipboardCheck, GraduationCap, LibraryBig } from "lucide-react";
 import { ModuleGuard } from "@/lib/guards/module-guard";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,7 @@ const links = [
   { href: "/dashboard/teaching", label: "My Teaching", icon: BookOpen },
   { href: "/dashboard/teaching/grading", label: "Grading Queue", icon: ClipboardCheck },
   { href: "/dashboard/teaching/rubrics", label: "Rubric Studio", icon: BookOpenCheck },
+  { href: "/dashboard/teaching/gradebook", label: "Gradebook", icon: GraduationCap },
   { href: "/dashboard/lms", label: "Courses", icon: LibraryBig },
 ];
 
