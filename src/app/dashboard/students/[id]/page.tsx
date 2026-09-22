@@ -262,8 +262,8 @@ h1{font-size:18px;margin-bottom:4px;}
     if (email && emailChanged) {
       alert(
         hadEmailBefore
-          ? `Student updated. Guardian email changed \u2014 if this is a new address, a Parent Portal account was auto-provisioned for ${email} with default password ChangeMe123! (they will be asked to change it on first sign-in).`
-          : `Student updated. Parent Portal account auto-provisioned for ${email}. Default password: ChangeMe123! (they will be asked to change it on first sign-in).`
+          ? `Student updated. Guardian email changed. Ask ${email} to use secure password recovery to access the Parent Portal.`
+          : `Student updated. Parent Portal account provisioned for ${email}. Ask the guardian to use secure password recovery to access the Parent Portal.`
       );
     }
     load();
@@ -447,7 +447,7 @@ h1{font-size:18px;margin-bottom:4px;}
                 </>
               ) : (
                 <p className="text-xs text-gray-500">
-                  No guardian on file. {isAdmin && "Setting a guardian email auto-creates a Parent Portal account so they can sign in."}
+                  No guardian on file. {isAdmin && "Setting a guardian email provisions a Parent Portal account; the guardian must use secure password recovery to sign in."}
                 </p>
               )}
             </div>

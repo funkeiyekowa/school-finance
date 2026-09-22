@@ -353,12 +353,11 @@ export default function ParentsPage() {
               {credNotice.name} — {credNotice.kind === "created" ? "login created" : "password reset"}
             </div>
             <div className="text-sm text-emerald-800 mt-1">
-              Share these credentials. They will be prompted to change the password on next sign-in.
+              Account access is ready. Ask the parent to use the secure password-recovery flow to set or regain access; no password is displayed here.
             </div>
-            <div className="mt-2 rounded-md bg-white border border-emerald-200 p-2 text-xs font-mono flex flex-wrap gap-x-6 gap-y-1">
-              <span><span className="text-gray-500">Email:</span> <strong>{credNotice.email}</strong></span>
-              <span><span className="text-gray-500">Password:</span> <strong>ChangeMe123!</strong></span>
-              <button type="button" onClick={() => navigator.clipboard?.writeText(`${credNotice.email} / ChangeMe123!`)} className="ml-auto text-emerald-700 hover:underline">Copy</button>
+            <div className="mt-2 rounded-md bg-white border border-emerald-200 p-2 text-xs text-emerald-800">
+              <span><span className="text-gray-500">Account:</span> <strong>{credNotice.email}</strong></span>
+              <span className="ml-3">Use “Forgot password” on the sign-in page to complete access securely.</span>
             </div>
           </div>
           <button onClick={() => setCredNotice(null)} className="text-emerald-700 hover:text-emerald-900 p-1"><X size={16} /></button>
