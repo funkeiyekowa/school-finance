@@ -4,6 +4,7 @@ import path from "node:path";
 
 const root = path.resolve(__dirname, "..", "..", "..");
 const migration = fs.readFileSync(path.join(root, "supabase", "20260922013000_phase2_lms_rubrics.sql"), "utf8");
+const scoreLookupFix = fs.readFileSync(path.join(root, "supabase", "20260922013100_phase2_lms_rubrics_score_lookup_fix.sql"), "utf8");
 
 for (const table of ["lms_rubrics", "lms_rubric_criteria", "lms_rubric_scores"]) {
   assert.match(migration, new RegExp(`CREATE TABLE IF NOT EXISTS public\\.${table}`));
@@ -24,5 +25,12 @@ assert.match(migration, /REVOKE ALL ON FUNCTION/);
 assert.match(migration, /GRANT EXECUTE ON FUNCTION/);
 assert.doesNotMatch(migration, /p_organization_id/);
 
-console.log("Phase 2 rubric authorization and scoring-integrity contracts passed.");
+assert.match(scoreLookupFix, /SELECT COUNT\(\*\) INTO v_matches/);
+assert.match(scoreLookupFix, /SELECT item INTO v_score_item/);
+assert.match(scoreLookupFix, /LIMIT 1/);
+assert.match(scoreLookupFix, /Criterion feedback must be 2,000 characters or fewer/);
+assert.doesNotMatch(scoreLookupFix, /MIN\(item\)/);
+assert.match(scoreLookupFix, /phase2_grade_lms_submission\(p_submission_id, v_total, p_feedback\)/);
+
+console.log("Phase 2 rubric authorization, portable score lookup, and scoring-integrity contracts passed.");
 console.log("Live database tests remain required for RLS personas, score boundaries, and concurrent grading.");
