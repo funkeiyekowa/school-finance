@@ -18,7 +18,7 @@ assert.match(askRoute, /systemOverride/);
 assert.doesNotMatch(askRoute, /body\.systemPrompt|body\.systemOverride/);
 assert.match(askRoute, /rateLimitAsync/);
 assert.match(aiServer, /organizationId: orgId/);
-assert.match(aiServer, /userId: userId/);
+assert.match(aiServer, /user_id: userId/);
 assert.match(aiServer, /ai_generation_log/);
 assert.match(aiConfig, /set_org_assistant_config/);
 assert.match(aiConfig, /_is_org_admin_for/);
