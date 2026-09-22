@@ -32,5 +32,20 @@ assert.match(scoreLookupFix, /Criterion feedback must be 2,000 characters or few
 assert.doesNotMatch(scoreLookupFix, /MIN\(item\)/);
 assert.match(scoreLookupFix, /phase2_grade_lms_submission\(p_submission_id, v_total, p_feedback\)/);
 
-console.log("Phase 2 rubric authorization, portable score lookup, and scoring-integrity contracts passed.");
+const rubricRoute = fs.readFileSync(path.join(root, "src", "app", "api", "lms", "rubrics", "route.ts"), "utf8");
+const rubricPage = fs.readFileSync(path.join(root, "src", "app", "dashboard", "teaching", "rubrics", "page.tsx"), "utf8");
+const teachingLayout = fs.readFileSync(path.join(root, "src", "app", "dashboard", "teaching", "layout.tsx"), "utf8");
+assert.match(rubricRoute, /requireStaffSessionWithOrg/);
+assert.match(rubricRoute, /\.eq\("organization_id", organizationId\)/);
+assert.match(rubricRoute, /phase2_save_assignment_rubric/);
+assert.match(rubricRoute, /A rubric requires 1 to 20 criteria/);
+assert.match(rubricRoute, /Criterion descriptions must be 2,000 characters or fewer/);
+assert.doesNotMatch(rubricRoute, /SUPABASE_SERVICE_ROLE_KEY|p_organization_id/);
+assert.match(rubricPage, /Criterion maximums must total exactly/);
+assert.match(rubricPage, /This rubric is locked because scoring has begun/);
+assert.match(rubricPage, /Students will see it with the assignment/);
+assert.match(rubricPage, /Create an LMS assignment before building a rubric/);
+assert.match(teachingLayout, /\/dashboard\/teaching\/rubrics/);
+
+console.log("Phase 2 rubric authorization, portable score lookup, scoring-integrity, and Rubric Studio contracts passed.");
 console.log("Live database tests remain required for RLS personas, score boundaries, and concurrent grading.");
