@@ -7,6 +7,10 @@ const migration = fs.readFileSync(
   path.join(root, "supabase", "20260922021500_secure_parent_recovery_onboarding.sql"),
   "utf8",
 );
+const compatibility = fs.readFileSync(
+  path.join(root, "supabase", "20260922021600_secure_parent_creation_compat.sql"),
+  "utf8",
+);
 
 assert.match(migration, /_secure_recovery_secret/);
 assert.match(migration, /extensions\.gen_random_bytes\(32\)/);
@@ -23,6 +27,12 @@ assert.doesNotMatch(migration, /create_auth_user\([^\n]*'ChangeMe123!'/);
 assert.doesNotMatch(migration, /encrypted_password\s*=\s*extensions\.crypt\(\s*'ChangeMe123!'/);
 assert.match(migration, /REVOKE ALL ON FUNCTION public\.admin_reset_parent_password/);
 assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.admin_reset_parent_password/);
+
+assert.match(compatibility, /v_org uuid := public\.current_user_org_id\(\)/);
+assert.match(compatibility, /public\.is_org_admin\(v_org\)/);
+assert.match(compatibility, /admin_create_parent_user\(p_email, v_org\)/);
+assert.doesNotMatch(compatibility, /ChangeMe123/);
+assert.match(compatibility, /REVOKE ALL ON FUNCTION public\.admin_create_parent_user\(text\)/);
 
 console.log("Secure parent recovery-onboarding database contracts passed.");
 console.log("Live tests remain required for recovery email delivery and cross-tenant reset rejection.");
