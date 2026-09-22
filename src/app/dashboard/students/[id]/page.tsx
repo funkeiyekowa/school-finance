@@ -635,7 +635,7 @@ h1{font-size:18px;margin-bottom:4px;}
             <p className="text-sm text-gray-600">
               Update this student’s details. Setting a
               <strong> guardian email </strong>
-              auto-provisions a Parent Portal account so the guardian can sign in and see their child’s records.
+              provisions a Parent Portal account; the guardian should use secure password recovery to sign in and see their child’s records.
             </p>
 
             {/* Identity */}

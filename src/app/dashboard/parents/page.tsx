@@ -299,7 +299,7 @@ export default function ParentsPage() {
   }
 
   async function resetPassword(p: ParentRow) {
-    if (!confirm(`Reset ${p.full_name}'s password to the default? They will have to change it on next sign-in.`)) return;
+    if (!confirm(`Send ${p.full_name} through secure password recovery? No password will be displayed.`)) return;
     const { data, error } = await supabase.rpc("admin_reset_parent_password", { p_parent_profile_id: p.id });
     if (error) { alert(error.message); return; }
     if (data === "ok") setCredNotice({ email: p.email, name: p.full_name, kind: "reset" });
@@ -441,7 +441,7 @@ export default function ParentsPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-end">
                         <Button size="sm" variant="ghost" onClick={() => openEdit(p)}><User size={12} /> Edit</Button>
-                        <Button size="sm" variant="ghost" onClick={() => resetPassword(p)}><KeyRound size={12} /> Reset PW</Button>
+                        <Button size="sm" variant="ghost" onClick={() => resetPassword(p)}><KeyRound size={12} /> Password recovery</Button>
                         <button
                           onClick={() => deleteParent(p)}
                           className="text-xs text-red-600 hover:text-red-800 hover:underline inline-flex items-center gap-1 px-2 py-1"
