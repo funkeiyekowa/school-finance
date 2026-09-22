@@ -1,61 +1,6 @@
 {
-  "name": "school-finance",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint . --max-warnings=0",
-    "typecheck": "tsc --noEmit --incremental false",
-    "typecheck:mobile": "cd mobile && npx tsc --noEmit",
-    "typecheck:all": "npm run typecheck && npm run typecheck:mobile",
-    "test": "npm run test:alerts && npm run test:website && npm run test:tenant-spec && npm run test:authorization && npm run test:student-360 && npm run test:phase2 && npm run test:teaching-loop && npm run test:login-context && npm run test:timetable && npm run test:timetable-setup && npm run test:db",
-    "test:alerts": "tsx src/lib/alerts/dedup.test.ts && tsx src/lib/alerts/matcher.test.ts",
-    "test:website": "tsx test.config.ts",
-    "test:tenant-spec": "tsx src/lib/tests/tenant-isolation.test.ts",
-    "test:authorization": "tsx src/lib/tests/phase1-authorization.test.ts",
-    "test:student-360": "tsx src/lib/tests/student-360-contract.test.ts",
-    "test:phase2": "tsx src/lib/tests/phase2-reliability.test.ts",
-    "test:teaching-loop": "tsx src/lib/tests/teaching-loop-integrity.test.ts",
-    "test:login-context": "tsx src/lib/tests/login-context.test.ts",
-    "test:timetable": "tsx src/lib/tests/timetable-authorization.test.ts",
-    "test:timetable-setup": "tsx src/lib/tests/timetable-setup.test.ts",
-    "test:db": "tsx src/lib/tests/db/notifications-broadcast.db.test.ts && tsx src/lib/tests/db/automation-engine.db.test.ts && tsx src/lib/tests/db/shop.db.test.ts"
-  },
-  "dependencies": {
-    "@supabase/ssr": "^0.12.4",
-    "@supabase/supabase-js": "^2.112.3",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "date-fns": "^4.4.0",
-    "html5-qrcode": "^2.3.8",
-    "jspdf": "^4.2.1",
-    "jspdf-autotable": "^5.0.8",
-    "lucide-react": "^1.33.0",
-    "next": "16.3.3",
-    "nodemailer": "^10.0.10",
-    "qrcode": "^1.5.4",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "react-qr-code": "^2.2.0",
-    "recharts": "^3.10.1",
-    "tailwind-merge": "^3.6.0",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
-  },
-  "devDependencies": {
-    "@types/node": "^20",
-    "@types/nodemailer": "^8.0.2",
-    "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.5",
-    "eslint": "9.39.5",
-    "eslint-config-next": "16.3.3",
-    "postcss": "^8",
-    "tailwindcss": "^3.4.1",
-    "tsx": "^4.23.13",
-    "typescript": "^5"
-  },
-  "engines": {
-    "node": ">=20.9.0"
-  }
+  "name":"school-finance","version":"0.1.0","private":true,
+  "scripts":{"dev":"next dev","build":"next build","start":"next start","lint":"eslint . --max-warnings=0","typecheck":"tsc --noEmit --incremental false","typecheck:mobile":"cd mobile && npx tsc --noEmit","typecheck:all":"npm run typecheck && npm run typecheck:mobile","test":"npm run test:alerts && npm run test:website && npm run test:tenant-spec && npm run test:authorization && npm run test:student-360 && npm run test:phase2 && npm run test:teaching-loop && npm run test:student-assignments && npm run test:login-context && npm run test:timetable && npm run test:timetable-setup && npm run test:db","test:alerts":"tsx src/lib/alerts/dedup.test.ts && tsx src/lib/alerts/matcher.test.ts","test:website":"tsx test.config.ts","test:tenant-spec":"tsx src/lib/tests/tenant-isolation.test.ts","test:authorization":"tsx src/lib/tests/phase1-authorization.test.ts","test:student-360":"tsx src/lib/tests/student-360-contract.test.ts","test:phase2":"tsx src/lib/tests/phase2-reliability.test.ts","test:teaching-loop":"tsx src/lib/tests/teaching-loop-integrity.test.ts","test:student-assignments":"tsx src/lib/tests/student-assignment-loop.test.ts","test:login-context":"tsx src/lib/tests/login-context.test.ts","test:timetable":"tsx src/lib/tests/timetable-authorization.test.ts","test:timetable-setup":"tsx src/lib/tests/timetable-setup.test.ts","test:db":"tsx src/lib/tests/db/notifications-broadcast.db.test.ts && tsx src/lib/tests/db/automation-engine.db.test.ts && tsx src/lib/tests/db/shop.db.test.ts"},
+  "dependencies":{"@supabase/ssr":"^0.12.4","@supabase/supabase-js":"^2.112.3","class-variance-authority":"^0.7.1","clsx":"^2.1.1","date-fns":"^4.4.0","html5-qrcode":"^2.3.8","jspdf":"^4.2.1","jspdf-autotable":"^5.0.8","lucide-react":"^1.33.0","next":"16.3.3","nodemailer":"^10.0.10","qrcode":"^1.5.4","react":"19.2.8","react-dom":"19.2.8","react-qr-code":"^2.2.0","recharts":"^3.10.1","tailwind-merge":"^3.6.0","xlsx":"https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"},
+  "devDependencies":{"@types/node":"^20","@types/nodemailer":"^8.0.2","@types/react":"19.2.18","@types/react-dom":"19.2.5","eslint":"9.39.5","eslint-config-next":"16.3.3","postcss":"^8","tailwindcss":"^3.4.1","tsx":"^4.23.13","typescript":"^5"},"engines":{"node":">=20.9.0"}
 }
