@@ -7,6 +7,14 @@ const route = fs.readFileSync(
   path.join(root, "src", "app", "api", "students", "360", "route.ts"),
   "utf8",
 );
+const layout = fs.readFileSync(
+  path.join(root, "src", "app", "dashboard", "students", "[id]", "layout.tsx"),
+  "utf8",
+);
+const header = fs.readFileSync(
+  path.join(root, "src", "app", "dashboard", "students", "[id]", "_components", "Student360Header.tsx"),
+  "utf8",
+);
 
 assert.match(route, /requireStaffSessionWithOrg\(\{ permission: "students" \}\)/);
 assert.match(route, /\.eq\("organization_id", organizationId\)/);
@@ -35,5 +43,19 @@ for (const forbidden of [
 assert.doesNotMatch(route, /SUPABASE_SERVICE_ROLE_KEY/);
 assert.doesNotMatch(route, /searchParams\.get\(["']organization_id/);
 
-console.log("Student 360 contract checks passed: tenant scope, field minimization, and partial-data behavior are present.");
+// The UI is additive around the existing page, does not wrap printable child routes,
+// and makes loading, retry, partial-data and empty-data states explicit.
+assert.match(layout, /<Student360Header studentId=\{id\}/);
+assert.match(layout, /\{children\}/);
+assert.match(header, /pathname\.replace\(\/\\\/$\/,[^)]*\) === expectedPath/);
+assert.match(header, /\/api\/students\/360\?student_id=/);
+assert.match(header, /cache: "no-store"/);
+assert.match(header, /Retry/);
+assert.match(header, /summary\.partial/);
+assert.match(header, /No attendance sessions recorded/);
+assert.match(header, /No assessment scores recorded/);
+assert.match(header, /Role-aware, field-minimized summary/);
+assert.doesNotMatch(header, /guardian_email|guardian_phone|date_of_birth|medical_records|safeguarding/);
+
+console.log("Student 360 contract checks passed: tenant scope, field minimization, partial-data behavior, and additive UI are present.");
 console.log("Live Supabase persona and cross-tenant tests remain required before production sign-off.");
